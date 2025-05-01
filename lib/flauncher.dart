@@ -27,6 +27,7 @@ import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
+import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -46,7 +47,25 @@ class FLauncher extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: Consumer<AppsService>(
                   builder: (context, appsService, _) => appsService.initialized
-                      ? SingleChildScrollView(child: _categories(appsService.categoriesWithApps))
+                      ? Column(
+                          children: [
+                            // Existing categories, wrapped in Expanded to take available space
+                            Expanded(
+                              child: SingleChildScrollView(
+                                child: _categories(appsService.categoriesWithApps),
+                              ),
+                            ),
+                            // Placeholder for HDMI Inputs section
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16.0),
+                              child: Text(
+                                "Inputs", // Section Title
+                                style: Theme.of(context).textTheme.headlineSmall,
+                              ),
+                            ),
+                            const HdmiInputsSection(),
+                          ],
+                        )
                       : _emptyState(context),
                 ),
               ),

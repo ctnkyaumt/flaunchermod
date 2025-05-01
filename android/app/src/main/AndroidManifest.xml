@@ -27,6 +27,8 @@
         android:required="true" />
 
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Required permission to read TV input list -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
     <queries>
         <intent>

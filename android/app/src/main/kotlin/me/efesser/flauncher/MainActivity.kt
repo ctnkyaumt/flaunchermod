@@ -26,9 +26,13 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.UserHandle
 import android.provider.Settings
 import androidx.annotation.NonNull
+import android.media.tv.TvInputInfo
+import android.media.tv.TvInputManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -40,9 +44,12 @@ import java.io.Serializable
 
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
+private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
 
 class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
+    private var tvInputCallback: TvInputManager.Callback? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -57,6 +64,8 @@ class MainActivity : FlutterActivity() {
                 "isDefaultLauncher" -> result.success(isDefaultLauncher())
                 "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
                 "startAmbientMode" -> result.success(startAmbientMode())
+                "getHdmiInputs" -> result.success(getHdmiInputs())
+                "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
                 else -> throw IllegalArgumentException()
             }
         }
@@ -99,11 +108,56 @@ class MainActivity : FlutterActivity() {
                 launcherAppsCallbacks.remove(launcherAppsCallback)
             }
         })
+
+        // Event Channel for HDMI Input changes
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, HDMI_EVENT_CHANNEL).setStreamHandler(object : StreamHandler {
+            val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+
+            override fun onListen(arguments: Any?, events: EventSink) {
+                tvInputCallback = object : TvInputManager.Callback() {
+                    override fun onInputAdded(inputId: String) {
+                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
+                            events.success(mapOf("action" to "INPUT_ADDED", "inputInfo" to buildTvInputMap(it)))
+                        }
+                    }
+
+                    override fun onInputRemoved(inputId: String) {
+                        // We don't know if it was HDMI, but Flutter side can check its list
+                        events.success(mapOf("action" to "INPUT_REMOVED", "inputId" to inputId))
+                    }
+
+                    override fun onInputUpdated(inputId: String) {
+                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
+                            events.success(mapOf("action" to "INPUT_UPDATED", "inputInfo" to buildTvInputMap(it)))
+                        }
+                    }
+
+                    override fun onInputStateChanged(inputId: String, state: Int) {
+                        // Could be useful later, e.g., to show if an input is active
+                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
+                            events.success(mapOf("action" to "INPUT_STATE_CHANGED", "inputId" to inputId, "state" to state))
+                        }
+                    }
+                }
+                tvInputManager.registerCallback(tvInputCallback!!, mainHandler)
+            }
+
+            override fun onCancel(arguments: Any?) {
+                tvInputCallback?.let {
+                    tvInputManager.unregisterCallback(it)
+                    tvInputCallback = null
+                }
+            }
+        })
     }
 
     override fun onDestroy() {
         val launcherApps = getSystemService(LAUNCHER_APPS_SERVICE) as LauncherApps
         launcherAppsCallbacks.forEach(launcherApps::unregisterCallback)
+        tvInputCallback?.let {
+            val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+            tvInputManager.unregisterCallback(it)
+        }
         super.onDestroy()
     }
 
@@ -205,6 +259,48 @@ class MainActivity : FlutterActivity() {
         true
     } catch (e: Exception) {
         false
+    }
+
+    private fun getTvInputInfo(inputId: String): TvInputInfo? = try {
+        val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+        tvInputManager.getTvInputInfo(inputId)
+    } catch (e: Exception) {
+        // Log error maybe?
+        null
+    }
+
+    private fun getHdmiInputs(): List<Map<String, Serializable?>> {
+        return try {
+            val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+            tvInputManager.tvInputList
+                .filter { it.type == TvInputInfo.TYPE_HDMI }
+                .map { buildTvInputMap(it) }
+        } catch (e: Exception) {
+            // Log error maybe?
+            emptyList()
+        }
+    }
+
+    private fun buildTvInputMap(inputInfo: TvInputInfo): Map<String, Serializable?> = mapOf(
+        "id" to inputInfo.id,
+        "name" to inputInfo.loadLabel(context).toString(),
+        "type" to inputInfo.type,
+        "icon" to inputInfo.loadIcon(context)?.let(::drawableToByteArray), // Optional icon
+        // Add other relevant fields if needed, e.g., inputInfo.loadCustomLabel(context)?.toString()
+    )
+
+    private fun launchTvInput(inputId: String?): Boolean {
+        if (inputId == null) return false
+        return try {
+            val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+            val inputUri = TvInputInfo.buildInputUri(inputId)
+            val intent = Intent(Intent.ACTION_VIEW, inputUri)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            // Log error maybe?
+            false
+        }
     }
 
     private fun drawableToByteArray(drawable: Drawable): ByteArray? {

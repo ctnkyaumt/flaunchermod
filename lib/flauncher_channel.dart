@@ -23,6 +23,7 @@ import 'package:flutter/services.dart';
 class FLauncherChannel {
   static const _methodChannel = MethodChannel('me.efesser.flauncher/method');
   static const _eventChannel = EventChannel('me.efesser.flauncher/event');
+  static const _hdmiEventChannel = EventChannel('me.efesser.flauncher/hdmi_event');
 
   Future<List<dynamic>> getApplications() async => (await _methodChannel.invokeListMethod('getApplications'))!;
 
@@ -46,4 +47,17 @@ class FLauncherChannel {
 
   void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) =>
       _eventChannel.receiveBroadcastStream().listen((event) => listener(event));
+
+  Stream<dynamic> get appStream => _eventChannel.receiveBroadcastStream();
+  Stream<dynamic> get hdmiInputStream => _hdmiEventChannel.receiveBroadcastStream();
+
+  Future<List<dynamic>> getHdmiInputs() async {
+    final result = await _methodChannel.invokeMethod('getHdmiInputs');
+    return List<dynamic>.from(result ?? []);
+  }
+
+  Future<bool> launchTvInput(String inputId) async {
+    final result = await _methodChannel.invokeMethod('launchTvInput', {'inputId': inputId});
+    return result ?? false;
+  }
 }
