@@ -1,0 +1,69 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ] # Trigger on PRs to main
+
+jobs:
+  # Check formatting, analysis, and run tests
+  lint_analyze_test:
+    name: Lint, Analyze & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.7.5' # Match pubspec.yaml
+          channel: 'stable'
+          cache: true
+      - name: Install Linux Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev lcov
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Check Formatting
+        run: flutter format --line-length 120 --set-exit-if-changed .
+      - name: Analyze Project
+        run: flutter analyze
+      - name: Run Tests
+        run: flutter test --coverage
+      - name: Process Coverage
+        run: |
+          # Remove generated files from coverage if necessary (adjust patterns as needed)
+          lcov --remove coverage/lcov.info 'lib/*.g.dart' 'lib/*.freezed.dart' 'lib/database.drift.dart' --output-file coverage/lcov.info || echo "lcov remove failed, proceeding without removal"
+          # Generate HTML report
+          genhtml coverage/lcov.info --output=coverage
+      # Optional: Upload coverage report artifact
+      - name: Upload coverage report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+
+  # Build Debug App Bundle and APK (on pushes to main or PRs)
+  build_debug:
+    name: Build Debug App Bundle & APK
+    needs: lint_analyze_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.7.5'
+          channel: 'stable'
+          cache: true
+      - name: Install Flutter dependencies
+        run: flutter pub get
+      - name: Build Debug App Bundle
+        run: flutter build appbundle --debug
+      - name: Build Debug APK
+        run: flutter build apk --debug
+      # Optional: Upload debug artifacts
+      - name: Upload Debug Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-debug-artifacts
+          path: |
+            build/app/outputs/bundle/debug/
+            build/app/outputs/flutter-apk/
