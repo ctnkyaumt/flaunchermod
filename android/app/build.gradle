@@ -86,6 +86,11 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
+
+            // Disable Crashlytics mapping file upload for release builds
+            firebaseCrashlytics {
+                mappingFileUploadEnabled false
+            }
         }
     }
 }
