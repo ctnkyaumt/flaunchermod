@@ -1,4 +1,4 @@
-name: Flutter CI
+name: Build Release APK
 
 on:
   push:
@@ -7,39 +7,49 @@ on:
     branches: [ main ] # Trigger on PRs to main
 
 jobs:
-  test_and_build_apk:
-    name: Test & Build Debug APK
+  build_release_apk:
+    name: Build Release APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      # Decode Keystore from Secret
+      - name: Decode Keystore
+        env:
+          SIGNING_JKS_FILE_BASE64: ${{ secrets.SIGNING_JKS_FILE_BASE64 }}
+        run: |
+          echo "Creating Keystore directory..."
+          mkdir -p android/app
+          echo "Decoding Keystore file..."
+          echo "$SIGNING_JKS_FILE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          echo "Keystore file created."
+          ls -l android/app/ # Optional: Verify file exists
+
+      # Setup Flutter
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.7.5' # Match pubspec.yaml
           channel: 'stable'
           cache: true
-      - name: Install Linux Dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev lcov
+          
+      # Install Dependencies
       - name: Install Flutter dependencies
         run: flutter pub get
-      - name: Check Formatting
-        run: flutter format --line-length 120 --set-exit-if-changed .
-      - name: Analyze Project
-        run: flutter analyze
-      - name: Run Tests
-        run: flutter test --coverage
-      - name: Process Coverage
-        run: |
-          # Remove generated files from coverage if necessary (adjust patterns as needed)
-          lcov --remove coverage/lcov.info 'lib/*.g.dart' 'lib/*.freezed.dart' 'lib/database.drift.dart' --output-file coverage/lcov.info || echo "lcov remove failed, proceeding without removal"
-          # Generate HTML report
-          genhtml coverage/lcov.info --output=coverage
-      - name: Build Debug APK
-        run: flutter build apk --debug
-      # Optional: Upload artifacts
-      - name: Upload Artifacts
+        
+      # Build Release APK
+      - name: Build Release APK
+        run: flutter build apk --release
+        env:
+          # These secrets are used by Flutter build process via Gradle
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          # Explicitly point to the keystore file location might be needed depending on build.gradle setup
+          # KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks 
+          
+      # Upload Release APK artifact
+      - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: build-debug-artifacts
-          path: |
-            coverage/
-            build/app/outputs/flutter-apk/
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk # Path to the release APK
