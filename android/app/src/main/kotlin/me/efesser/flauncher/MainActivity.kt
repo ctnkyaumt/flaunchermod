@@ -296,73 +296,80 @@ class MainActivity : FlutterActivity() {
         
         android.util.Log.d("FLauncher", "Attempting to launch TV input: $inputId")
         
-        // Try different approaches to launch TV input
         return try {
-            // Use a more direct approach for MediaTek devices
-            // First, try to get the actual component for the TV input service
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
             val tvInputInfo = tvInputManager.getTvInputInfo(inputId)
             
-            if (tvInputInfo != null) {
-                android.util.Log.d("FLauncher", "Found TV input info: ${tvInputInfo.id}, service: ${tvInputInfo.serviceInfo.name}")
-                
-                // Try using component-specific intent
-                val componentName = ComponentName(tvInputInfo.serviceInfo.packageName, tvInputInfo.serviceInfo.name)
-                val componentIntent = Intent()
-                componentIntent.component = componentName
-                componentIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                
-                try {
-                    android.util.Log.d("FLauncher", "Trying component-specific intent: $componentName")
-                    startActivity(componentIntent)
-                    return true
-                } catch (e: Exception) {
-                    android.util.Log.e("FLauncher", "Component intent failed: ${e.message}")
-                }
+            if (tvInputInfo == null) {
+                android.util.Log.e("FLauncher", "Failed to get TV input info for ID: $inputId")
+                return false
             }
             
-            // Try the most common approach for MediaTek TVs - using TvView
+            // Get HDMI port number from input ID (MediaTek TVs use this format)
+            val portNumber = inputId.split("/").lastOrNull()?.toIntOrNull() ?: 1
+            
+            android.util.Log.d("FLauncher", "HDMI port number detected: $portNumber")
+            
+            // *** MediaTek TV requires proper service initialization and intent extras ***
+            
+            // First - ensure TV services are initialized
             try {
-                // For MediaTek TVs, we need a special intent
-                val mtkIntent = Intent()
-                mtkIntent.action = "android.intent.action.VIEW"
-                mtkIntent.component = ComponentName(
-                    "com.mediatek.wwtv.tvcenter",
-                    "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity")
-                mtkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                
-                // Add HDMI input info
-                mtkIntent.putExtra("from_where", "other_app_to_live_tv")
-                mtkIntent.putExtra("input_source_type", "hdmi")
-                mtkIntent.putExtra("tv_input_id", inputId)
-                
-                android.util.Log.d("FLauncher", "Trying MediaTek TV Center intent with TV input ID: $inputId")
-                startActivity(mtkIntent)
-                return true
+                val serviceIntent = Intent()
+                serviceIntent.component = ComponentName(
+                    "com.mediatek.tvinput",
+                    "com.mediatek.tvinput.services.MediaTekTvInputService"
+                )
+                startService(serviceIntent)
+                android.util.Log.d("FLauncher", "Initialized MediaTek TV Input Service")
             } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "MediaTek TV Center intent failed: ${e.message}")
-                
-                // Try generic system intent as last resort
-                val systemIntent = Intent(Intent.ACTION_MAIN)
-                systemIntent.addCategory(Intent.CATEGORY_HOME)
-                systemIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                
-                try {
-                    startActivity(systemIntent)
-                    android.util.Log.d("FLauncher", "Launched HOME intent as fallback")
-                    // Usually returning to HOME first, then trying again works better
-                    Thread.sleep(500)
-                    // Try original intent again
-                    val viewIntent = Intent(Intent.ACTION_VIEW)
-                    viewIntent.data = Uri.parse("tvinput://$inputId")
-                    viewIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(viewIntent)
-                    return true
-                } catch (e2: Exception) {
-                    android.util.Log.e("FLauncher", "All TV input launch methods failed")
-                    return false
-                }
+                android.util.Log.w("FLauncher", "Failed to initialize TV Input Service: ${e.message}")
+                // Continue anyway, as it might already be running
             }
+            
+            // Now try launching the HDMI input using MediaTek-specific approach
+            // Using the TurnkeyUiMainActivity with required extras
+            val mtkIntent = Intent()
+            
+            // Component for MediaTek TVs
+            mtkIntent.component = ComponentName(
+                "com.mediatek.wwtv.tvcenter",
+                "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity")
+            
+            // CRUCIAL: These extras are required for MediaTek TVs
+            mtkIntent.putExtra("from_launcher", true)  // Prevents black screens
+            mtkIntent.putExtra("source_flag", 4)      // For HDMI source type
+            mtkIntent.putExtra("source_input_id", portNumber) // HDMI port number
+            
+            // Additional MediaTek extras that might help
+            mtkIntent.putExtra("from_where", "other_app_to_live_tv")
+            
+            // Flags
+            mtkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            android.util.Log.d("FLauncher", "Launching MediaTek HDMI input with port: $portNumber")
+            startActivity(mtkIntent)
+            
+            // If first attempt fails, try alternative MediaTek intent approaches
+            try {
+                Thread.sleep(300) // Short delay to let the first intent process
+                
+                // Try alternative MediaTek approach - global action
+                val altIntent = Intent("tv.mediatek.intent.action.TV_INPUT")
+                altIntent.putExtra("from_launcher", true)
+                altIntent.putExtra("source_flag", 4)
+                altIntent.putExtra("source_input_id", portNumber)
+                
+                // Don't actually start yet, just prepare as fallback
+                if (!isTaskRoot) {
+                    android.util.Log.d("FLauncher", "Using alternate MediaTek intent as fallback")
+                    startActivity(altIntent)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "Fallback intent not needed or failed: ${e.message}")
+                // This is just a fallback, ignore errors
+            }
+            
+            true
         } catch (e: Exception) {
             android.util.Log.e("FLauncher", "Error in launchTvInput: ${e.message}")
             e.printStackTrace()

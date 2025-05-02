@@ -30,6 +30,12 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Required permission to read TV input list -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
+    <!-- MediaTek TV specific permissions -->
+    <uses-permission android:name="com.mediatek.permission.START_TV_SERVICE" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" 
+                     tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.CALL_PRIVILEGED" 
+                     tools:ignore="ProtectedPermissions" />
 
     <queries>
         <intent>
