@@ -51,21 +51,28 @@ class FLauncher extends StatelessWidget {
                 builder: (context, appsService, _) => appsService.initialized
                     ? Column(
                         children: [
-                          // Existing categories, wrapped in Expanded to take available space
+                          // Everything wrapped in a single scrollable area
                           Expanded(
                             child: SingleChildScrollView(
-                              child: _categories(appsService.categoriesWithApps),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Existing categories
+                                  _categories(appsService.categoriesWithApps),
+                                  
+                                  // HDMI Inputs section
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                                    child: Text(
+                                      "Inputs", // Section Title
+                                      style: Theme.of(context).textTheme.headlineSmall,
+                                    ),
+                                  ),
+                                  const HdmiInputsSection(),
+                                ],
+                              ),
                             ),
                           ),
-                          // HDMI Inputs section
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 16.0),
-                            child: Text(
-                              "Inputs", // Section Title
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ),
-                          const HdmiInputsSection(),
                         ],
                       )
                     : _emptyState(context),

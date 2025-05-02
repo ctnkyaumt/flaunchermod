@@ -296,10 +296,35 @@ class MainActivity : FlutterActivity() {
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
             val intent = Intent(Intent.ACTION_VIEW)
             intent.data = Uri.parse("tvinput://$inputId")
-            startActivity(intent)
-            true
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            // Log that we're launching the intent
+            android.util.Log.d("FLauncher", "Launching TV input: $inputId with URI: tvinput://$inputId")
+            
+            // Try the direct approach first
+            try {
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "Failed to launch TV input directly: ${e.message}")
+                
+                // Fallback approach - try launching through system UI
+                val systemIntent = Intent()
+                systemIntent.action = "android.intent.action.VIEW"
+                systemIntent.data = Uri.parse("tvinput://$inputId")
+                systemIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                systemIntent.addCategory(Intent.CATEGORY_LAUNCHER)
+                
+                try {
+                    startActivity(systemIntent)
+                    return true
+                } catch (e2: Exception) {
+                    android.util.Log.e("FLauncher", "Failed to launch TV input through system: ${e2.message}")
+                    return false
+                }
+            }
         } catch (e: Exception) {
-            // Log error maybe?
+            android.util.Log.e("FLauncher", "Error in launchTvInput: ${e.message}")
             false
         }
     }

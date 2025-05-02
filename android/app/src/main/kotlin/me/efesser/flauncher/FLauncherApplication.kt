@@ -29,10 +29,25 @@ import android.util.Log
 class FLauncherApplication : Application() {
     
     override fun onCreate() {
-        // Set some system properties to disable Firebase before calling super.onCreate()
+        // Disable Firebase completely before super.onCreate()
         System.setProperty("firebase.crashlytics.collection.enabled", "false")
         System.setProperty("firebase.analytics.collection.enabled", "false")
         System.setProperty("firebase.crashlytics.enabled", "false")
+        System.setProperty("firebase.messaging.auto-init.enabled", "false")
+        System.setProperty("firebase.remoteconfig.enabled", "false")
+        
+        // Disable Firebase initialization entirely
+        try {
+            Class.forName("com.google.firebase.FirebaseApp")
+                ?.getDeclaredField("DEFAULT_APP_NAME")
+                ?.let { field ->
+                    field.isAccessible = true
+                    field.set(null, "__disabled__")
+                }
+        } catch (e: Exception) {
+            // Ignore any errors - this is just an extra precaution
+            Log.d("FLauncher", "Prevented Firebase initialization: ${e.message}")
+        }
         
         // Call super after disabling properties
         super.onCreate()
