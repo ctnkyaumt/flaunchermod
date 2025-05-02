@@ -292,39 +292,60 @@ class MainActivity : FlutterActivity() {
 
     private fun launchTvInput(inputId: String?): Boolean {
         if (inputId == null) return false
+        
+        android.util.Log.d("FLauncher", "Attempting to launch TV input: $inputId")
+        
+        // Try different approaches to launch TV input
         return try {
+            // Approach 1: Standard TV Input Framework approach
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = Uri.parse("tvinput://$inputId")
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             
-            // Log that we're launching the intent
-            android.util.Log.d("FLauncher", "Launching TV input: $inputId with URI: tvinput://$inputId")
+            // Approach 2: Using MediaTek-specific intent for TV inputs
+            // This is the most likely to work on MediaTek-based TVs
+            val mtkIntent = Intent()
+            mtkIntent.action = "com.mediatek.intent.action.TV_INPUT"
+            mtkIntent.putExtra("input_id", inputId)
+            mtkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             
-            // Try the direct approach first
             try {
-                startActivity(intent)
+                android.util.Log.d("FLauncher", "Trying MediaTek specific intent")
+                startActivity(mtkIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "Failed to launch TV input directly: ${e.message}")
+                android.util.Log.e("FLauncher", "MediaTek intent failed: ${e.message}")
                 
-                // Fallback approach - try launching through system UI
-                val systemIntent = Intent()
-                systemIntent.action = "android.intent.action.VIEW"
-                systemIntent.data = Uri.parse("tvinput://$inputId")
-                systemIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                systemIntent.addCategory(Intent.CATEGORY_LAUNCHER)
+                // Approach 3: Standard Android TV input URI
+                val standardIntent = Intent(Intent.ACTION_VIEW)
+                standardIntent.data = Uri.parse("tvinput://$inputId")
+                standardIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 
                 try {
-                    startActivity(systemIntent)
+                    android.util.Log.d("FLauncher", "Trying standard TV input URI")
+                    startActivity(standardIntent)
                     return true
                 } catch (e2: Exception) {
-                    android.util.Log.e("FLauncher", "Failed to launch TV input through system: ${e2.message}")
-                    return false
+                    android.util.Log.e("FLauncher", "Standard TV input URI failed: ${e2.message}")
+                    
+                    // Approach 4: Another common intent for input switching
+                    val alternateIntent = Intent()
+                    alternateIntent.action = "android.intent.action.VIEW"
+                    alternateIntent.data = Uri.parse("tvinput://$inputId")
+                    alternateIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    alternateIntent.addCategory(Intent.CATEGORY_LAUNCHER)
+                    
+                    try {
+                        android.util.Log.d("FLauncher", "Trying alternate intent with category")
+                        startActivity(alternateIntent)
+                        return true
+                    } catch (e3: Exception) {
+                        android.util.Log.e("FLauncher", "All TV input launch methods failed")
+                        false
+                    }
                 }
             }
         } catch (e: Exception) {
             android.util.Log.e("FLauncher", "Error in launchTvInput: ${e.message}")
+            e.printStackTrace()
             false
         }
     }
