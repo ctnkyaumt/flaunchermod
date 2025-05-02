@@ -44,6 +44,16 @@
         <intent>
             <action android:name="android.intent.action.GET_CONTENT" />
         </intent>
+        <!-- MediaTek TV Input intent queries -->
+        <intent>
+            <action android:name="tv.mediatek.intent.action.TV_INPUT" />
+        </intent>
+        <intent>
+            <action android:name="com.mediatek.intent.action.START_TV_FEATURE_OPERATION" />
+        </intent>
+        <intent>
+            <action android:name="android.media.tv.action.VIEW_TV_INPUT" />
+        </intent>
     </queries>
 
     <application
