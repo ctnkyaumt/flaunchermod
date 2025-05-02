@@ -21,6 +21,7 @@ package me.efesser.flauncher
 import android.content.Intent
 import android.content.Intent.*
 import android.content.pm.*
+import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
