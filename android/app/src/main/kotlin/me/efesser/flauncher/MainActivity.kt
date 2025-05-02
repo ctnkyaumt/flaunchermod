@@ -310,25 +310,76 @@ class MainActivity : FlutterActivity() {
             
             android.util.Log.d("FLauncher", "HDMI port number detected: $portNumber")
             
-            // *** Try MediaTek TV input switching using implicit intents ***
+            // MediaTek TV approach based on successful launcher logs
             
-            // Approach 1: Using the TV_INPUT action (most compatible)
+            // Start with an implicit broadcast mimicking what the working launcher does
             try {
-                val tvInputIntent = Intent("tv.mediatek.intent.action.TV_INPUT")
-                tvInputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                tvInputIntent.putExtra("from_launcher", true)  // Prevents black screens
-                tvInputIntent.putExtra("source_flag", 4)       // For HDMI source type
-                tvInputIntent.putExtra("source_input_id", portNumber) // HDMI port number
+                val inputIntent = Intent()
+                inputIntent.action = "tv.mediatek.intent.action.TV_INPUT"
                 
-                android.util.Log.d("FLauncher", "Trying TV_INPUT action with HDMI port: $portNumber")
-                startActivity(tvInputIntent)
+                // Critical MediaTek extras
+                inputIntent.putExtra("from_launcher", true)
+                inputIntent.putExtra("source_flag", 4)  // HDMI source type
+                inputIntent.putExtra("source_input_id", portNumber)
+                
+                // Add flags for broadcast
+                inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                inputIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                
+                // First send a broadcast to initialize the system
+                sendBroadcast(inputIntent)
+                
+                // A small delay to let the broadcast be processed
+                Thread.sleep(100)
+                
+                // Then try to start activity with the same intent
+                startActivity(inputIntent)
+                
+                android.util.Log.d("FLauncher", "Sent TV input broadcast for port: $portNumber")
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "TV_INPUT action failed: ${e.message}")
+                android.util.Log.w("FLauncher", "TV_INPUT broadcast failed: ${e.message}")
                 // Continue to next approach
             }
             
-            // Approach 2: Using TV feature operation action
+            // Approach 2: Using the tvcenter package directly, but with broadcast first
+            try {
+                // First send a preparation broadcast
+                val prepIntent = Intent()
+                prepIntent.action = "tv.mediatek.intent.action.TV_INPUT"
+                prepIntent.putExtra("from_launcher", true)
+                prepIntent.putExtra("source_flag", 4)
+                prepIntent.putExtra("source_input_id", portNumber)
+                sendBroadcast(prepIntent)
+                
+                // Short delay
+                Thread.sleep(200)
+                
+                // Then try launching TurnkeyUiMainActivity with startActivity
+                val activityIntent = Intent()
+                activityIntent.action = "android.intent.action.VIEW"
+                activityIntent.setClassName(
+                    "com.mediatek.wwtv.tvcenter",
+                    "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity")
+                
+                activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activityIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                
+                // Add critical MediaTek extras
+                activityIntent.putExtra("from_launcher", true)
+                activityIntent.putExtra("source_flag", 4)
+                activityIntent.putExtra("source_input_id", portNumber)
+                
+                startActivity(activityIntent)
+                
+                android.util.Log.d("FLauncher", "Tried activity launch for TV input after broadcast prep")
+                return true
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "TurnkeyUiMainActivity approach failed: ${e.message}")
+                // Continue to last approach
+            }
+            
+            // Approach 3: Using direct feature operation
             try {
                 val featureIntent = Intent("com.mediatek.intent.action.START_TV_FEATURE_OPERATION")
                 featureIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -340,45 +391,8 @@ class MainActivity : FlutterActivity() {
                 startActivity(featureIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "START_TV_FEATURE_OPERATION failed: ${e.message}")
-                // Continue to next approach
-            }
-            
-            // Approach 3: Using standard TV view intent with MediaTek extras
-            try {
-                val viewIntent = Intent(Intent.ACTION_VIEW)
-                viewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                viewIntent.putExtra("from_launcher", true)
-                viewIntent.putExtra("source_flag", 4)
-                viewIntent.putExtra("source_input_id", portNumber)
-                
-                // Try to set data URI to help routing
-                try {
-                    viewIntent.data = Uri.parse("tvinput://$inputId")
-                } catch (e: Exception) {
-                    // Ignore URI parsing errors
-                }
-                
-                android.util.Log.d("FLauncher", "Trying ACTION_VIEW with HDMI port: $portNumber")
-                startActivity(viewIntent)
-                return true
-            } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "Standard view intent failed: ${e.message}")
-                // Fall through to final attempt
-            }
-            
-            // Last resort: Try using TV Input Framework directly
-            try {
-                val inputIntent = Intent()
-                inputIntent.action = "android.media.tv.action.VIEW_TV_INPUT"
-                inputIntent.putExtra("android.media.tv.extra.INPUT_ID", inputId)
-                inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                
-                android.util.Log.d("FLauncher", "Trying VIEW_TV_INPUT with input ID: $inputId")
-                startActivity(inputIntent)
-                return true
-            } catch (e: Exception) {
                 android.util.Log.e("FLauncher", "All TV input launch methods failed")
+                e.printStackTrace()
                 return false
             }
         } catch (e: Exception) {

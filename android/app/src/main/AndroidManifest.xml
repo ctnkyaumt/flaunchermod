@@ -36,6 +36,9 @@
                      tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.CALL_PRIVILEGED" 
                      tools:ignore="ProtectedPermissions" />
+    <!-- Broadcast-related permissions -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.BROADCAST_STICKY" />
 
     <queries>
         <intent>
@@ -53,6 +56,13 @@
         </intent>
         <intent>
             <action android:name="android.media.tv.action.VIEW_TV_INPUT" />
+        </intent>
+        <!-- Additional MediaTek specific broadcast intents -->
+        <intent>
+            <action android:name="mtk.intent.media.resource_granted" />
+        </intent>
+        <intent>
+            <action android:name="mtk.intent.blue.mute" />
         </intent>
     </queries>
 
