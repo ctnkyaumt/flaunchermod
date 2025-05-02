@@ -45,6 +45,15 @@
         android:fullBackupContent="true"
         android:icon="@mipmap/ic_launcher"
         android:label="FLauncher">
+        
+        <!-- Disable Firebase -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            android:exported="false"
+            android:enabled="false"
+            android:initOrder="100" />
+            
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

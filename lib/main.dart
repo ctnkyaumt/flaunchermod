@@ -17,151 +17,57 @@
  */
 
 import 'dart:async';
-import 'dart:isolate';
 
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/flauncher_channel.dart';
-import 'package:flauncher/unsplash_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:unsplash_client/unsplash_client.dart';
 
 import 'flauncher_app.dart';
 
 Future<void> main() async {
+  // Initialize Flutter bindings
   WidgetsFlutterBinding.ensureInitialized();
   Paint.enableDithering = true;
-
+  
   debugPrint("FLauncher: Starting initialization");
-
-  try {
-    debugPrint("FLauncher: Initializing Firebase");
-    await Firebase.initializeApp();
-    debugPrint("FLauncher: Firebase initialized successfully");
-    
-    final firebaseCrashlytics = FirebaseCrashlytics.instance;
-
-    FlutterError.onError = firebaseCrashlytics.recordFlutterError;
-    Isolate.current.addErrorListener(RawReceivePort((List<dynamic> pair) async => await firebaseCrashlytics.recordError(
-          pair.first,
-          pair.last as StackTrace,
-        )).sendPort);
-
-    runZonedGuarded<void>(() async {
-      debugPrint("FLauncher: Initializing services");
-      
-      try {
-        final firebaseAnalytics = FirebaseAnalytics.instance;
-        debugPrint("FLauncher: Got Firebase Analytics instance");
-        
-        final sharedPreferences = await SharedPreferences.getInstance();
-        debugPrint("FLauncher: Got SharedPreferences instance");
-        
-        final imagePicker = ImagePicker();
-        final fLauncherChannel = FLauncherChannel();
-        
-        debugPrint("FLauncher: Initializing Firebase Remote Config");
-        final remoteConfig = await _initFirebaseRemoteConfig();
-        debugPrint("FLauncher: Firebase Remote Config initialized");
-        
-        debugPrint("FLauncher: Initializing database");
-        final fLauncherDatabase = FLauncherDatabase(connect());
-        debugPrint("FLauncher: Database initialized");
-        
-        debugPrint("FLauncher: Initializing Unsplash service");
-        final unsplashService = UnsplashService(
-          UnsplashClient(
-            settings: ClientSettings(
-              debug: kDebugMode,
-              credentials: AppCredentials(
-                accessKey: remoteConfig.getString("unsplash_access_key"),
-                secretKey: remoteConfig.getString("unsplash_secret_key"),
-              ),
-            ),
-          ),
-        );
-        debugPrint("FLauncher: Unsplash service initialized");
-        
-        debugPrint("FLauncher: Starting app");
-        runApp(
-          FLauncherApp(
-            sharedPreferences,
-            firebaseCrashlytics,
-            firebaseAnalytics,
-            imagePicker,
-            fLauncherChannel,
-            fLauncherDatabase,
-            unsplashService,
-            remoteConfig,
-          ),
-        );
-        debugPrint("FLauncher: App started");
-      } catch (e, stack) {
-        debugPrint("FLauncher: Error during service initialization: $e");
-        firebaseCrashlytics.recordError(e, stack);
-      }
-    }, (error, stack) {
-      debugPrint("FLauncher: Uncaught error: $error");
-      firebaseCrashlytics.recordError(error, stack);
-    });
-  } catch (e) {
-    debugPrint("FLauncher: Failed to initialize Firebase: $e");
-    _startWithoutFirebase();
-  }
-}
-
-void _startWithoutFirebase() {
-  debugPrint("FLauncher: Starting without Firebase");
+  
+  // Start the app without Firebase
   runZonedGuarded<void>(() async {
-    final sharedPreferences = await SharedPreferences.getInstance();
-    final imagePicker = ImagePicker();
-    final fLauncherChannel = FLauncherChannel();
-    
-    final fLauncherDatabase = FLauncherDatabase(connect());
-    
-    runApp(
-      FLauncherApp(
-        sharedPreferences,
-        null, 
-        null, 
-        imagePicker,
-        fLauncherChannel,
-        fLauncherDatabase,
-        null, 
-        null, 
-      ),
-    );
+    try {
+      debugPrint("FLauncher: Loading preferences");
+      final sharedPreferences = await SharedPreferences.getInstance();
+      
+      debugPrint("FLauncher: Creating services");
+      final imagePicker = ImagePicker();
+      final fLauncherChannel = FLauncherChannel();
+      
+      debugPrint("FLauncher: Initializing database");
+      final fLauncherDatabase = FLauncherDatabase(connect());
+      
+      debugPrint("FLauncher: Starting app");
+      runApp(
+        FLauncherApp(
+          sharedPreferences,
+          null, // crashlytics
+          null, // analytics
+          imagePicker,
+          fLauncherChannel,
+          fLauncherDatabase,
+          null, // unsplash service
+          null, // remote config
+        ),
+      );
+      
+      debugPrint("FLauncher: App started successfully!");
+    } catch (e, stack) {
+      debugPrint("FLauncher: Error during startup: $e");
+      debugPrint(stack.toString());
+    }
   }, (error, stack) {
-    debugPrint("FLauncher: Uncaught error in fallback mode: $error");
+    debugPrint("FLauncher: Uncaught error: $error");
+    debugPrint(stack.toString());
   });
-}
-
-Future<FirebaseRemoteConfig> _initFirebaseRemoteConfig() async {
-  final remoteConfig = FirebaseRemoteConfig.instance;
-  await remoteConfig.setDefaults({"unsplash_enabled": false, "unsplash_access_key": "", "unsplash_secret_key": ""});
-  await remoteConfig.setConfigSettings(
-    RemoteConfigSettings(
-      fetchTimeout: Duration(minutes: 1),
-      minimumFetchInterval: kReleaseMode ? Duration(hours: 6) : Duration.zero,
-    ),
-  );
-  await remoteConfig.ensureInitialized().catchError((error, stackTrace) async {
-    if (!(error is FormatException && error.message == "Invalid envelope")) {
-      await FirebaseCrashlytics.instance.recordError(error, stackTrace);
-    }
-  });
-  remoteConfig.fetchAndActivate().catchError((error, stackTrace) async {
-    if (!(error is FormatException && error.message == "Invalid envelope")) {
-      await FirebaseCrashlytics.instance.recordError(error, stackTrace);
-    }
-    return false;
-  });
-
-  return remoteConfig;
 }

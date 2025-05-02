@@ -33,46 +33,49 @@ import 'package:provider/provider.dart';
 
 class FLauncher extends StatelessWidget {
   @override
-  Widget build(BuildContext context) => FocusTraversalGroup(
-        policy: RowByRowTraversalPolicy(),
-        child: Stack(
-          children: [
-            Consumer<WallpaperService>(
-              builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
-            ),
-            Scaffold(
-              backgroundColor: Colors.transparent,
-              appBar: _appBar(context),
-              body: Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Consumer<AppsService>(
-                  builder: (context, appsService, _) => appsService.initialized
-                      ? Column(
-                          children: [
-                            // Existing categories, wrapped in Expanded to take available space
-                            Expanded(
-                              child: SingleChildScrollView(
-                                child: _categories(appsService.categoriesWithApps),
-                              ),
+  Widget build(BuildContext context) {
+    debugPrint("FLauncher: Building main UI widget");
+    return FocusTraversalGroup(
+      policy: RowByRowTraversalPolicy(),
+      child: Stack(
+        children: [
+          Consumer<WallpaperService>(
+            builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+          ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: _appBar(context),
+            body: Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Consumer<AppsService>(
+                builder: (context, appsService, _) => appsService.initialized
+                    ? Column(
+                        children: [
+                          // Existing categories, wrapped in Expanded to take available space
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: _categories(appsService.categoriesWithApps),
                             ),
-                            // Placeholder for HDMI Inputs section
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16.0),
-                              child: Text(
-                                "Inputs", // Section Title
-                                style: Theme.of(context).textTheme.headlineSmall,
-                              ),
+                          ),
+                          // HDMI Inputs section
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            child: Text(
+                              "Inputs", // Section Title
+                              style: Theme.of(context).textTheme.headlineSmall,
                             ),
-                            const HdmiInputsSection(),
-                          ],
-                        )
-                      : _emptyState(context),
-                ),
+                          ),
+                          const HdmiInputsSection(),
+                        ],
+                      )
+                    : _emptyState(context),
               ),
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _categories(List<CategoryWithApps> categoriesWithApps) => Column(
         children: categoriesWithApps.map((categoryWithApps) {
@@ -129,15 +132,18 @@ class FLauncher extends StatelessWidget {
         ],
       );
 
-  Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) => wallpaperImage != null
-      ? Image.memory(
-          wallpaperImage,
-          key: Key("background"),
-          fit: BoxFit.cover,
-          height: window.physicalSize.height,
-          width: window.physicalSize.width,
-        )
-      : Container(key: Key("background"), decoration: BoxDecoration(gradient: gradient));
+  Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) {
+    debugPrint("FLauncher: Building wallpaper");
+    return wallpaperImage != null
+        ? Image.memory(
+            wallpaperImage,
+            key: Key("background"),
+            fit: BoxFit.cover,
+            height: window.physicalSize.height,
+            width: window.physicalSize.width,
+          )
+        : Container(key: Key("background"), decoration: BoxDecoration(gradient: gradient));
+  }
 
   Widget _emptyState(BuildContext context) => Center(
         child: Column(
