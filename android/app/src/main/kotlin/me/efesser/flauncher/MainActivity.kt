@@ -310,39 +310,31 @@ class MainActivity : FlutterActivity() {
             
             android.util.Log.d("FLauncher", "HDMI port number detected: $portNumber")
             
-            // MediaTek TV approach based on successful launcher logs
-            
-            // Start with an implicit broadcast mimicking what the working launcher does
+            // Approach 1: Using the tvcenter package directly with proper URI and parameters
             try {
-                val inputIntent = Intent()
-                inputIntent.action = "tv.mediatek.intent.action.TV_INPUT"
+                // Create a properly formatted URI expected by MediaTek TV InputSourceManager
+                val uriString = "intent://tvinput?from_launcher=true&source_flag=4&source_input_id=$portNumber#Intent;scheme=mediatek;action=android.intent.action.VIEW;component=com.mediatek.wwtv.tvcenter/.nav.TurnkeyUiMainActivity;end"
+                val intentUri = Uri.parse(uriString)
                 
-                // Critical MediaTek extras
-                inputIntent.putExtra("from_launcher", true)
-                inputIntent.putExtra("source_flag", 4)  // HDMI source type
-                inputIntent.putExtra("source_input_id", portNumber)
+                // Create intent from URI which will include all needed params properly formatted
+                val activityIntent = Intent.parseUri(uriString, Intent.URI_INTENT_SCHEME)
+                activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                activityIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 
-                // Add flags for broadcast
-                inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                inputIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // Add additional extras just to be sure
+                activityIntent.putExtra("from_launcher", true)
+                activityIntent.putExtra("source_flag", 4)  // HDMI source type
+                activityIntent.putExtra("source_input_id", portNumber)
                 
-                // First send a broadcast to initialize the system
-                sendBroadcast(inputIntent)
-                
-                // A small delay to let the broadcast be processed
-                Thread.sleep(100)
-                
-                // Then try to start activity with the same intent
-                startActivity(inputIntent)
-                
-                android.util.Log.d("FLauncher", "Sent TV input broadcast for port: $portNumber")
+                android.util.Log.d("FLauncher", "Launching MediaTek TV with URI: $uriString")
+                startActivity(activityIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "TV_INPUT broadcast failed: ${e.message}")
+                android.util.Log.w("FLauncher", "URI-based intent failed: ${e.message}")
                 // Continue to next approach
             }
             
-            // Approach 2: Using the tvcenter package directly, but with broadcast first
+            // Approach 2: Using broadcast first, then activity with data URI
             try {
                 // First send a preparation broadcast
                 val prepIntent = Intent()
@@ -355,40 +347,56 @@ class MainActivity : FlutterActivity() {
                 // Short delay
                 Thread.sleep(200)
                 
-                // Then try launching TurnkeyUiMainActivity with startActivity
-                val activityIntent = Intent()
-                activityIntent.action = "android.intent.action.VIEW"
+                // Then try launching TurnkeyUiMainActivity with a properly formatted data URI
+                val activityIntent = Intent(Intent.ACTION_VIEW)
                 activityIntent.setClassName(
                     "com.mediatek.wwtv.tvcenter",
                     "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity")
                 
+                // Create a URI that includes all the parameters
+                val uri = Uri.Builder()
+                    .scheme("content")
+                    .authority("mediatek.tv")
+                    .path("tvinput")
+                    .appendQueryParameter("from_launcher", "true")
+                    .appendQueryParameter("source_flag", "4")
+                    .appendQueryParameter("source_input_id", portNumber.toString())
+                    .build()
+                
+                activityIntent.data = uri
                 activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 activityIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 
-                // Add critical MediaTek extras
+                // Also add extras directly
                 activityIntent.putExtra("from_launcher", true)
                 activityIntent.putExtra("source_flag", 4)
                 activityIntent.putExtra("source_input_id", portNumber)
                 
+                android.util.Log.d("FLauncher", "Trying activity launch for TV input with URI: $uri")
                 startActivity(activityIntent)
-                
-                android.util.Log.d("FLauncher", "Tried activity launch for TV input after broadcast prep")
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "TurnkeyUiMainActivity approach failed: ${e.message}")
-                // Continue to last approach
+                android.util.Log.w("FLauncher", "URI-based activity approach failed: ${e.message}")
+                // Try plain broadcast approach as last resort
             }
             
-            // Approach 3: Using direct feature operation
+            // Approach 3: Simple broadcast-only approach similar to working launcher
             try {
-                val featureIntent = Intent("com.mediatek.intent.action.START_TV_FEATURE_OPERATION")
-                featureIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                featureIntent.putExtra("from_launcher", true)
-                featureIntent.putExtra("source_flag", 4)
-                featureIntent.putExtra("source_input_id", portNumber)
+                val inputIntent = Intent()
+                inputIntent.action = "tv.mediatek.intent.action.TV_INPUT"
                 
-                android.util.Log.d("FLauncher", "Trying START_TV_FEATURE_OPERATION with HDMI port: $portNumber")
-                startActivity(featureIntent)
+                // Critical MediaTek extras
+                inputIntent.putExtra("from_launcher", true)
+                inputIntent.putExtra("source_flag", 4)  
+                inputIntent.putExtra("source_input_id", portNumber)
+                
+                // Add flags for broadcast
+                inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                inputIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                
+                // First send a broadcast to initialize the system
+                sendBroadcast(inputIntent)
+                android.util.Log.d("FLauncher", "Sent TV input broadcast for port: $portNumber")
                 return true
             } catch (e: Exception) {
                 android.util.Log.e("FLauncher", "All TV input launch methods failed")
