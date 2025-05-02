@@ -30,11 +30,12 @@ import 'package:path_provider/path_provider.dart';
 class WallpaperService extends ChangeNotifier {
   final ImagePicker _imagePicker;
   final FLauncherChannel _fLauncherChannel;
-  final UnsplashService _unsplashService;
+  final UnsplashService? _unsplashService;
   late SettingsService _settingsService;
 
   late final File _wallpaperFile;
   Uint8List? _wallpaper;
+  bool _initialized = false;
 
   Uint8List? get wallpaperBytes => _wallpaper;
 
@@ -46,15 +47,24 @@ class WallpaperService extends ChangeNotifier {
   set settingsService(SettingsService settingsService) => _settingsService = settingsService;
 
   WallpaperService(this._imagePicker, this._fLauncherChannel, this._unsplashService) {
+    debugPrint("WallpaperService: Initializing");
     _init();
   }
 
   Future<void> _init() async {
-    final directory = await getApplicationDocumentsDirectory();
-    _wallpaperFile = File("${directory.path}/wallpaper");
-    if (await _wallpaperFile.exists()) {
-      _wallpaper = await _wallpaperFile.readAsBytes();
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      _wallpaperFile = File("${directory.path}/wallpaper");
+      if (await _wallpaperFile.exists()) {
+        debugPrint("WallpaperService: Found existing wallpaper");
+        _wallpaper = await _wallpaperFile.readAsBytes();
+      } else {
+        debugPrint("WallpaperService: No existing wallpaper");
+      }
+      _initialized = true;
       notifyListeners();
+    } catch (e) {
+      debugPrint("WallpaperService: Error initializing - $e");
     }
   }
 
@@ -73,8 +83,13 @@ class WallpaperService extends ChangeNotifier {
   }
 
   Future<void> randomFromUnsplash(String query) async {
-    final photo = await _unsplashService.randomPhoto(query);
-    final bytes = await _unsplashService.downloadPhoto(photo);
+    if (_unsplashService == null) {
+      debugPrint("WallpaperService: UnsplashService not available");
+      return;
+    }
+    
+    final photo = await _unsplashService!.randomPhoto(query);
+    final bytes = await _unsplashService!.downloadPhoto(photo);
     await _wallpaperFile.writeAsBytes(bytes);
     _wallpaper = bytes;
     await _settingsService
@@ -82,10 +97,21 @@ class WallpaperService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<Photo>> searchFromUnsplash(String query) => _unsplashService.searchPhotos(query);
+  Future<List<Photo>> searchFromUnsplash(String query) {
+    if (_unsplashService == null) {
+      debugPrint("WallpaperService: UnsplashService not available");
+      return Future.value([]);
+    }
+    return _unsplashService!.searchPhotos(query);
+  }
 
   Future<void> setFromUnsplash(Photo photo) async {
-    final bytes = await _unsplashService.downloadPhoto(photo);
+    if (_unsplashService == null) {
+      debugPrint("WallpaperService: UnsplashService not available");
+      return;
+    }
+    
+    final bytes = await _unsplashService!.downloadPhoto(photo);
     await _wallpaperFile.writeAsBytes(bytes);
     _wallpaper = bytes;
     await _settingsService

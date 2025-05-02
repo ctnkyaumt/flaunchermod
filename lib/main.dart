@@ -38,46 +38,108 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Paint.enableDithering = true;
 
-  await Firebase.initializeApp();
-  final firebaseCrashlytics = FirebaseCrashlytics.instance;
+  debugPrint("FLauncher: Starting initialization");
 
-  FlutterError.onError = firebaseCrashlytics.recordFlutterError;
-  Isolate.current.addErrorListener(RawReceivePort((List<dynamic> pair) async => await firebaseCrashlytics.recordError(
-        pair.first,
-        pair.last as StackTrace,
-      )).sendPort);
+  try {
+    debugPrint("FLauncher: Initializing Firebase");
+    await Firebase.initializeApp();
+    debugPrint("FLauncher: Firebase initialized successfully");
+    
+    final firebaseCrashlytics = FirebaseCrashlytics.instance;
 
+    FlutterError.onError = firebaseCrashlytics.recordFlutterError;
+    Isolate.current.addErrorListener(RawReceivePort((List<dynamic> pair) async => await firebaseCrashlytics.recordError(
+          pair.first,
+          pair.last as StackTrace,
+        )).sendPort);
+
+    runZonedGuarded<void>(() async {
+      debugPrint("FLauncher: Initializing services");
+      
+      try {
+        final firebaseAnalytics = FirebaseAnalytics.instance;
+        debugPrint("FLauncher: Got Firebase Analytics instance");
+        
+        final sharedPreferences = await SharedPreferences.getInstance();
+        debugPrint("FLauncher: Got SharedPreferences instance");
+        
+        final imagePicker = ImagePicker();
+        final fLauncherChannel = FLauncherChannel();
+        
+        debugPrint("FLauncher: Initializing Firebase Remote Config");
+        final remoteConfig = await _initFirebaseRemoteConfig();
+        debugPrint("FLauncher: Firebase Remote Config initialized");
+        
+        debugPrint("FLauncher: Initializing database");
+        final fLauncherDatabase = FLauncherDatabase(connect());
+        debugPrint("FLauncher: Database initialized");
+        
+        debugPrint("FLauncher: Initializing Unsplash service");
+        final unsplashService = UnsplashService(
+          UnsplashClient(
+            settings: ClientSettings(
+              debug: kDebugMode,
+              credentials: AppCredentials(
+                accessKey: remoteConfig.getString("unsplash_access_key"),
+                secretKey: remoteConfig.getString("unsplash_secret_key"),
+              ),
+            ),
+          ),
+        );
+        debugPrint("FLauncher: Unsplash service initialized");
+        
+        debugPrint("FLauncher: Starting app");
+        runApp(
+          FLauncherApp(
+            sharedPreferences,
+            firebaseCrashlytics,
+            firebaseAnalytics,
+            imagePicker,
+            fLauncherChannel,
+            fLauncherDatabase,
+            unsplashService,
+            remoteConfig,
+          ),
+        );
+        debugPrint("FLauncher: App started");
+      } catch (e, stack) {
+        debugPrint("FLauncher: Error during service initialization: $e");
+        firebaseCrashlytics.recordError(e, stack);
+      }
+    }, (error, stack) {
+      debugPrint("FLauncher: Uncaught error: $error");
+      firebaseCrashlytics.recordError(error, stack);
+    });
+  } catch (e) {
+    debugPrint("FLauncher: Failed to initialize Firebase: $e");
+    _startWithoutFirebase();
+  }
+}
+
+void _startWithoutFirebase() {
+  debugPrint("FLauncher: Starting without Firebase");
   runZonedGuarded<void>(() async {
-    final firebaseAnalytics = FirebaseAnalytics.instance;
     final sharedPreferences = await SharedPreferences.getInstance();
     final imagePicker = ImagePicker();
     final fLauncherChannel = FLauncherChannel();
-    final remoteConfig = await _initFirebaseRemoteConfig();
+    
     final fLauncherDatabase = FLauncherDatabase(connect());
-    final unsplashService = UnsplashService(
-      UnsplashClient(
-        settings: ClientSettings(
-          debug: kDebugMode,
-          credentials: AppCredentials(
-            accessKey: remoteConfig.getString("unsplash_access_key"),
-            secretKey: remoteConfig.getString("unsplash_secret_key"),
-          ),
-        ),
-      ),
-    );
+    
     runApp(
       FLauncherApp(
         sharedPreferences,
-        firebaseCrashlytics,
-        firebaseAnalytics,
+        null, 
+        null, 
         imagePicker,
         fLauncherChannel,
         fLauncherDatabase,
-        unsplashService,
-        remoteConfig,
+        null, 
+        null, 
       ),
     );
-  }, firebaseCrashlytics.recordError);
+  }, (error, stack) {
+    debugPrint("FLauncher: Uncaught error in fallback mode: $error");
+  });
 }
 
 Future<FirebaseRemoteConfig> _initFirebaseRemoteConfig() async {

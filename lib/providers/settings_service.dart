@@ -34,10 +34,10 @@ const _unsplashAuthorKey = "unsplash_author";
 
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
-  final FirebaseCrashlytics _firebaseCrashlytics;
-  final FirebaseAnalytics _firebaseAnalytics;
+  final FirebaseCrashlytics? _firebaseCrashlytics;
+  final FirebaseAnalytics? _firebaseAnalytics;
   final FirebaseRemoteConfig _firebaseRemoteConfig;
-  late final Timer _remoteConfigRefreshTimer;
+  Timer? _remoteConfigRefreshTimer;
 
   bool get crashReportsEnabled => _sharedPreferences.getBool(_crashReportsEnabledKey) ?? true;
 
@@ -59,25 +59,32 @@ class SettingsService extends ChangeNotifier {
     this._firebaseAnalytics,
     this._firebaseRemoteConfig,
   ) {
-    _firebaseCrashlytics.setCrashlyticsCollectionEnabled(kReleaseMode && crashReportsEnabled);
-    _firebaseAnalytics.setAnalyticsCollectionEnabled(kReleaseMode && analyticsEnabled);
-    _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
+    // Initialize Firebase services if available
+    _firebaseCrashlytics?.setCrashlyticsCollectionEnabled(kReleaseMode && crashReportsEnabled);
+    _firebaseAnalytics?.setAnalyticsCollectionEnabled(kReleaseMode && analyticsEnabled);
+    
+    // Only set up remote config timer if Firebase is available
+    if (_firebaseRemoteConfig != null) {
+      _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
+    }
+    
+    debugPrint("SettingsService initialized");
   }
 
   @override
   void dispose() {
-    _remoteConfigRefreshTimer.cancel();
+    _remoteConfigRefreshTimer?.cancel();
     super.dispose();
   }
 
   Future<void> setCrashReportsEnabled(bool value) async {
-    _firebaseCrashlytics.setCrashlyticsCollectionEnabled(kReleaseMode && value);
+    _firebaseCrashlytics?.setCrashlyticsCollectionEnabled(kReleaseMode && value);
     await _sharedPreferences.setBool(_crashReportsEnabledKey, value);
     notifyListeners();
   }
 
   Future<void> setAnalyticsEnabled(bool value) async {
-    _firebaseAnalytics.setAnalyticsCollectionEnabled(kReleaseMode && value);
+    _firebaseAnalytics?.setAnalyticsCollectionEnabled(kReleaseMode && value);
     await _sharedPreferences.setBool(_analyticsEnabledKey, value);
     notifyListeners();
   }

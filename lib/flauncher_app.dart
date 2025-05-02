@@ -37,13 +37,13 @@ import 'flauncher_channel.dart';
 
 class FLauncherApp extends StatelessWidget {
   final SharedPreferences _sharedPreferences;
-  final FirebaseCrashlytics _firebaseCrashlytics;
-  final FirebaseAnalytics _firebaseAnalytics;
+  final FirebaseCrashlytics? _firebaseCrashlytics;
+  final FirebaseAnalytics? _firebaseAnalytics;
   final ImagePicker _imagePicker;
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _fLauncherDatabase;
-  final UnsplashService _unsplashService;
-  final FirebaseRemoteConfig _firebaseRemoteConfig;
+  final UnsplashService? _unsplashService;
+  final FirebaseRemoteConfig? _firebaseRemoteConfig;
 
   static const MaterialColor _swatch = MaterialColor(0xFF011526, <int, Color>{
     50: Color(0xFF36A0FA),
@@ -74,7 +74,7 @@ class FLauncherApp extends StatelessWidget {
         providers: [
           ChangeNotifierProvider(
               create: (_) =>
-                  SettingsService(_sharedPreferences, _firebaseCrashlytics, _firebaseAnalytics, _firebaseRemoteConfig),
+                  SettingsService(_sharedPreferences, _firebaseCrashlytics, _firebaseAnalytics, _firebaseRemoteConfig ?? FirebaseRemoteConfig.instance),
               lazy: false),
           ChangeNotifierProvider(create: (_) => AppsService(_fLauncherChannel, _fLauncherDatabase)),
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(
