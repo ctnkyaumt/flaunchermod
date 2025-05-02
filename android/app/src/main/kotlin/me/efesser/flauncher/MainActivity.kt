@@ -297,50 +297,69 @@ class MainActivity : FlutterActivity() {
         
         // Try different approaches to launch TV input
         return try {
-            // Approach 1: Standard TV Input Framework approach
+            // Use a more direct approach for MediaTek devices
+            // First, try to get the actual component for the TV input service
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+            val tvInputInfo = tvInputManager.getTvInputInfo(inputId)
             
-            // Approach 2: Using MediaTek-specific intent for TV inputs
-            // This is the most likely to work on MediaTek-based TVs
-            val mtkIntent = Intent()
-            mtkIntent.action = "com.mediatek.intent.action.TV_INPUT"
-            mtkIntent.putExtra("input_id", inputId)
-            mtkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (tvInputInfo != null) {
+                android.util.Log.d("FLauncher", "Found TV input info: ${tvInputInfo.id}, service: ${tvInputInfo.serviceInfo.name}")
+                
+                // Try using component-specific intent
+                val componentName = ComponentName(tvInputInfo.serviceInfo.packageName, tvInputInfo.serviceInfo.name)
+                val componentIntent = Intent()
+                componentIntent.component = componentName
+                componentIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                
+                try {
+                    android.util.Log.d("FLauncher", "Trying component-specific intent: $componentName")
+                    startActivity(componentIntent)
+                    return true
+                } catch (e: Exception) {
+                    android.util.Log.e("FLauncher", "Component intent failed: ${e.message}")
+                }
+            }
             
+            // Try the most common approach for MediaTek TVs - using TvView
             try {
-                android.util.Log.d("FLauncher", "Trying MediaTek specific intent")
+                // For MediaTek TVs, we need a special intent
+                val mtkIntent = Intent()
+                mtkIntent.action = "android.intent.action.VIEW"
+                mtkIntent.component = ComponentName(
+                    "com.mediatek.wwtv.tvcenter",
+                    "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity")
+                mtkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                
+                // Add HDMI input info
+                mtkIntent.putExtra("from_where", "other_app_to_live_tv")
+                mtkIntent.putExtra("input_source_type", "hdmi")
+                mtkIntent.putExtra("tv_input_id", inputId)
+                
+                android.util.Log.d("FLauncher", "Trying MediaTek TV Center intent with TV input ID: $inputId")
                 startActivity(mtkIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "MediaTek intent failed: ${e.message}")
+                android.util.Log.e("FLauncher", "MediaTek TV Center intent failed: ${e.message}")
                 
-                // Approach 3: Standard Android TV input URI
-                val standardIntent = Intent(Intent.ACTION_VIEW)
-                standardIntent.data = Uri.parse("tvinput://$inputId")
-                standardIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Try generic system intent as last resort
+                val systemIntent = Intent(Intent.ACTION_MAIN)
+                systemIntent.addCategory(Intent.CATEGORY_HOME)
+                systemIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 
                 try {
-                    android.util.Log.d("FLauncher", "Trying standard TV input URI")
-                    startActivity(standardIntent)
+                    startActivity(systemIntent)
+                    android.util.Log.d("FLauncher", "Launched HOME intent as fallback")
+                    // Usually returning to HOME first, then trying again works better
+                    Thread.sleep(500)
+                    // Try original intent again
+                    val viewIntent = Intent(Intent.ACTION_VIEW)
+                    viewIntent.data = Uri.parse("tvinput://$inputId")
+                    viewIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    startActivity(viewIntent)
                     return true
                 } catch (e2: Exception) {
-                    android.util.Log.e("FLauncher", "Standard TV input URI failed: ${e2.message}")
-                    
-                    // Approach 4: Another common intent for input switching
-                    val alternateIntent = Intent()
-                    alternateIntent.action = "android.intent.action.VIEW"
-                    alternateIntent.data = Uri.parse("tvinput://$inputId")
-                    alternateIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    alternateIntent.addCategory(Intent.CATEGORY_LAUNCHER)
-                    
-                    try {
-                        android.util.Log.d("FLauncher", "Trying alternate intent with category")
-                        startActivity(alternateIntent)
-                        return true
-                    } catch (e3: Exception) {
-                        android.util.Log.e("FLauncher", "All TV input launch methods failed")
-                        false
-                    }
+                    android.util.Log.e("FLauncher", "All TV input launch methods failed")
+                    return false
                 }
             }
         } catch (e: Exception) {
