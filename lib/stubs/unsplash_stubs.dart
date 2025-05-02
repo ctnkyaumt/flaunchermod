@@ -81,14 +81,17 @@ class Urls {
 
 // Enums
 class PhotoOrientation {
+  const PhotoOrientation();
   static const landscape = PhotoOrientation();
 }
 
 class ResizeFitMode {
+  const ResizeFitMode();
   static const clip = ResizeFitMode();
 }
 
 class ImageFormat {
+  const ImageFormat();
   static const jpg = ImageFormat();
 }
 

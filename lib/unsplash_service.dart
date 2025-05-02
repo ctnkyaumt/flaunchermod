@@ -30,9 +30,8 @@ class UnsplashService {
   Future<Photo> randomPhoto(String query) async {
     try {
       final photo = await _unsplashClient.photos
-          .random(query: query, orientation: unsplash.PhotoOrientation.landscape)
-          .goAndGet();
-      return _buildPhoto(photo);
+          .random(query: query, orientation: unsplash.PhotoOrientation.landscape);
+      return _buildPhoto(await photo.goAndGet());
     } catch (e) {
       return Photo('dummy', 'No Unsplash Available', 
          Uri.parse('https://example.com'), 
@@ -43,10 +42,10 @@ class UnsplashService {
 
   Future<List<Photo>> searchPhotos(String query) async {
     try {
-      final photos = await _unsplashClient.photos
-          .random(query: query, orientation: unsplash.PhotoOrientation.landscape, count: 30)
-          .goAndGet();
+      final response = await _unsplashClient.photos
+          .random(query: query, orientation: unsplash.PhotoOrientation.landscape, count: 30);
       
+      final photos = await response.goAndGet();
       return [_buildPhoto(photos)];
     } catch (e) {
       return []; 

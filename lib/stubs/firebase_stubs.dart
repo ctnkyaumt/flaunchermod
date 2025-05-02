@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'package:flutter/widgets.dart';
+
 // Stub classes to replace Firebase dependencies
 
 class FirebaseCrashlytics {
@@ -42,7 +44,7 @@ class FirebaseAnalytics {
   }
 }
 
-class FirebaseAnalyticsObserver {
+class FirebaseAnalyticsObserver extends NavigatorObserver {
   FirebaseAnalyticsObserver({required FirebaseAnalytics analytics}) {
     // Do nothing
   }
