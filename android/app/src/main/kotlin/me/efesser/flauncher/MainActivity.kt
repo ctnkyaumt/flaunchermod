@@ -33,6 +33,7 @@ import android.provider.Settings
 import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
+import android.media.tv.TvInputManager.TvInputCallback
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -48,7 +49,7 @@ private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
 
 class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
-    private var tvInputCallback: TvInputManager.Callback? = null
+    private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -114,10 +115,10 @@ class MainActivity : FlutterActivity() {
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
 
             override fun onListen(arguments: Any?, events: EventSink) {
-                tvInputCallback = object : TvInputManager.Callback() {
+                tvInputCallback = object : TvInputCallback() {
                     override fun onInputAdded(inputId: String) {
-                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
-                            events.success(mapOf("action" to "INPUT_ADDED", "inputInfo" to buildTvInputMap(it)))
+                        getTvInputInfo(inputId)?.takeIf { inputInfo -> inputInfo.type == TvInputInfo.TYPE_HDMI }?.let { inputInfo ->
+                            events.success(mapOf("action" to "INPUT_ADDED", "inputInfo" to buildTvInputMap(inputInfo)))
                         }
                     }
 
@@ -127,14 +128,14 @@ class MainActivity : FlutterActivity() {
                     }
 
                     override fun onInputUpdated(inputId: String) {
-                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
-                            events.success(mapOf("action" to "INPUT_UPDATED", "inputInfo" to buildTvInputMap(it)))
+                        getTvInputInfo(inputId)?.takeIf { inputInfo -> inputInfo.type == TvInputInfo.TYPE_HDMI }?.let { inputInfo ->
+                            events.success(mapOf("action" to "INPUT_UPDATED", "inputInfo" to buildTvInputMap(inputInfo)))
                         }
                     }
 
                     override fun onInputStateChanged(inputId: String, state: Int) {
                         // Could be useful later, e.g., to show if an input is active
-                        getTvInputInfo(inputId)?.takeIf { it.type == TvInputInfo.TYPE_HDMI }?.let {
+                        getTvInputInfo(inputId)?.takeIf { inputInfo -> inputInfo.type == TvInputInfo.TYPE_HDMI }?.let { inputInfo ->
                             events.success(mapOf("action" to "INPUT_STATE_CHANGED", "inputId" to inputId, "state" to state))
                         }
                     }
@@ -293,8 +294,8 @@ class MainActivity : FlutterActivity() {
         if (inputId == null) return false
         return try {
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
-            val inputUri = TvInputInfo.buildInputUri(inputId)
-            val intent = Intent(Intent.ACTION_VIEW, inputUri)
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.data = Uri.parse("tvinput://$inputId")
             startActivity(intent)
             true
         } catch (e: Exception) {
