@@ -46,8 +46,9 @@ secretProperties.setProperty("signing_key_alias", "${System.getenv('SIGNING_KEY_
 
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
-apply plugin: 'com.google.gms.google-services'
-apply plugin: 'com.google.firebase.crashlytics'
+// Remove Firebase plugins
+// apply plugin: 'com.google.gms.google-services'
+// apply plugin: 'com.google.firebase.crashlytics'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
@@ -87,10 +88,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
 
-            // Disable Crashlytics mapping file upload for release builds
-            firebaseCrashlytics {
-                mappingFileUploadEnabled false
-            }
+            // Disable Crashlytics
+            // firebaseCrashlytics {
+            //     mappingFileUploadEnabled false
+            // }
         }
     }
 }

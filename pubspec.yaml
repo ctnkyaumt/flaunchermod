@@ -11,10 +11,11 @@ dependencies:
   flutter:
     sdk: flutter
 
-  firebase_analytics: ^10.1.4
-  firebase_core: ^2.7.0
-  firebase_crashlytics: ^3.0.15
-  firebase_remote_config: ^3.0.13
+  # Commenting out Firebase dependencies to fix startup crash
+  # firebase_analytics: ^10.1.4
+  # firebase_core: ^2.7.0
+  # firebase_crashlytics: ^3.0.15
+  # firebase_remote_config: ^3.0.13
   image_picker: ^0.8.6+3
   intl: ^0.18.0
   drift: ^2.5.0
@@ -23,7 +24,7 @@ dependencies:
   provider: ^6.0.5
   shared_preferences: ^2.0.18
   sqlite3_flutter_libs: ^0.5.13
-  unsplash_client: ^2.1.0+3
+  # unsplash_client: ^2.1.0+3  # This depends on Firebase
   webview_flutter: ^4.0.5
 
 dev_dependencies:
