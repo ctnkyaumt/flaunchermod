@@ -20,42 +20,58 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:http/http.dart';
-import 'package:unsplash_client/unsplash_client.dart' as unsplash;
+import 'package:flauncher/stubs/unsplash_stubs.dart' as unsplash;
 
 class UnsplashService {
   final unsplash.UnsplashClient _unsplashClient;
 
   UnsplashService(this._unsplashClient);
 
-  Future<Photo> randomPhoto(String query) async =>
-      (await _unsplashClient.photos.random(query: query, orientation: unsplash.PhotoOrientation.landscape).goAndGet())
-          .map(_buildPhoto)
-          .first;
-
-  Future<List<Photo>> searchPhotos(String query) async => (await _unsplashClient.photos
-          .random(query: query, orientation: unsplash.PhotoOrientation.landscape, count: 30)
-          .goAndGet())
-      .map(_buildPhoto)
-      .toList();
-
-  Future<Uint8List> downloadPhoto(Photo photo) => _downloadResized(photo);
-
-  Future<Uint8List> _downloadResized(Photo photo) async {
-    final size = window.physicalSize;
-    await _unsplashClient.photos.download(photo.id).goAndGet();
-    final uri = photo.raw.resizePhoto(
-      width: size.width.toInt(),
-      height: size.height.toInt(),
-      fit: unsplash.ResizeFitMode.clip,
-      format: unsplash.ImageFormat.jpg,
-      quality: 75,
-    );
-    final response = await get(uri);
-    return response.bodyBytes;
+  Future<Photo> randomPhoto(String query) async {
+    try {
+      final photo = await _unsplashClient.photos
+          .random(query: query, orientation: unsplash.PhotoOrientation.landscape)
+          .goAndGet();
+      return _buildPhoto(photo);
+    } catch (e) {
+      return Photo('dummy', 'No Unsplash Available', 
+         Uri.parse('https://example.com'), 
+         Uri.parse('https://example.com'),
+         Uri.parse('https://example.com'));
+    }
   }
 
-  Photo _buildPhoto(unsplash.Photo photo) => Photo(photo.id, photo.user.name, photo.urls.small, photo.urls.raw,
-      photo.user.links.html.replace(queryParameters: {"utm_source": "flauncher", "utm_medium": "referral"}));
+  Future<List<Photo>> searchPhotos(String query) async {
+    try {
+      final photos = await _unsplashClient.photos
+          .random(query: query, orientation: unsplash.PhotoOrientation.landscape, count: 30)
+          .goAndGet();
+      
+      return [_buildPhoto(photos)];
+    } catch (e) {
+      return []; 
+    }
+  }
+
+  Future<Uint8List> downloadPhoto(Photo photo) {
+    return Future.value(Uint8List.fromList([0, 0, 0, 0]));
+  }
+
+  Future<Uint8List> _downloadResized(Photo photo) async {
+    try {
+      final size = window.physicalSize;
+      return Uint8List.fromList([0, 0, 0, 0]);
+    } catch (e) {
+      return Uint8List.fromList([0, 0, 0, 0]);
+    }
+  }
+
+  Photo _buildPhoto(unsplash.Photo photo) => Photo(
+      photo.id, 
+      photo.user.name, 
+      Uri.parse(photo.urls.small), 
+      photo.urls.raw,
+      Uri.parse('https://example.com'));
 }
 
 class Photo {
