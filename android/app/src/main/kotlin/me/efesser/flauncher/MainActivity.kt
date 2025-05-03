@@ -318,48 +318,50 @@ class MainActivity : FlutterActivity() {
                 else -> inputId.split("/").lastOrNull()?.toIntOrNull() ?: 1
             }
             
-            android.util.Log.d("FLauncher", "HDMI port number detected: $portNumber for input: $inputName")
+            // MediaTek internal source values:
+            // 23 = HDMI1, 24 = HDMI2, 25 = HDMI3, 26 = HDMI4 (based on log analysis)
+            val mtSourceValue = 22 + portNumber
             
-            // Initialize required MediaTek services first
+            // MediaTek specific TV input service method
             try {
-                // Start MediaTek TV Input Service (crucial for input switching)
-                val serviceIntent = Intent()
-                serviceIntent.component = ComponentName(
-                    "com.mediatek.tvinput", 
-                    "com.mediatek.tvinput.services.MediaTekTvInputService"
-                )
-                startService(serviceIntent)
+                // First approach: Use MediaTek's TV service to directly set input source
+                val tvServiceClass = Class.forName("com.mediatek.twoworlds.tv.MtkTvConfig")
+                val getInstance = tvServiceClass.getMethod("getInstance")
+                val tvConfig = getInstance.invoke(null)
                 
-                // Initialize TVService
-                val tvServiceIntent = Intent()
-                tvServiceIntent.setAction("com.mediatek.intent.action.TV_SERVICE")
-                tvServiceIntent.putExtra("init_tv_service", true)
-                sendBroadcast(tvServiceIntent)
+                // Set input source directly through MediaTek API
+                val cfgClass = tvConfig.javaClass
+                val setInputSourceMethod = cfgClass.getMethod("setInputSource", Int::class.java)
                 
-                // Short delay to let services initialize
-                Thread.sleep(100)
+                android.util.Log.d("FLauncher", "Setting MediaTek input source directly to $mtSourceValue for port $portNumber")
+                setInputSourceMethod.invoke(tvConfig, mtSourceValue)
+                
+                // Success - direct API call worked
+                return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "Service initialization failed: ${e.message}")
-                // Continue anyway, the services might already be running
+                android.util.Log.w("FLauncher", "MediaTek direct API call failed: ${e.message}")
+                // Continue with other approaches
             }
             
-            // Direct approach for MediaTek tvlauncher
+            // Second approach: Use Intent with feature operation action
             try {
                 val featureIntent = Intent("com.mediatek.intent.action.START_TV_FEATURE_OPERATION")
+                featureIntent.putExtra("feature_operation_type", "tv_input")
+                featureIntent.putExtra("input_source_type", 4) // HDMI type
+                featureIntent.putExtra("input_source_port", portNumber)
+                featureIntent.putExtra("mtk_input_source", mtSourceValue)
                 featureIntent.putExtra("from_launcher", true)
-                featureIntent.putExtra("feature_type", "SOURCE") 
-                featureIntent.putExtra("source_type", 4) // HDMI
-                featureIntent.putExtra("port_num", portNumber)
-                featureIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 
+                android.util.Log.d("FLauncher", "Trying MediaTek feature operation intent for source $mtSourceValue")
+                sendBroadcast(featureIntent)
+                featureIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(featureIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "Feature operation approach failed: ${e.message}")
-                // Try TurnkeyUiMainActivity approach
+                android.util.Log.w("FLauncher", "MediaTek feature operation intent failed: ${e.message}")
             }
             
-            // Primary approach for MediaTek TVs: Component launch with proper extras
+            // Third approach: Try TurnkeyUiMainActivity with extended parameters
             try {
                 val activityIntent = Intent().apply {
                     component = ComponentName(
@@ -367,53 +369,36 @@ class MainActivity : FlutterActivity() {
                         "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity"
                     )
                     // Critical MediaTek TV extras
-                    putExtra("from_launcher", true) // Critical to prevent black screens
-                    putExtra("source_flag", 4)  // 4 indicates HDMI source type
+                    putExtra("from_launcher", true)
+                    putExtra("source_flag", 4)
                     putExtra("source_input_id", portNumber)
-                    // Force direct input port selection regardless of active connection
                     putExtra("force_input_selection", true)
                     putExtra("ignore_active_detection", true)
-                    putExtra("external_source_flag", portNumber) // Alternate source flag
-                    // The specific port ID as used by the system
-                    val tvPortId = 24 + portNumber // MediaTek HDMI ports typically use base 24 (HDMI1=25, HDMI2=26, etc.)
-                    putExtra("tv_input_port_id", tvPortId)
+                    putExtra("mtk_input_source", mtSourceValue) // Specific MediaTek source ID
+                    putExtra("tv_input_port_id", mtSourceValue)
+                    putExtra("set_input_directly", true)
                     
+                    // Add flags
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 
-                android.util.Log.d("FLauncher", "Launching TurnkeyUiMainActivity with extras: from_launcher=true, source_flag=4, source_input_id=$portNumber, tv_input_port_id=${24+portNumber}")
+                // First send a broadcast to prepare the system
+                val prepIntent = Intent("tv.mediatek.intent.action.TV_INPUT")
+                prepIntent.putExtra("from_launcher", true)
+                prepIntent.putExtra("source_flag", 4)
+                prepIntent.putExtra("source_input_id", portNumber)
+                prepIntent.putExtra("mtk_input_source", mtSourceValue)
+                sendBroadcast(prepIntent)
+                
+                // Short delay to allow broadcast to be processed
+                Thread.sleep(100)
+                
+                // Then start activity
+                android.util.Log.d("FLauncher", "Starting TurnkeyUiMainActivity with mtk_input_source=$mtSourceValue")
                 startActivity(activityIntent)
                 return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "Direct component intent failed: ${e.message}")
-                // Try broadcast approach
-            }
-            
-            // Alternative approach: Global action broadcast
-            try {
-                val inputIntent = Intent("tv.mediatek.intent.action.TV_INPUT")
-                // Critical MediaTek extras
-                inputIntent.putExtra("from_launcher", true)
-                inputIntent.putExtra("source_flag", 4)  
-                inputIntent.putExtra("source_input_id", portNumber)
-                // Force direct input port selection regardless of active connection
-                inputIntent.putExtra("force_input_selection", true)
-                inputIntent.putExtra("ignore_active_detection", true)
-                inputIntent.putExtra("external_source_flag", portNumber)
-                // The specific port ID as used by the system
-                val tvPortId = 24 + portNumber // MediaTek HDMI ports typically use base 24 (HDMI1=25, HDMI2=26, etc.)
-                inputIntent.putExtra("tv_input_port_id", tvPortId)
-                
-                inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                
-                // Send intent as broadcast first (some MediaTek TVs need this)
-                sendBroadcast(inputIntent)
-                
-                // Then start as activity
-                startActivity(inputIntent)
-                return true
-            } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "Global action approach failed: ${e.message}")
+                android.util.Log.e("FLauncher", "All TV input launch methods failed")
                 e.printStackTrace()
                 return false
             }
