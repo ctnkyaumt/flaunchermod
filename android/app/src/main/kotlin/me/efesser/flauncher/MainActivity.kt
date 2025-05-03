@@ -331,10 +331,18 @@ class MainActivity : FlutterActivity() {
                     putExtra("from_launcher", true)
                     putExtra("source_flag", 4)  // 4 indicates HDMI source type
                     putExtra("source_input_id", portNumber)
+                    // Force direct input port selection regardless of active connection
+                    putExtra("force_input_selection", true)
+                    putExtra("ignore_active_detection", true)
+                    putExtra("external_source_flag", portNumber) // Alternate source flag
+                    // The specific port ID as used by the system
+                    val tvPortId = 24 + portNumber // MediaTek HDMI ports typically use base 24 (HDMI1=25, HDMI2=26, etc.)
+                    putExtra("tv_input_port_id", tvPortId)
+                    
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 
-                android.util.Log.d("FLauncher", "Launching TurnkeyUiMainActivity with extras: from_launcher=true, source_flag=4, source_input_id=$portNumber")
+                android.util.Log.d("FLauncher", "Launching TurnkeyUiMainActivity with extras: from_launcher=true, source_flag=4, source_input_id=$portNumber, tv_input_port_id=${24+portNumber}")
                 startActivity(activityIntent)
                 return true
             } catch (e: Exception) {
@@ -349,6 +357,14 @@ class MainActivity : FlutterActivity() {
                 inputIntent.putExtra("from_launcher", true)
                 inputIntent.putExtra("source_flag", 4)  
                 inputIntent.putExtra("source_input_id", portNumber)
+                // Force direct input port selection regardless of active connection
+                inputIntent.putExtra("force_input_selection", true)
+                inputIntent.putExtra("ignore_active_detection", true)
+                inputIntent.putExtra("external_source_flag", portNumber)
+                // The specific port ID as used by the system
+                val tvPortId = 24 + portNumber // MediaTek HDMI ports typically use base 24 (HDMI1=25, HDMI2=26, etc.)
+                inputIntent.putExtra("tv_input_port_id", tvPortId)
+                
                 inputIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 
                 // Send intent as broadcast first (some MediaTek TVs need this)
