@@ -319,8 +319,17 @@ class MainActivity : FlutterActivity() {
             }
             
             // MediaTek internal source values:
-            // 23 = HDMI1, 24 = HDMI2, 25 = HDMI3, 26 = HDMI4 (based on log analysis)
-            val mtSourceValue = 22 + portNumber
+            // Based on user testing:
+            // 23 = HDMI1, 25 = HDMI2, 24 = HDMI3 (MediaTek mapping is non-linear)
+            val mtSourceValue = when (portNumber) {
+                1 -> 23  // HDMI1
+                2 -> 25  // HDMI2 
+                3 -> 24  // HDMI3
+                4 -> 26  // HDMI4 (assumed, not verified)
+                else -> 23  // Default to HDMI1
+            }
+            
+            android.util.Log.d("FLauncher", "Mapping HDMI$portNumber to MediaTek source ID: $mtSourceValue")
             
             // MediaTek specific TV input service method
             try {
