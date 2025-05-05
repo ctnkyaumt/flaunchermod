@@ -21,6 +21,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
 import '../flauncher_channel.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/ticker_model.dart';
@@ -274,7 +275,12 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     return FocusKeyboardListener(
       onPressed: (key) {
-        widget.onTap();
+        // Only respond to specific selection keys, ignore navigation keys
+        if (key == LogicalKeyboardKey.select || 
+            key == LogicalKeyboardKey.enter || 
+            key == LogicalKeyboardKey.gameButtonA) {
+          widget.onTap();
+        }
         return KeyEventResult.handled;
       },
       builder: (context) => AspectRatio(
