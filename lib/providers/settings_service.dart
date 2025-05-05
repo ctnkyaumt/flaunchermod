@@ -38,9 +38,9 @@ class SettingsService extends ChangeNotifier {
   final FirebaseRemoteConfig _firebaseRemoteConfig;
   Timer? _remoteConfigRefreshTimer;
 
-  bool get crashReportsEnabled => _sharedPreferences.getBool(_crashReportsEnabledKey) ?? true;
+  bool get crashReportsEnabled => false; // Always disabled
 
-  bool get analyticsEnabled => _sharedPreferences.getBool(_analyticsEnabledKey) ?? true;
+  bool get analyticsEnabled => false; // Always disabled
 
   bool get use24HourTimeFormat => _sharedPreferences.getBool(_use24HourTimeFormatKey) ?? true;
 
@@ -59,8 +59,7 @@ class SettingsService extends ChangeNotifier {
     this._firebaseRemoteConfig,
   ) {
     // Initialize Firebase services if available
-    _firebaseCrashlytics?.setCrashlyticsCollectionEnabled(kReleaseMode && crashReportsEnabled);
-    _firebaseAnalytics?.setAnalyticsCollectionEnabled(kReleaseMode && analyticsEnabled);
+    // Removed Firebase initialization
     
     // Only set up remote config timer if Firebase is available
     if (_firebaseRemoteConfig != null) {
@@ -77,14 +76,12 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setCrashReportsEnabled(bool value) async {
-    _firebaseCrashlytics?.setCrashlyticsCollectionEnabled(kReleaseMode && value);
-    await _sharedPreferences.setBool(_crashReportsEnabledKey, value);
+    // No-op - permanently disabled
     notifyListeners();
   }
 
   Future<void> setAnalyticsEnabled(bool value) async {
-    _firebaseAnalytics?.setAnalyticsCollectionEnabled(kReleaseMode && value);
-    await _sharedPreferences.setBool(_analyticsEnabledKey, value);
+    // No-op - permanently disabled
     notifyListeners();
   }
 

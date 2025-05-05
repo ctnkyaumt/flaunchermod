@@ -51,7 +51,6 @@ class _SettingsPanelState extends State<SettingsPanel> {
             child: Navigator(
               key: _navigatorKey,
               initialRoute: widget.initialRoute ?? SettingsPanelPage.routeName,
-              observers: [if (kReleaseMode) FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance)],
               onGenerateRoute: (settings) {
                 switch (settings.name) {
                   case SettingsPanelPage.routeName:
