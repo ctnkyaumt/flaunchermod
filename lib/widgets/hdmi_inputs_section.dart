@@ -1,6 +1,8 @@
 /*
  * FLauncher
- * Copyright (C) 2021-2025 Étienne Fesser & Cascade
+ * Copyright (C) 2021-2025 Étienne Fesser 
+ *
+ * 2025 ctnkyaumt & Cascade
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -271,7 +273,10 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return FocusKeyboardListener(
-      onPressed: (key) => widget.onTap(),
+      onPressed: (key) {
+        widget.onTap();
+        return KeyEventResult.handled;
+      },
       builder: (context) => AspectRatio(
         aspectRatio: 16 / 9,
         child: AnimatedContainer(
