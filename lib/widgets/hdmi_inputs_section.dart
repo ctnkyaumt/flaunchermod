@@ -20,6 +20,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
 import '../flauncher_channel.dart';
+import 'package:flauncher/providers/settings_service.dart';
+import 'package:flauncher/providers/ticker_model.dart';
+import 'package:flauncher/widgets/color_helpers.dart';
+import 'package:flauncher/widgets/focus_keyboard_listener.dart';
+import 'package:flauncher/widgets/ensure_visible.dart';
 
 class HdmiInput {
   final String id;
@@ -34,6 +39,16 @@ class HdmiInput {
       name: map['name'] as String? ?? 'Unknown Input',
       // Parse icon if available: map['icon'] != null ? Uint8List.fromList(List<int>.from(map['icon'])) : null,
     );
+  }
+  
+  // Extract numeric value for sorting
+  int get numericOrder {
+    final RegExp regExp = RegExp(r'(\d+)');
+    final match = regExp.firstMatch(name);
+    if (match != null) {
+      return int.tryParse(match.group(1) ?? '0') ?? 0;
+    }
+    return 0;
   }
 }
 
@@ -131,8 +146,8 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
             break;
           // INPUT_STATE_CHANGED is ignored for now
         }
-        // Sort inputs maybe? e.g., by name
-        _hdmiInputs.sort((a, b) => a.name.compareTo(b.name));
+        // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
+        _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
       });
     }, onError: (error) {
       // Handle stream errors if necessary
@@ -148,52 +163,198 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       // Show placeholder or loading indicator for the section height
-      return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()));
+      return const SizedBox(height: 150, child: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
-      return SizedBox(height: 100, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
+      return SizedBox(height: 150, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
     }
 
     if (_hdmiInputs.isEmpty) {
-      return const SizedBox(height: 100, child: Center(child: Text('No HDMI inputs detected.')));
+      return const SizedBox(height: 150, child: Center(child: Text('No HDMI inputs detected.')));
     }
 
-    return Container(
-      height: 100, // Adjust height as needed
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _hdmiInputs.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final input = _hdmiInputs[index];
-          return AspectRatio(
-            aspectRatio: 16 / 9, // Or adjust aspect ratio
-            child: Card(
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () {
-                  _channel.launchTvInput(input.id);
-                  // Optionally show feedback
-                },
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    // TODO: Add icon if available?
-                    child: Text(
-                      input.name,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+    // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
+    _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: 16, bottom: 8),
+          child: Text(
+            "HDMI Inputs",
+            style: Theme.of(context).textTheme.titleLarge!.copyWith(
+              shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)]
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 150,
+          child: ListView.custom(
+            padding: EdgeInsets.all(8),
+            scrollDirection: Axis.horizontal,
+            childrenDelegate: SliverChildBuilderDelegate(
+              (context, index) => EnsureVisible(
+                key: Key("hdmi-${_hdmiInputs[index].id}"),
+                alignment: 0.1,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: HdmiCard(
+                    input: _hdmiInputs[index],
+                    autofocus: index == 0,
+                    onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
                   ),
                 ),
               ),
+              childCount: _hdmiInputs.length,
+              findChildIndexCallback: (Key key) {
+                final keyValue = (key as ValueKey<String>).value;
+                return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
+              },
             ),
-          );
-        },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HdmiCard extends StatefulWidget {
+  final HdmiInput input;
+  final bool autofocus;
+  final VoidCallback onTap;
+
+  const HdmiCard({
+    Key? key,
+    required this.input,
+    required this.autofocus,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  _HdmiCardState createState() => _HdmiCardState();
+}
+
+class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin {
+  late final AnimationController _animation = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: 800),
+  );
+  Color _lastBorderColor = Colors.white;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation.addStatusListener((animationStatus) {
+      switch (animationStatus) {
+        case AnimationStatus.completed:
+          _animation.reverse();
+          break;
+        case AnimationStatus.dismissed:
+          _animation.forward();
+          break;
+        case AnimationStatus.forward:
+        case AnimationStatus.reverse:
+          // nothing to do
+          break;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusKeyboardListener(
+      onPressed: (key) => widget.onTap(),
+      builder: (context) => AspectRatio(
+        aspectRatio: 16 / 9,
+        child: AnimatedContainer(
+          duration: Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          transformAlignment: Alignment.center,
+          transform: _scaleTransform(context),
+          child: Material(
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            elevation: Focus.of(context).hasFocus ? 16 : 0,
+            shadowColor: Colors.black,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                InkWell(
+                  autofocus: widget.autofocus,
+                  focusColor: Colors.transparent,
+                  onTap: widget.onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.settings_input_hdmi, size: 40),
+                          SizedBox(height: 8),
+                          Text(
+                            widget.input.name,
+                            style: Theme.of(context).textTheme.bodyLarge,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    opacity: Focus.of(context).hasFocus ? 0 : 0.10,
+                    child: Container(color: Colors.black),
+                  ),
+                ),
+                Selector<SettingsService, bool>(
+                  selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
+                  builder: (context, appHighlightAnimationEnabled, __) {
+                    if (appHighlightAnimationEnabled) {
+                      _animation.forward();
+                      return AnimatedBuilder(
+                        animation: _animation,
+                        builder: (context, child) => IgnorePointer(
+                          child: AnimatedContainer(
+                            duration: Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            decoration: BoxDecoration(
+                              border: Focus.of(context).hasFocus
+                                  ? Border.all(
+                                      color: _lastBorderColor =
+                                          computeBorderColor(_animation.value, _lastBorderColor),
+                                      width: 3)
+                                  : null,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+                    _animation.stop();
+                    return SizedBox();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+  }
+
+  Matrix4 _scaleTransform(BuildContext context) {
+    final scale = Focus.of(context).hasFocus ? 1.1 : 1.0;
+    return Matrix4.diagonal3Values(scale, scale, 1.0);
   }
 }
