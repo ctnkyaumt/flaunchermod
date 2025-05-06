@@ -61,6 +61,7 @@ class MainActivity : FlutterActivity() {
                 "applicationExists" -> result.success(applicationExists(call.arguments as String))
                 "launchApp" -> result.success(launchApp(call.arguments as String))
                 "openSettings" -> result.success(openSettings())
+                "openWifiSettings" -> result.success(openWifiSettings())
                 "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
                 "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
                 "isDefaultLauncher" -> result.success(isDefaultLauncher())
@@ -217,6 +218,13 @@ class MainActivity : FlutterActivity() {
 
     private fun openSettings() = try {
         startActivity(Intent(Settings.ACTION_SETTINGS))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun openWifiSettings() = try {
+        startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
         true
     } catch (e: Exception) {
         false
