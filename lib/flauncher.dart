@@ -112,64 +112,38 @@ class FLauncher extends StatelessWidget {
           // Spacer to push elements to the right
           Spacer(),
           
-          // Wi-Fi button with shadow effect
+          // Wi-Fi button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Shadow effect
-                Positioned(
-                  left: 2.0,
-                  top: 2.0,
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
-                    child: Icon(Icons.wifi, size: 40, color: Colors.black38),
-                  ),
-                ),
-                // Actual button
-                IconButton(
-                  padding: EdgeInsets.all(8),
-                  iconSize: 40,
-                  splashRadius: 28,
-                  icon: Icon(Icons.wifi, color: Colors.white),
-                  onPressed: () => context.read<AppsService>().openWifiSettings(),
-                ),
-              ],
+            child: IconButton(
+              padding: EdgeInsets.all(8),
+              iconSize: 36,
+              splashRadius: 24,
+              icon: Icon(Icons.wifi, color: Colors.white),
+              onPressed: () => context.read<AppsService>().openWifiSettings(),
             ),
           ),
           
-          // Settings button with shadow effect
+          // Settings button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Shadow effect
-                Positioned(
-                  left: 2.0,
-                  top: 2.0,
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
-                    child: Icon(Icons.settings_outlined, size: 40, color: Colors.black38),
-                  ),
-                ),
-                // Actual button
-                IconButton(
-                  padding: EdgeInsets.all(8),
-                  iconSize: 40,
-                  splashRadius: 28,
-                  icon: Icon(Icons.settings_outlined, color: Colors.white),
-                  onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
-                ),
-              ],
+            child: IconButton(
+              padding: EdgeInsets.all(8),
+              iconSize: 36,
+              splashRadius: 24,
+              icon: Icon(Icons.settings_outlined, color: Colors.white),
+              onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
             ),
           ),
           
           // Time display
           Container(
             margin: EdgeInsets.only(left: 16, right: 32),
-            child: TimeWidget(),
+            alignment: Alignment.center,
+            height: 56, // Match AppBar default height
+            child: Center(
+              child: TimeWidget(),
+            ),
           ),
         ],
       );
