@@ -109,6 +109,15 @@ class FLauncher extends StatelessWidget {
 
   AppBar _appBar(BuildContext context) => AppBar(
         actions: [
+          // Wi-Fi button
+          IconButton(
+            padding: EdgeInsets.all(2),
+            constraints: BoxConstraints(),
+            splashRadius: 20,
+            icon: Icon(Icons.wifi, size: 32, color: Colors.black54),
+            onPressed: () => context.read<AppsService>().openWifiSettings(),
+          ),
+          // Settings button
           Stack(
             alignment: Alignment.center,
             children: [
@@ -117,23 +126,27 @@ class FLauncher extends StatelessWidget {
                 top: 18.0,
                 child: ImageFiltered(
                   imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
-                  child: Icon(Icons.settings_outlined, color: Colors.black54),
+                  child: Icon(Icons.settings_outlined, size: 32, color: Colors.black54),
                 ),
               ),
               IconButton(
                 padding: EdgeInsets.all(2),
                 constraints: BoxConstraints(),
                 splashRadius: 20,
-                icon: Icon(Icons.settings_outlined),
+                icon: Icon(Icons.settings_outlined, size: 32),
                 onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
               ),
             ],
           ),
+          // Time display
           Padding(
             padding: EdgeInsets.only(left: 16, right: 32),
             child: Align(
               alignment: Alignment.center,
-              child: TimeWidget(),
+              child: Transform.scale(
+                scale: 1.3,
+                child: TimeWidget(),
+              ),
             ),
           ),
         ],
