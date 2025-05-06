@@ -109,45 +109,67 @@ class FLauncher extends StatelessWidget {
 
   AppBar _appBar(BuildContext context) => AppBar(
         actions: [
-          // Wi-Fi button
-          IconButton(
-            padding: EdgeInsets.all(2),
-            constraints: BoxConstraints(),
-            splashRadius: 20,
-            icon: Icon(Icons.wifi, size: 32, color: Colors.black54),
-            onPressed: () => context.read<AppsService>().openWifiSettings(),
-          ),
-          // Settings button
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Positioned(
-                left: 2.0,
-                top: 18.0,
-                child: ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
-                  child: Icon(Icons.settings_outlined, size: 32, color: Colors.black54),
-                ),
-              ),
-              IconButton(
-                padding: EdgeInsets.all(2),
-                constraints: BoxConstraints(),
-                splashRadius: 20,
-                icon: Icon(Icons.settings_outlined, size: 32),
-                onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
-              ),
-            ],
-          ),
-          // Time display
-          Padding(
-            padding: EdgeInsets.only(left: 16, right: 32),
-            child: Align(
+          // Spacer to push elements to the right
+          Spacer(),
+          
+          // Wi-Fi button with shadow effect
+          Container(
+            margin: EdgeInsets.symmetric(horizontal: 8),
+            child: Stack(
               alignment: Alignment.center,
-              child: Transform.scale(
-                scale: 1.3,
-                child: TimeWidget(),
-              ),
+              children: [
+                // Shadow effect
+                Positioned(
+                  left: 2.0,
+                  top: 2.0,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
+                    child: Icon(Icons.wifi, size: 40, color: Colors.black38),
+                  ),
+                ),
+                // Actual button
+                IconButton(
+                  padding: EdgeInsets.all(8),
+                  iconSize: 40,
+                  splashRadius: 28,
+                  icon: Icon(Icons.wifi, color: Colors.white),
+                  onPressed: () => context.read<AppsService>().openWifiSettings(),
+                ),
+              ],
             ),
+          ),
+          
+          // Settings button with shadow effect
+          Container(
+            margin: EdgeInsets.symmetric(horizontal: 8),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Shadow effect
+                Positioned(
+                  left: 2.0,
+                  top: 2.0,
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 2, sigmaY: 2, tileMode: TileMode.decal),
+                    child: Icon(Icons.settings_outlined, size: 40, color: Colors.black38),
+                  ),
+                ),
+                // Actual button
+                IconButton(
+                  padding: EdgeInsets.all(8),
+                  iconSize: 40,
+                  splashRadius: 28,
+                  icon: Icon(Icons.settings_outlined, color: Colors.white),
+                  onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
+                ),
+              ],
+            ),
+          ),
+          
+          // Time display
+          Container(
+            margin: EdgeInsets.only(left: 16, right: 32),
+            child: TimeWidget(),
           ),
         ],
       );
