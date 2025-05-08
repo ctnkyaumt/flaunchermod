@@ -1,0 +1,35 @@
+name: Static Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  static_analysis:
+    name: Run Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.7.5'  # Match pubspec.yaml
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run Flutter analyzer
+        run: flutter analyze
+
+      - name: Display recommended Dart fixes
+        run: dart fix --dry-run
+
+      - name: Check for unused code
+        run: |
+          dart pub global activate dart_code_metrics
+          dart_code_metrics metrics check-unused-code lib

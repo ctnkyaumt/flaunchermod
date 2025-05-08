@@ -1,8 +1,7 @@
 name: Build Release APK
 
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:
   pull_request:
     branches: [ main ] # Trigger on PRs to main
 
@@ -35,7 +34,7 @@ jobs:
       # Install Dependencies
       - name: Install Flutter dependencies
         run: flutter pub get
-        
+
       # Build Release APK
       - name: Build Release APK
         run: flutter build apk --release
