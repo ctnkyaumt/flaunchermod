@@ -35,9 +35,16 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      # Build Release APK
-      - name: Build Release APK
-        run: flutter build apk --release
+      # Extract version from pubspec.yaml
+      - name: Extract version
+        id: extract_version
+        run: |
+          VERSION=$(grep ^version pubspec.yaml | sed -E 's/^version: //' | cut -d+ -f1)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      # Build only ARM & ARM64 APKs
+      - name: Build Release APKs
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi
         env:
           # These secrets are used by Flutter build process via Gradle
           KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
@@ -46,9 +53,11 @@ jobs:
           # Explicitly point to the keystore file location might be needed depending on build.gradle setup
           # KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks 
           
-      # Upload Release APK artifact
-      - name: Upload Release APK Artifact
+      # Upload Release APK Artifacts
+      - name: Upload Release APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk # Path to the release APK
+          name: release-apks-${{ env.VERSION }}
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
