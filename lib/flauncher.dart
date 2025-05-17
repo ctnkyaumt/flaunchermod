@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -199,21 +200,48 @@ class FLauncher extends StatelessWidget {
             ),
             TextButton(
               onPressed: () async {
-                // Show a progress indicator while attempting to shutdown
+                // Close the confirmation dialog
                 Navigator.of(context).pop();
                 
-                // Show a loading dialog
+                // Show the shutdown progress dialog with a timeout
+                bool shutdownCompleted = false;
+                bool dialogDismissed = false;
+                
+                // Show a loading dialog with a forced shutdown option
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (BuildContext context) {
+                  builder: (BuildContext dialogContext) {
+                    // Start a timer to update the UI and eventually show force option
+                    int secondsElapsed = 0;
+                    Timer.periodic(Duration(seconds: 1), (timer) {
+                      if (shutdownCompleted || dialogDismissed) {
+                        timer.cancel();
+                        return;
+                      }
+                      
+                      secondsElapsed++;
+                      if (secondsElapsed >= 10 && dialogContext.mounted) {
+                        // After 10 seconds, if the dialog is still showing, dismiss it and show error
+                        timer.cancel();
+                        dialogDismissed = true;
+                        Navigator.of(dialogContext).pop();
+                        
+                        // Show the force shutdown option
+                        _showForceShutdownDialog(context);
+                      }
+                    });
+                    
                     return AlertDialog(
+                      title: Text('Shutting Down'),
                       content: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(),
                           SizedBox(height: 16),
-                          Text('Shutting down...'),
+                          Text('Attempting to shutdown the device...'),
+                          SizedBox(height: 8),
+                          Text('Please wait', style: TextStyle(fontStyle: FontStyle.italic)),
                         ],
                       ),
                     );
@@ -221,47 +249,58 @@ class FLauncher extends StatelessWidget {
                 );
                 
                 try {
-                  // Get the FLauncherChannel instance
+                  // Attempt to shut down using all available methods
                   final result = await context.read<AppsService>().fLauncherChannel.shutdownDevice();
+                  shutdownCompleted = true;
                   
-                  // If shutdown failed, show an error message
-                  if (!result) {
+                  // If we get here and the result is false, the shutdown failed
+                  if (!result && !dialogDismissed && context.mounted) {
+                    dialogDismissed = true;
+                    Navigator.of(context).pop(); // Close the loading dialog if it's still open
+                    
+                    // Show the force shutdown option
+                    _showForceShutdownDialog(context);
+                  }
+                  // If successful, the device should be shutting down now
+                } catch (e) {
+                  // Handle any exceptions
+                  if (!dialogDismissed && context.mounted) {
+                    dialogDismissed = true;
                     Navigator.of(context).pop(); // Close the loading dialog
+                    
+                    // Show error with force shutdown option
                     showDialog(
                       context: context,
                       builder: (BuildContext context) {
                         return AlertDialog(
-                          title: Text('Shutdown Failed'),
-                          content: Text('Unable to shutdown the device. The app may not have the required permissions.'),
+                          title: Text('Error'),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Failed to shutdown: ${e.toString()}'),
+                              SizedBox(height: 16),
+                              Text('Would you like to try force shutdown?'),
+                            ],
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.of(context).pop(),
-                              child: Text('OK'),
+                              child: Text('CANCEL'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                _attemptForceShutdown(context);
+                              },
+                              child: Text('FORCE SHUTDOWN'),
+                              style: TextButton.styleFrom(foregroundColor: Colors.red),
                             ),
                           ],
                         );
                       },
                     );
                   }
-                  // If successful, the device will shut down and this code won't execute further
-                } catch (e) {
-                  // Handle any exceptions
-                  Navigator.of(context).pop(); // Close the loading dialog
-                  showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text('Error'),
-                        content: Text('An error occurred: $e'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: Text('OK'),
-                          ),
-                        ],
-                      );
-                    },
-                  );
                 }
               },
               child: Text('SHUTDOWN'),
@@ -270,5 +309,111 @@ class FLauncher extends StatelessWidget {
         );
       },
     );
+  }
+  
+  /// Shows a dialog offering force shutdown options when normal shutdown fails
+  void _showForceShutdownDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Shutdown Failed'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('The device did not respond to normal shutdown commands.'),
+              SizedBox(height: 16),
+              Text('Would you like to try force shutdown? This may cause data loss but is more likely to work.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _attemptForceShutdown(context);
+              },
+              child: Text('FORCE SHUTDOWN'),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  /// Attempts more aggressive force shutdown methods
+  void _attemptForceShutdown(BuildContext context) {
+    // Show a progress dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Attempting force shutdown...'),
+              SizedBox(height: 8),
+              Text('This may take a few moments', style: TextStyle(fontStyle: FontStyle.italic)),
+            ],
+          ),
+        );
+      },
+    );
+    
+    // Try to force shutdown using all available methods
+    // This will call the same method but the native code will try more aggressive approaches
+    context.read<AppsService>().fLauncherChannel.shutdownDevice().then((success) {
+      // If we get here, the shutdown failed
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close the progress dialog
+        
+        // Show final error message
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Force Shutdown Failed'),
+              content: Text('Unable to force shutdown the device. You may need to manually power off the device using the physical power button.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    }).catchError((error) {
+      // Handle any exceptions
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close the progress dialog
+        
+        // Show error message
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('Error'),
+              content: Text('An error occurred during force shutdown: $error'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    });
   }
 }
