@@ -467,7 +467,10 @@ class MainActivity : FlutterActivity() {
             try {
                 android.util.Log.i("FLauncher", "Setting shutdown property")
                 val shutdownActionProperty = "sys.shutdown.requested"
-                android.os.SystemProperties.set(shutdownActionProperty, "0") // 0 means shutdown (not reboot)
+                // Use reflection to access SystemProperties since it's a hidden API
+                val systemPropertiesClass = Class.forName("android.os.SystemProperties")
+                val setMethod = systemPropertiesClass.getMethod("set", String::class.java, String::class.java)
+                setMethod.invoke(null, shutdownActionProperty, "0") // 0 means shutdown (not reboot)
             } catch (e: Exception) {
                 android.util.Log.e("FLauncher", "Failed to set shutdown property: ${e.message}")
             }
@@ -488,7 +491,8 @@ class MainActivity : FlutterActivity() {
             try {
                 android.util.Log.i("FLauncher", "Attempting ShutdownThread.shutdown")
                 val shutdownThreadClass = Class.forName("com.android.server.power.ShutdownThread")
-                val shutdownMethod = shutdownThreadClass.getDeclaredMethod("shutdown", Context::class.java, String::class.java, Boolean::class.java)
+                val contextClass = Class.forName("android.content.Context")
+                val shutdownMethod = shutdownThreadClass.getDeclaredMethod("shutdown", contextClass, String::class.java, Boolean::class.java)
                 shutdownMethod.isAccessible = true
                 shutdownMethod.invoke(null, this, "userrequested", false)
                 return true
@@ -544,9 +548,9 @@ class MainActivity : FlutterActivity() {
             
             // 4. Try standard Android shutdown intent
             try {
-                android.util.Log.i("FLauncher", "Attempting standard ACTION_REQUEST_SHUTDOWN intent")
-                val intent = Intent(Intent.ACTION_REQUEST_SHUTDOWN)
-                intent.putExtra(Intent.EXTRA_KEY_CONFIRM, false)
+                android.util.Log.i("FLauncher", "Attempting standard shutdown intent")
+                val intent = Intent("android.intent.action.ACTION_REQUEST_SHUTDOWN")
+                intent.putExtra("android.intent.extra.KEY_CONFIRM", false)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 startActivity(intent)
                 return true
