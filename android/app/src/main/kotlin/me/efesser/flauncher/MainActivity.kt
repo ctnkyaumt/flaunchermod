@@ -455,196 +455,150 @@ class MainActivity : FlutterActivity() {
 
     /**
      * Shutdown the device
-     * This uses both standard Android APIs and MediaTek specific methods to ensure
-     * the device properly shuts down instead of restarting
+     * This implementation is based on Android's ShutdownThread implementation
+     * to properly shut down the device instead of restarting it
      */
     private fun shutdownDevice(): Boolean {
-        android.util.Log.d("FLauncher", "Attempting to shutdown device")
+        android.util.Log.d("FLauncher", "Attempting to shutdown device using system methods")
         
         try {
-            // More aggressive approach for MediaTek TVs
+            // Set the shutdown property that Android system checks
+            // This is equivalent to what ShutdownThread does
+            try {
+                android.util.Log.i("FLauncher", "Setting shutdown property")
+                val shutdownActionProperty = "sys.shutdown.requested"
+                android.os.SystemProperties.set(shutdownActionProperty, "0") // 0 means shutdown (not reboot)
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "Failed to set shutdown property: ${e.message}")
+            }
+            
+            // 1. Try to use the PowerManagerService directly through reflection
+            try {
+                android.util.Log.i("FLauncher", "Attempting PowerManagerService.lowLevelShutdown")
+                val powerManagerServiceClass = Class.forName("com.android.server.power.PowerManagerService")
+                val lowLevelShutdownMethod = powerManagerServiceClass.getDeclaredMethod("lowLevelShutdown", String::class.java)
+                lowLevelShutdownMethod.isAccessible = true
+                lowLevelShutdownMethod.invoke(null, null)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "PowerManagerService.lowLevelShutdown failed: ${e.message}")
+            }
+            
+            // 2. Try to use ShutdownThread directly
+            try {
+                android.util.Log.i("FLauncher", "Attempting ShutdownThread.shutdown")
+                val shutdownThreadClass = Class.forName("com.android.server.power.ShutdownThread")
+                val shutdownMethod = shutdownThreadClass.getDeclaredMethod("shutdown", Context::class.java, String::class.java, Boolean::class.java)
+                shutdownMethod.isAccessible = true
+                shutdownMethod.invoke(null, this, "userrequested", false)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "ShutdownThread.shutdown failed: ${e.message}")
+            }
+            
+            // 3. MediaTek specific approaches for MediaTek TVs
             if (isMediaTekTv()) {
-                // Try all known MediaTek TV power methods in sequence
-                var success = false
+                android.util.Log.i("FLauncher", "Detected MediaTek TV, trying MediaTek specific methods")
                 
-                // 1. Direct MediaTek MtkTvPower API approach
+                // Try to use the MediaTek power service
                 try {
                     val tvServiceClass = Class.forName("com.mediatek.twoworlds.tv.MtkTvPower")
                     val getInstance = tvServiceClass.getMethod("getInstance")
                     val tvPower = getInstance.invoke(null)
-                    val powerClass = tvPower.javaClass
                     
-                    // Try all possible power methods with different parameter combinations
-                    val methodsToTry = listOf(
-                        Triple("shutdown", arrayOf<Class<*>>(), arrayOf<Any>()),
-                        Triple("powerOff", arrayOf<Class<*>>(), arrayOf<Any>()),
-                        Triple("setPowerOff", arrayOf<Class<*>>(), arrayOf<Any>()),
-                        Triple("goToShutdown", arrayOf<Class<*>>(), arrayOf<Any>()),
-                        Triple("setPowerOff", arrayOf(Boolean::class.java), arrayOf(true)),
-                        Triple("setPowerMode", arrayOf(Int::class.java), arrayOf(0)), // 0 might be power off
-                        Triple("setPowerMode", arrayOf(Int::class.java), arrayOf(1)), // 1 might be power off
-                        Triple("setPowerMode", arrayOf(Int::class.java), arrayOf(2))  // 2 might be power off
-                    )
+                    // Try the direct shutdown method
+                    try {
+                        val method = tvPower.javaClass.getMethod("shutdown")
+                        method.invoke(tvPower)
+                        android.util.Log.i("FLauncher", "MtkTvPower.shutdown successful")
+                        return true
+                    } catch (e: Exception) {
+                        android.util.Log.e("FLauncher", "MtkTvPower.shutdown failed: ${e.message}")
+                    }
                     
-                    for ((methodName, paramTypes, paramValues) in methodsToTry) {
-                        try {
-                            val method = powerClass.getMethod(methodName, *paramTypes)
-                            method.invoke(tvPower, *paramValues)
-                            android.util.Log.d("FLauncher", "MediaTek $methodName method called successfully")
-                            success = true
-                            // Don't return immediately, try other methods too for redundancy
-                        } catch (e: Exception) {
-                            android.util.Log.w("FLauncher", "MediaTek $methodName method failed: ${e.message}")
-                        }
+                    // Try setPowerOff method
+                    try {
+                        val method = tvPower.javaClass.getMethod("setPowerOff", Boolean::class.java)
+                        method.invoke(tvPower, true)
+                        android.util.Log.i("FLauncher", "MtkTvPower.setPowerOff successful")
+                        return true
+                    } catch (e: Exception) {
+                        android.util.Log.e("FLauncher", "MtkTvPower.setPowerOff failed: ${e.message}")
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("FLauncher", "MediaTek power API reflection failed: ${e.message}")
+                    android.util.Log.e("FLauncher", "MtkTvPower access failed: ${e.message}")
                 }
                 
-                // 2. Try MediaTek Config API
+                // Try MediaTek specific broadcast intents
                 try {
-                    val tvConfigClass = Class.forName("com.mediatek.twoworlds.tv.MtkTvConfig")
-                    val getInstance = tvConfigClass.getMethod("getInstance")
-                    val tvConfig = getInstance.invoke(null)
-                    val configClass = tvConfig.javaClass
-                    
-                    // Try to set power state through config
-                    try {
-                        val setPowerStateMethod = configClass.getMethod("setPowerState", Int::class.java)
-                        // Try different power state values
-                        val powerStates = listOf(0, 1, 2, 3, 4, 5)
-                        for (state in powerStates) {
-                            try {
-                                setPowerStateMethod.invoke(tvConfig, state)
-                                android.util.Log.d("FLauncher", "MediaTek setPowerState($state) called")
-                                success = true
-                            } catch (e: Exception) {
-                                // Try next state
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.w("FLauncher", "MediaTek setPowerState method not found: ${e.message}")
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.w("FLauncher", "MediaTek config API failed: ${e.message}")
-                }
-                
-                // 3. Try MediaTek broadcast intents - try all known intents
-                val intentsToTry = listOf(
-                    Pair("com.mediatek.wwtv.tvcenter.power", "powerState" to "shutdown"),
-                    Pair("com.mediatek.wwtv.tvcenter.power", "powerState" to "off"),
-                    Pair("com.mediatek.intent.action.POWEROFF", null),
-                    Pair("mtk.intent.action.SHUTDOWN", null),
-                    Pair("android.mtk.intent.action.SHUTDOWN", null),
-                    Pair("com.mediatek.intent.action.SHUTDOWN", null),
-                    Pair("com.mediatek.tv.poweroff", null)
-                )
-                
-                for ((intentAction, extra) in intentsToTry) {
-                    try {
-                        val intent = Intent(intentAction)
-                        if (extra != null) {
-                            intent.putExtra(extra.first, extra.second)
-                        }
-                        sendBroadcast(intent)
-                        android.util.Log.d("FLauncher", "Broadcast sent: $intentAction")
-                        success = true
-                    } catch (e: Exception) {
-                        android.util.Log.w("FLauncher", "Broadcast failed for $intentAction: ${e.message}")
-                    }
-                }
-                
-                // 4. Try to directly call MediaTek TV service activities
-                val activitiesToTry = listOf(
-                    Pair("com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.nav.PowerActivity"),
-                    Pair("com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.util.PowerService"),
-                    Pair("com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.PowerManagerActivity")
-                )
-                
-                for ((pkg, cls) in activitiesToTry) {
-                    try {
-                        val intent = Intent()
-                        intent.component = ComponentName(pkg, cls)
-                        intent.putExtra("power_action", "shutdown")
-                        intent.putExtra("power", "off")
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                        android.util.Log.d("FLauncher", "Started activity: $pkg/$cls")
-                        success = true
-                    } catch (e: Exception) {
-                        android.util.Log.w("FLauncher", "Failed to start activity $pkg/$cls: ${e.message}")
-                    }
-                }
-                
-                if (success) {
+                    // This is the most common MediaTek power intent
+                    val intent = Intent("com.mediatek.wwtv.tvcenter.power")
+                    intent.putExtra("powerState", "shutdown")
+                    sendBroadcast(intent)
+                    android.util.Log.i("FLauncher", "MediaTek power broadcast sent")
                     return true
+                } catch (e: Exception) {
+                    android.util.Log.e("FLauncher", "MediaTek power broadcast failed: ${e.message}")
                 }
             }
             
-            // Standard Android approaches
-            var standardSuccess = false
-            
-            // 1. ACTION_REQUEST_SHUTDOWN intent
+            // 4. Try standard Android shutdown intent
             try {
-                val intent = Intent("android.intent.action.ACTION_REQUEST_SHUTDOWN")
-                intent.putExtra("android.intent.extra.KEY_CONFIRM", false)
+                android.util.Log.i("FLauncher", "Attempting standard ACTION_REQUEST_SHUTDOWN intent")
+                val intent = Intent(Intent.ACTION_REQUEST_SHUTDOWN)
+                intent.putExtra(Intent.EXTRA_KEY_CONFIRM, false)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 startActivity(intent)
-                android.util.Log.d("FLauncher", "Standard Android shutdown intent sent")
-                standardSuccess = true
+                return true
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "Standard Android shutdown failed: ${e.message}")
+                android.util.Log.e("FLauncher", "Standard shutdown intent failed: ${e.message}")
             }
             
-            // 2. PowerManager via reflection
+            // 5. Try using IPowerManager interface
             try {
+                android.util.Log.i("FLauncher", "Attempting IPowerManager shutdown")
                 val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
                 val powerManagerClass = powerManager.javaClass
                 
-                // Try different method signatures
-                val methodsToTry = listOf(
-                    Triple("shutdown", arrayOf(Boolean::class.java, String::class.java, Boolean::class.java), arrayOf(false, null, false)),
-                    Triple("shutdown", arrayOf(Boolean::class.java, Boolean::class.java), arrayOf(false, false)),
-                    Triple("shutdown", arrayOf(), arrayOf()),
-                    Triple("reboot", arrayOf(String::class.java, Boolean::class.java, Boolean::class.java), arrayOf(null, true, false))
-                )
+                // Get the IPowerManager interface
+                val getServiceMethod = powerManagerClass.getDeclaredMethod("getService")
+                getServiceMethod.isAccessible = true
+                val powerManagerService = getServiceMethod.invoke(null)
                 
-                for ((methodName, paramTypes, paramValues) in methodsToTry) {
-                    try {
-                        val method = powerManagerClass.getMethod(methodName, *paramTypes)
-                        method.invoke(powerManager, *paramValues)
-                        android.util.Log.d("FLauncher", "PowerManager $methodName method called successfully")
-                        standardSuccess = true
-                        break
-                    } catch (e: Exception) {
-                        android.util.Log.w("FLauncher", "PowerManager $methodName method failed: ${e.message}")
-                    }
+                if (powerManagerService != null) {
+                    val shutdownMethod = powerManagerService.javaClass.getMethod("shutdown", Boolean::class.java, String::class.java, Boolean::class.java)
+                    shutdownMethod.invoke(powerManagerService, false, null, false)
+                    android.util.Log.i("FLauncher", "IPowerManager.shutdown successful")
+                    return true
                 }
             } catch (e: Exception) {
-                android.util.Log.w("FLauncher", "PowerManager access failed: ${e.message}")
+                android.util.Log.e("FLauncher", "IPowerManager shutdown failed: ${e.message}")
             }
             
-            // 3. System commands - try multiple variations
-            val commandsToTry = listOf(
-                "su -c 'svc power shutdown'",
-                "su -c 'reboot -p'",
-                "su -c 'am start -a android.intent.action.ACTION_REQUEST_SHUTDOWN --ez android.intent.extra.KEY_CONFIRM false --activity-clear-task'",
-                "su -c 'setprop sys.powerctl shutdown'",
-                "su -c 'setprop ctl.stop zygote'", // This will restart the system UI, not shutdown, but might help
-                "su -c 'input keyevent 26'" // Power button event
+            // 6. Last resort - system commands
+            val commands = listOf(
+                "setprop sys.powerctl shutdown", // This is what PowerManagerService.lowLevelShutdown uses
+                "reboot -p",                   // Standard Linux command for poweroff
+                "svc power shutdown"           // Android service control command
             )
             
-            for (command in commandsToTry) {
+            for (command in commands) {
                 try {
-                    Runtime.getRuntime().exec(command)
-                    android.util.Log.d("FLauncher", "Executed command: $command")
-                    standardSuccess = true
+                    android.util.Log.i("FLauncher", "Executing command: $command")
+                    // Try with and without su
+                    try {
+                        Runtime.getRuntime().exec(command)
+                    } catch (e: Exception) {
+                        Runtime.getRuntime().exec("su -c '$command'")
+                    }
+                    return true
                 } catch (e: Exception) {
-                    android.util.Log.w("FLauncher", "Command failed: $command - ${e.message}")
+                    android.util.Log.e("FLauncher", "Command failed: $command - ${e.message}")
                 }
             }
             
-            return standardSuccess
+            android.util.Log.e("FLauncher", "All shutdown methods failed")
+            return false
         } catch (e: Exception) {
             android.util.Log.e("FLauncher", "Error in shutdownDevice: ${e.message}")
             e.printStackTrace()
