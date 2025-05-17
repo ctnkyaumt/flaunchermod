@@ -16,9 +16,11 @@ The project is still at an early development stage and may be unstable. It curre
 - [x] Open "App info"
 - [x] Uninstall app
 - [x] Clock
+- [x] Wifi icon for quick access
 - [x] Switch between row and grid for categories
 - [x] Support for non-TV (sideloaded) apps
 - [x] Navigation sound feedback
+- [x] HDMI inputs
 - [ ] Force stop app
 
 ## Screenshots
