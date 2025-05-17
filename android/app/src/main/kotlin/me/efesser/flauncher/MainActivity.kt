@@ -69,6 +69,7 @@ class MainActivity : FlutterActivity() {
                 "startAmbientMode" -> result.success(startAmbientMode())
                 "getHdmiInputs" -> result.success(getHdmiInputs())
                 "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
+                "shutdownDevice" -> result.success(shutdownDevice())
                 else -> throw IllegalArgumentException()
             }
         }
@@ -452,6 +453,110 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Shutdown the device
+     * This uses both standard Android APIs and MediaTek specific methods to ensure
+     * the device properly shuts down instead of restarting
+     */
+    private fun shutdownDevice(): Boolean {
+        android.util.Log.d("FLauncher", "Attempting to shutdown device")
+        
+        try {
+            // First try the MediaTek specific approach for MediaTek TVs
+            if (isMediaTekTv()) {
+                try {
+                    // Try to use MediaTek TV API through reflection
+                    val tvServiceClass = Class.forName("com.mediatek.twoworlds.tv.MtkTvPower")
+                    val getInstance = tvServiceClass.getMethod("getInstance")
+                    val tvPower = getInstance.invoke(null)
+                    
+                    val powerClass = tvPower.javaClass
+                    // Look for shutdown method - there might be multiple options
+                    val shutdownMethods = listOf(
+                        "shutdown",
+                        "powerOff",
+                        "setPowerOff",
+                        "goToShutdown"
+                    )
+                    
+                    for (methodName in shutdownMethods) {
+                        try {
+                            val method = powerClass.getMethod(methodName)
+                            method.invoke(tvPower)
+                            android.util.Log.d("FLauncher", "MediaTek shutdown via $methodName successful")
+                            return true
+                        } catch (e: Exception) {
+                            // Try next method
+                        }
+                    }
+                    
+                    // If we couldn't find a direct method, try with parameters
+                    try {
+                        val setPowerOffMethod = powerClass.getMethod("setPowerOff", Boolean::class.java)
+                        setPowerOffMethod.invoke(tvPower, true)
+                        android.util.Log.d("FLauncher", "MediaTek setPowerOff(true) successful")
+                        return true
+                    } catch (e: Exception) {
+                        android.util.Log.w("FLauncher", "MediaTek setPowerOff(true) failed: ${e.message}")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("FLauncher", "MediaTek power API failed: ${e.message}")
+                }
+                
+                // Try MediaTek broadcast approach
+                try {
+                    val intent = Intent("com.mediatek.wwtv.tvcenter.power")
+                    intent.putExtra("powerState", "shutdown")
+                    sendBroadcast(intent)
+                    android.util.Log.d("FLauncher", "MediaTek power broadcast sent")
+                    return true
+                } catch (e: Exception) {
+                    android.util.Log.w("FLauncher", "MediaTek power broadcast failed: ${e.message}")
+                }
+            }
+            
+            // Standard Android approach - requires SHUTDOWN permission
+            try {
+                val intent = Intent("android.intent.action.ACTION_REQUEST_SHUTDOWN")
+                intent.putExtra("android.intent.extra.KEY_CONFIRM", false)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+                android.util.Log.d("FLauncher", "Standard Android shutdown intent sent")
+                return true
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "Standard Android shutdown failed: ${e.message}")
+            }
+            
+            // Try using PowerManager through reflection (requires system permissions)
+            try {
+                val powerManager = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                val powerManagerClass = powerManager.javaClass
+                val shutdownMethod = powerManagerClass.getMethod("shutdown", Boolean::class.java, String::class.java, Boolean::class.java)
+                shutdownMethod.invoke(powerManager, false, null, false)
+                android.util.Log.d("FLauncher", "PowerManager shutdown successful")
+                return true
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "PowerManager shutdown failed: ${e.message}")
+            }
+            
+            // Last resort - try using system commands via Runtime
+            try {
+                Runtime.getRuntime().exec("su -c 'svc power shutdown'")
+                android.util.Log.d("FLauncher", "Runtime shutdown command sent")
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "All shutdown methods failed: ${e.message}")
+                e.printStackTrace()
+            }
+            
+            return false
+        } catch (e: Exception) {
+            android.util.Log.e("FLauncher", "Error in shutdownDevice: ${e.message}")
+            e.printStackTrace()
+            return false
+        }
+    }
+    
     private fun drawableToByteArray(drawable: Drawable): ByteArray? {
         if (drawable.intrinsicWidth <= 0 || drawable.intrinsicHeight <= 0) {
             return null

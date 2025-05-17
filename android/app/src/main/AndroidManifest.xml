@@ -36,6 +36,9 @@
                      tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.CALL_PRIVILEGED" 
                      tools:ignore="ProtectedPermissions" />
+    <!-- Shutdown permission -->
+    <uses-permission android:name="android.permission.SHUTDOWN"
+                     tools:ignore="ProtectedPermissions" />
     <!-- Broadcast-related permissions -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.BROADCAST_STICKY" />

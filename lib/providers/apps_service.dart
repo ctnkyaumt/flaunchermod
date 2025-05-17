@@ -30,6 +30,9 @@ class AppsService extends ChangeNotifier {
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _database;
   bool _initialized = false;
+  
+  /// Expose the FLauncherChannel to allow access to platform-specific functionality
+  FLauncherChannel get fLauncherChannel => _fLauncherChannel;
 
   List<App> _applications = [];
   List<CategoryWithApps> _categoriesWithApps = [];

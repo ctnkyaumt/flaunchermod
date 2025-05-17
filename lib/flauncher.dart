@@ -112,6 +112,18 @@ class FLauncher extends StatelessWidget {
           // Spacer to push elements to the right
           Spacer(),
           
+          // Shutdown button
+          Container(
+            margin: EdgeInsets.symmetric(horizontal: 8),
+            child: IconButton(
+              padding: EdgeInsets.all(8),
+              iconSize: 36,
+              splashRadius: 24,
+              icon: Icon(Icons.power_settings_new, color: Colors.white),
+              onPressed: () => _showShutdownDialog(context),
+            ),
+          ),
+          
           // Wi-Fi button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
@@ -171,4 +183,92 @@ class FLauncher extends StatelessWidget {
           ],
         ),
       );
+
+  /// Shows a confirmation dialog before shutting down the device
+  void _showShutdownDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Shutdown Device'),
+          content: Text('Are you sure you want to shutdown the device?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('CANCEL'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Show a progress indicator while attempting to shutdown
+                Navigator.of(context).pop();
+                
+                // Show a loading dialog
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      content: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Shutting down...'),
+                        ],
+                      ),
+                    );
+                  },
+                );
+                
+                try {
+                  // Get the FLauncherChannel instance
+                  final result = await context.read<AppsService>().fLauncherChannel.shutdownDevice();
+                  
+                  // If shutdown failed, show an error message
+                  if (!result) {
+                    Navigator.of(context).pop(); // Close the loading dialog
+                    showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          title: Text('Shutdown Failed'),
+                          content: Text('Unable to shutdown the device. The app may not have the required permissions.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: Text('OK'),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  }
+                  // If successful, the device will shut down and this code won't execute further
+                } catch (e) {
+                  // Handle any exceptions
+                  Navigator.of(context).pop(); // Close the loading dialog
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return AlertDialog(
+                        title: Text('Error'),
+                        content: Text('An error occurred: $e'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text('OK'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                }
+              },
+              child: Text('SHUTDOWN'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
