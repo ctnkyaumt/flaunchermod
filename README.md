@@ -11,7 +11,6 @@ The project is still at an early development stage and may be unstable. It curre
 - [x] No ads
 - [x] Customizable categories
 - [x] Manually reorder apps within categories
-- [x] Wallpaper support
 - [x] Open "Android Settings"
 - [x] Open "App info"
 - [x] Uninstall app
