@@ -81,8 +81,9 @@ class AppsService extends ChangeNotifier {
         version: Value(data["version"] ?? "(unknown)"),
         banner: Value(data["banner"]),
         icon: Value(data["icon"]),
-        hidden: Value.absent(),
+        hidden: Value(data["isSystemApp"] ?? false), // Hide pre-installed system apps by default
         sideloaded: Value(data["sideloaded"]),
+        isSystemApp: Value(data["isSystemApp"] ?? false),
       );
 
   Future<void> _initDefaultCategories() => _database.transaction(() async {

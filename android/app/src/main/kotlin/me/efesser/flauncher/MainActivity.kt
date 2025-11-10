@@ -199,14 +199,19 @@ class MainActivity : FlutterActivity() {
                     .addCategory(if (sideloaded) CATEGORY_LAUNCHER else CATEGORY_LEANBACK_LAUNCHER), 0)
             .map(ResolveInfo::activityInfo)
 
-    private fun buildAppMap(activityInfo: ActivityInfo, sideloaded: Boolean) = mapOf(
+    private fun buildAppMap(activityInfo: ActivityInfo, sideloaded: Boolean): Map<String, Serializable?> {
+        val packageInfo = packageManager.getPackageInfo(activityInfo.packageName, 0)
+        val isSystemApp = (packageInfo.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+        return mapOf(
             "name" to activityInfo.loadLabel(packageManager).toString(),
             "packageName" to activityInfo.packageName,
             "banner" to activityInfo.loadBanner(packageManager)?.let(::drawableToByteArray),
             "icon" to activityInfo.loadIcon(packageManager)?.let(::drawableToByteArray),
-            "version" to packageManager.getPackageInfo(activityInfo.packageName, 0).versionName,
+            "version" to packageInfo.versionName,
             "sideloaded" to sideloaded,
-    )
+            "isSystemApp" to isSystemApp,
+        )
+    }
 
     private fun launchApp(packageName: String) = try {
         val intent = packageManager.getLeanbackLaunchIntentForPackage(packageName)

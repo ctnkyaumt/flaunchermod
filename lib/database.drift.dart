@@ -38,6 +38,7 @@ class $AppsTable extends Apps with TableInfo<$AppsTable, App> {
       }),
       defaultValue: Constant(false));
   static const VerificationMeta _sideloadedMeta = const VerificationMeta('sideloaded');
+  static const VerificationMeta _isSystemAppMeta = const VerificationMeta('isSystemApp');
   @override
   late final GeneratedColumn<bool> sideloaded = GeneratedColumn<bool>('sideloaded', aliasedName, false,
       type: DriftSqlType.bool,
@@ -49,7 +50,17 @@ class $AppsTable extends Apps with TableInfo<$AppsTable, App> {
       }),
       defaultValue: Constant(false));
   @override
-  List<GeneratedColumn> get $columns => [packageName, name, version, banner, icon, hidden, sideloaded];
+  late final GeneratedColumn<bool> isSystemApp = GeneratedColumn<bool>('is_system_app', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints: GeneratedColumn.constraintsDependsOnDialect({
+        SqlDialect.sqlite: 'CHECK ("is_system_app" IN (0, 1))',
+        SqlDialect.mysql: '',
+        SqlDialect.postgres: '',
+      }),
+      defaultValue: Constant(false));
+  @override
+  List<GeneratedColumn> get $columns => [packageName, name, version, banner, icon, hidden, sideloaded, isSystemApp];
   @override
   String get aliasedName => _alias ?? 'apps';
   @override
@@ -85,6 +96,9 @@ class $AppsTable extends Apps with TableInfo<$AppsTable, App> {
     if (data.containsKey('sideloaded')) {
       context.handle(_sideloadedMeta, sideloaded.isAcceptableOrUnknown(data['sideloaded']!, _sideloadedMeta));
     }
+    if (data.containsKey('is_system_app')) {
+      context.handle(_isSystemAppMeta, isSystemApp.isAcceptableOrUnknown(data['is_system_app']!, _isSystemAppMeta));
+    }
     return context;
   }
 
@@ -101,6 +115,7 @@ class $AppsTable extends Apps with TableInfo<$AppsTable, App> {
       icon: attachedDatabase.typeMapping.read(DriftSqlType.blob, data['${effectivePrefix}icon']),
       hidden: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}hidden'])!,
       sideloaded: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}sideloaded'])!,
+      isSystemApp: attachedDatabase.typeMapping.read(DriftSqlType.bool, data['${effectivePrefix}is_system_app'])!,
     );
   }
 
@@ -118,6 +133,7 @@ class App extends DataClass implements Insertable<App> {
   final Uint8List? icon;
   final bool hidden;
   final bool sideloaded;
+  final bool isSystemApp;
   const App(
       {required this.packageName,
       required this.name,
@@ -125,7 +141,8 @@ class App extends DataClass implements Insertable<App> {
       this.banner,
       this.icon,
       required this.hidden,
-      required this.sideloaded});
+      required this.sideloaded,
+      required this.isSystemApp});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -140,6 +157,7 @@ class App extends DataClass implements Insertable<App> {
     }
     map['hidden'] = Variable<bool>(hidden);
     map['sideloaded'] = Variable<bool>(sideloaded);
+    map['is_system_app'] = Variable<bool>(isSystemApp);
     return map;
   }
 
@@ -152,6 +170,7 @@ class App extends DataClass implements Insertable<App> {
       icon: icon == null && nullToAbsent ? const Value.absent() : Value(icon),
       hidden: Value(hidden),
       sideloaded: Value(sideloaded),
+      isSystemApp: Value(isSystemApp),
     );
   }
 
@@ -165,6 +184,7 @@ class App extends DataClass implements Insertable<App> {
       icon: serializer.fromJson<Uint8List?>(json['icon']),
       hidden: serializer.fromJson<bool>(json['hidden']),
       sideloaded: serializer.fromJson<bool>(json['sideloaded']),
+      isSystemApp: serializer.fromJson<bool>(json['isSystemApp']),
     );
   }
   @override
@@ -178,6 +198,7 @@ class App extends DataClass implements Insertable<App> {
       'icon': serializer.toJson<Uint8List?>(icon),
       'hidden': serializer.toJson<bool>(hidden),
       'sideloaded': serializer.toJson<bool>(sideloaded),
+      'isSystemApp': serializer.toJson<bool>(isSystemApp),
     };
   }
 
@@ -188,7 +209,8 @@ class App extends DataClass implements Insertable<App> {
           Value<Uint8List?> banner = const Value.absent(),
           Value<Uint8List?> icon = const Value.absent(),
           bool? hidden,
-          bool? sideloaded}) =>
+          bool? sideloaded,
+          bool? isSystemApp}) =>
       App(
         packageName: packageName ?? this.packageName,
         name: name ?? this.name,
@@ -197,6 +219,7 @@ class App extends DataClass implements Insertable<App> {
         icon: icon.present ? icon.value : this.icon,
         hidden: hidden ?? this.hidden,
         sideloaded: sideloaded ?? this.sideloaded,
+        isSystemApp: isSystemApp ?? this.isSystemApp,
       );
   @override
   String toString() {
@@ -207,14 +230,16 @@ class App extends DataClass implements Insertable<App> {
           ..write('banner: $banner, ')
           ..write('icon: $icon, ')
           ..write('hidden: $hidden, ')
-          ..write('sideloaded: $sideloaded')
+          ..write('sideloaded: $sideloaded, ')
+          ..write('isSystemApp: $isSystemApp')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode => Object.hash(
-      packageName, name, version, $driftBlobEquality.hash(banner), $driftBlobEquality.hash(icon), hidden, sideloaded);
+      packageName, name, version, $driftBlobEquality.hash(banner), $driftBlobEquality.hash(icon), hidden, sideloaded,
+      isSystemApp);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -225,7 +250,8 @@ class App extends DataClass implements Insertable<App> {
           $driftBlobEquality.equals(other.banner, this.banner) &&
           $driftBlobEquality.equals(other.icon, this.icon) &&
           other.hidden == this.hidden &&
-          other.sideloaded == this.sideloaded);
+          other.sideloaded == this.sideloaded &&
+          other.isSystemApp == this.isSystemApp);
 }
 
 class AppsCompanion extends UpdateCompanion<App> {
@@ -236,6 +262,7 @@ class AppsCompanion extends UpdateCompanion<App> {
   final Value<Uint8List?> icon;
   final Value<bool> hidden;
   final Value<bool> sideloaded;
+  final Value<bool> isSystemApp;
   const AppsCompanion({
     this.packageName = const Value.absent(),
     this.name = const Value.absent(),
@@ -244,6 +271,7 @@ class AppsCompanion extends UpdateCompanion<App> {
     this.icon = const Value.absent(),
     this.hidden = const Value.absent(),
     this.sideloaded = const Value.absent(),
+    this.isSystemApp = const Value.absent(),
   });
   AppsCompanion.insert({
     required String packageName,
@@ -253,6 +281,7 @@ class AppsCompanion extends UpdateCompanion<App> {
     this.icon = const Value.absent(),
     this.hidden = const Value.absent(),
     this.sideloaded = const Value.absent(),
+    this.isSystemApp = const Value.absent(),
   })  : packageName = Value(packageName),
         name = Value(name),
         version = Value(version);
@@ -264,6 +293,7 @@ class AppsCompanion extends UpdateCompanion<App> {
     Expression<Uint8List>? icon,
     Expression<bool>? hidden,
     Expression<bool>? sideloaded,
+    Expression<bool>? isSystemApp,
   }) {
     return RawValuesInsertable({
       if (packageName != null) 'package_name': packageName,
@@ -273,6 +303,7 @@ class AppsCompanion extends UpdateCompanion<App> {
       if (icon != null) 'icon': icon,
       if (hidden != null) 'hidden': hidden,
       if (sideloaded != null) 'sideloaded': sideloaded,
+      if (isSystemApp != null) 'is_system_app': isSystemApp,
     });
   }
 
@@ -283,7 +314,8 @@ class AppsCompanion extends UpdateCompanion<App> {
       Value<Uint8List?>? banner,
       Value<Uint8List?>? icon,
       Value<bool>? hidden,
-      Value<bool>? sideloaded}) {
+      Value<bool>? sideloaded,
+      Value<bool>? isSystemApp}) {
     return AppsCompanion(
       packageName: packageName ?? this.packageName,
       name: name ?? this.name,
@@ -292,6 +324,7 @@ class AppsCompanion extends UpdateCompanion<App> {
       icon: icon ?? this.icon,
       hidden: hidden ?? this.hidden,
       sideloaded: sideloaded ?? this.sideloaded,
+      isSystemApp: isSystemApp ?? this.isSystemApp,
     );
   }
 
@@ -319,6 +352,9 @@ class AppsCompanion extends UpdateCompanion<App> {
     if (sideloaded.present) {
       map['sideloaded'] = Variable<bool>(sideloaded.value);
     }
+    if (isSystemApp.present) {
+      map['is_system_app'] = Variable<bool>(isSystemApp.value);
+    }
     return map;
   }
 
@@ -331,7 +367,8 @@ class AppsCompanion extends UpdateCompanion<App> {
           ..write('banner: $banner, ')
           ..write('icon: $icon, ')
           ..write('hidden: $hidden, ')
-          ..write('sideloaded: $sideloaded')
+          ..write('sideloaded: $sideloaded, ')
+          ..write('isSystemApp: $isSystemApp')
           ..write(')'))
         .toString();
   }
