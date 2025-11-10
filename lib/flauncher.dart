@@ -94,13 +94,9 @@ class _FLauncherState extends State<FLauncher> {
   @override
   Widget build(BuildContext context) {
     debugPrint("FLauncher: Building main UI widget");
-    return RawKeyboardListener(
-      focusNode: FocusNode(),
-      autofocus: false,
-      onKey: (event) => _handleKeyEvent(event),
-      child: FocusTraversalGroup(
-        policy: RowByRowTraversalPolicy(),
-        child: Stack(
+    return FocusTraversalGroup(
+      policy: PageAwareTraversalPolicy(this),
+      child: Stack(
           children: [
             Consumer<WallpaperService>(
               builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
@@ -144,73 +140,13 @@ class _FLauncherState extends State<FLauncher> {
     );
   }
 
-  void _handleKeyEvent(RawKeyEvent event) {
-    if (event is! RawKeyDownEvent) return;
-
-    final key = event.logicalKey;
-    final focusNode = FocusManager.instance.primaryFocus;
-    
-    // Only handle page navigation at boundaries
-    if (key == LogicalKeyboardKey.arrowDown && _currentPage == 0) {
-      // Check if we're on the bottom row and there's no node below
-      if (focusNode != null && _isOnBottomRow(focusNode) && !_hasNodeBelow(focusNode)) {
-        _lastFocusedAppNode = focusNode;
-        _navigateToPage(1);
-      }
-    } else if (key == LogicalKeyboardKey.arrowUp && _currentPage == 1) {
-      // Check if we're at the top and there's no node above
-      if (focusNode != null && _isOnTopRow(focusNode) && !_hasNodeAbove(focusNode)) {
-        _navigateToPage(0);
-      }
+  void handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
+    if (direction == TraversalDirection.down && _currentPage == 0) {
+      _lastFocusedAppNode = currentNode;
+      _navigateToPage(1);
+    } else if (direction == TraversalDirection.up && _currentPage == 1) {
+      _navigateToPage(0);
     }
-  }
-
-  bool _isOnBottomRow(FocusNode currentNode) {
-    final scope = currentNode.nearestScope;
-    if (scope == null) return false;
-
-    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
-    if (allNodes.isEmpty) return false;
-
-    // Find the maximum Y position (bottom-most row)
-    double maxY = allNodes.map((node) => node.rect.center.dy).reduce((a, b) => a > b ? a : b);
-    
-    // Check if current node is on the bottom row (within 10 pixels tolerance)
-    return (currentNode.rect.center.dy - maxY).abs() <= 10;
-  }
-
-  bool _isOnTopRow(FocusNode currentNode) {
-    final scope = currentNode.nearestScope;
-    if (scope == null) return false;
-
-    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
-    if (allNodes.isEmpty) return false;
-
-    // Find the minimum Y position (top-most row)
-    double minY = allNodes.map((node) => node.rect.center.dy).reduce((a, b) => a < b ? a : b);
-    
-    // Check if current node is on the top row (within 10 pixels tolerance)
-    return (currentNode.rect.center.dy - minY).abs() <= 10;
-  }
-
-  bool _hasNodeBelow(FocusNode currentNode) {
-    final scope = currentNode.nearestScope;
-    if (scope == null) return false;
-
-    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
-    
-    // Check if there's any node below the current one
-    return allNodes.any((node) => node.rect.center.dy > currentNode.rect.center.dy + 10);
-  }
-
-  bool _hasNodeAbove(FocusNode currentNode) {
-    final scope = currentNode.nearestScope;
-    if (scope == null) return false;
-
-    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
-    
-    // Check if there's any node above the current one
-    return allNodes.any((node) => node.rect.center.dy < currentNode.rect.center.dy - 10);
   }
 
   Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
