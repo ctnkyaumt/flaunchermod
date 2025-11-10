@@ -60,35 +60,35 @@ class _FLauncherState extends State<FLauncher> {
         curve: Curves.easeInOut,
       ).then((_) {
         // After page animation completes, focus on the first focusable element
-        if (page == 1) {
-          // Give the page time to build, then focus the first HDMI input
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            final scope = FocusManager.instance.primaryFocus?.nearestScope;
-            if (scope != null) {
-              final nodes = scope.traversalDescendants.toList();
-              if (nodes.isNotEmpty) {
-                nodes.first.requestFocus();
-              }
-            }
-          });
-        } else if (page == 0) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (page == 1) {
+            // Focus the first HDMI input on Inputs page
+            _focusFirstNode();
+          } else if (page == 0) {
+            // Restore focus to last focused app or first node
             final node = _lastFocusedAppNode;
             if (node != null && node.context != null) {
               node.requestFocus();
             } else {
-              final scope = FocusManager.instance.primaryFocus?.nearestScope;
-              if (scope != null) {
-                final nodes = scope.traversalDescendants.toList();
-                if (nodes.isNotEmpty) {
-                  nodes.first.requestFocus();
-                }
-              }
+              _focusFirstNode();
             }
-          });
-        }
+          }
+        });
       });
     }
+  }
+
+  void _focusFirstNode() {
+    // Try multiple times to ensure the page is built
+    Future.delayed(Duration(milliseconds: 50), () {
+      final scope = FocusManager.instance.primaryFocus?.nearestScope;
+      if (scope != null) {
+        final nodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+        if (nodes.isNotEmpty) {
+          nodes.first.requestFocus();
+        }
+      }
+    });
   }
 
   @override
@@ -148,18 +148,20 @@ class _FLauncherState extends State<FLauncher> {
     if (event is! RawKeyDownEvent) return;
 
     final key = event.logicalKey;
+    final focusNode = FocusManager.instance.primaryFocus;
     
     // Handle page navigation
     if (key == LogicalKeyboardKey.arrowDown && _currentPage == 0) {
       // Check if we're on the bottom row of the Apps page
-      final focusNode = FocusManager.instance.primaryFocus;
       if (focusNode != null && _isOnBottomRow(focusNode)) {
         _lastFocusedAppNode = focusNode;
         _navigateToPage(1);
       }
     } else if (key == LogicalKeyboardKey.arrowUp && _currentPage == 1) {
-      // Navigate back to Apps page from Inputs page
-      _navigateToPage(0);
+      // Check if there's no node above (we're at the top of Inputs page)
+      if (focusNode != null && _isOnTopRow(focusNode)) {
+        _navigateToPage(0);
+      }
     }
   }
 
@@ -167,14 +169,28 @@ class _FLauncherState extends State<FLauncher> {
     final scope = currentNode.nearestScope;
     if (scope == null) return false;
 
-    final allNodes = scope.traversalDescendants.toList();
+    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
     if (allNodes.isEmpty) return false;
 
     // Find the maximum Y position (bottom-most row)
     double maxY = allNodes.map((node) => node.rect.center.dy).reduce((a, b) => a > b ? a : b);
     
-    // Check if current node is on the bottom row (within 5 pixels tolerance)
-    return (currentNode.rect.center.dy - maxY).abs() <= 5;
+    // Check if current node is on the bottom row (within 10 pixels tolerance)
+    return (currentNode.rect.center.dy - maxY).abs() <= 10;
+  }
+
+  bool _isOnTopRow(FocusNode currentNode) {
+    final scope = currentNode.nearestScope;
+    if (scope == null) return false;
+
+    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+    if (allNodes.isEmpty) return false;
+
+    // Find the minimum Y position (top-most row)
+    double minY = allNodes.map((node) => node.rect.center.dy).reduce((a, b) => a < b ? a : b);
+    
+    // Check if current node is on the top row (within 10 pixels tolerance)
+    return (currentNode.rect.center.dy - minY).abs() <= 10;
   }
 
   Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
