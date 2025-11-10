@@ -158,7 +158,9 @@ extension Geometry on FocusNode {
   }
 
   bool isOnTheSameRow(FocusNode other) {
-    return rect.center.dy.round() == other.rect.center.dy.round();
+    // Use a tolerance of 5 pixels to account for slight vertical differences
+    // in horizontal scrollable lists where items might not be perfectly aligned
+    return (rect.center.dy.round() - other.rect.center.dy.round()).abs() <= 5;
   }
 
   double distance(FocusNode other) {
