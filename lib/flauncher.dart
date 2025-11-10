@@ -73,8 +73,9 @@ class _FLauncherState extends State<FLauncher> {
           });
         } else if (page == 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_lastFocusedAppNode != null && _lastFocusedAppNode!.attached) {
-              _lastFocusedAppNode!.requestFocus();
+            final node = _lastFocusedAppNode;
+            if (node != null && node.context != null) {
+              node.requestFocus();
             } else {
               final scope = FocusManager.instance.primaryFocus?.nearestScope;
               if (scope != null) {
