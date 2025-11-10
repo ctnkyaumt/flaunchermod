@@ -49,7 +49,7 @@ class CategoryRow extends StatelessWidget {
           ),
           applications.isNotEmpty
               ? SizedBox(
-                  height: category.rowHeight.toDouble(),
+                  height: 150.0, // Fixed uniform height for all categories
                   child: ListView.custom(
                     padding: EdgeInsets.all(8),
                     scrollDirection: Axis.horizontal,

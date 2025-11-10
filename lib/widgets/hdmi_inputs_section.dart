@@ -180,45 +180,31 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
     // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
     _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(left: 16, bottom: 8),
-          child: Text(
-            "HDMI Inputs",
-            style: Theme.of(context).textTheme.titleLarge!.copyWith(
-              shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)]
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 150,
-          child: ListView.custom(
-            padding: EdgeInsets.all(8),
-            scrollDirection: Axis.horizontal,
-            childrenDelegate: SliverChildBuilderDelegate(
-              (context, index) => EnsureVisible(
-                key: Key("hdmi-${_hdmiInputs[index].id}"),
-                alignment: 0.1,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: HdmiCard(
-                    input: _hdmiInputs[index],
-                    autofocus: index == 0,
-                    onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
-                  ),
-                ),
+    return SizedBox(
+      height: 150,
+      child: ListView.custom(
+        padding: EdgeInsets.all(8),
+        scrollDirection: Axis.horizontal,
+        childrenDelegate: SliverChildBuilderDelegate(
+          (context, index) => EnsureVisible(
+            key: Key("hdmi-${_hdmiInputs[index].id}"),
+            alignment: 0.1,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: HdmiCard(
+                input: _hdmiInputs[index],
+                autofocus: index == 0,
+                onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
               ),
-              childCount: _hdmiInputs.length,
-              findChildIndexCallback: (Key key) {
-                final keyValue = (key as ValueKey<String>).value;
-                return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
-              },
             ),
           ),
+          childCount: _hdmiInputs.length,
+          findChildIndexCallback: (Key key) {
+            final keyValue = (key as ValueKey<String>).value;
+            return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
+          },
         ),
-      ],
+      ),
     );
   }
 }

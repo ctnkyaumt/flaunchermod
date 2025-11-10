@@ -30,57 +30,221 @@ import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
 import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-class FLauncher extends StatelessWidget {
+class FLauncher extends StatefulWidget {
+  @override
+  _FLauncherState createState() => _FLauncherState();
+}
+
+class _FLauncherState extends State<FLauncher> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  bool _isOnBottomRow = false;
+  FocusNode? _lastFocusedAppNode;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _navigateToPage(int page) {
+    if (page >= 0 && page <= 1) {
+      setState(() {
+        _currentPage = page;
+      });
+      _pageController.animateToPage(
+        page,
+        duration: Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      ).then((_) {
+        // After page animation completes, focus on the first focusable element
+        if (page == 1) {
+          // Give the page time to build, then focus the first HDMI input
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final scope = FocusManager.instance.primaryFocus?.nearestScope;
+            if (scope != null) {
+              final nodes = scope.traversalDescendants.toList();
+              if (nodes.isNotEmpty) {
+                nodes.first.requestFocus();
+              }
+            }
+          });
+        } else if (page == 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_lastFocusedAppNode != null && _lastFocusedAppNode!.mounted) {
+              _lastFocusedAppNode!.requestFocus();
+            } else {
+              final scope = FocusManager.instance.primaryFocus?.nearestScope;
+              if (scope != null) {
+                final nodes = scope.traversalDescendants.toList();
+                if (nodes.isNotEmpty) {
+                  nodes.first.requestFocus();
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint("FLauncher: Building main UI widget");
-    return FocusTraversalGroup(
-      policy: RowByRowTraversalPolicy(),
-      child: Stack(
+    return RawKeyboardListener(
+      focusNode: FocusNode(),
+      autofocus: false,
+      onKey: (event) => _handleKeyEvent(event),
+      child: FocusTraversalGroup(
+        policy: RowByRowTraversalPolicy(),
+        child: Stack(
+          children: [
+            Consumer<WallpaperService>(
+              builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+            ),
+            Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: _appBar(context),
+              body: Stack(
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Consumer<AppsService>(
+                      builder: (context, appsService, _) => appsService.initialized
+                          ? PageView(
+                              controller: _pageController,
+                              scrollDirection: Axis.vertical,
+                              physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
+                              onPageChanged: (page) {
+                                setState(() {
+                                  _currentPage = page;
+                                });
+                              },
+                              children: [
+                                // Apps Page
+                                _buildAppsPage(appsService.categoriesWithApps),
+                                // Inputs Page
+                                _buildInputsPage(),
+                              ],
+                            )
+                          : _emptyState(context),
+                    ),
+                  ),
+                  // Page indicator dots
+                  _buildPageIndicator(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleKeyEvent(RawKeyEvent event) {
+    if (event is! RawKeyDownEvent) return;
+
+    final key = event.logicalKey;
+    
+    // Handle page navigation
+    if (key == LogicalKeyboardKey.arrowDown && _currentPage == 0) {
+      // Check if we're on the bottom row of the Apps page
+      final focusNode = FocusManager.instance.primaryFocus;
+      if (focusNode != null && _isOnBottomRow(focusNode)) {
+        _lastFocusedAppNode = focusNode;
+        _navigateToPage(1);
+      }
+    } else if (key == LogicalKeyboardKey.arrowUp && _currentPage == 1) {
+      // Navigate back to Apps page from Inputs page
+      _navigateToPage(0);
+    }
+  }
+
+  bool _isOnBottomRow(FocusNode currentNode) {
+    final scope = currentNode.nearestScope;
+    if (scope == null) return false;
+
+    final allNodes = scope.traversalDescendants.toList();
+    if (allNodes.isEmpty) return false;
+
+    // Find the maximum Y position (bottom-most row)
+    double maxY = allNodes.map((node) => node.rect.center.dy).reduce((a, b) => a > b ? a : b);
+    
+    // Check if current node is on the bottom row (within 5 pixels tolerance)
+    return (currentNode.rect.center.dy - maxY).abs() <= 5;
+  }
+
+  Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Consumer<WallpaperService>(
-            builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
-          ),
-          Scaffold(
-            backgroundColor: Colors.transparent,
-            appBar: _appBar(context),
-            body: Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Consumer<AppsService>(
-                builder: (context, appsService, _) => appsService.initialized
-                    ? Column(
-                        children: [
-                          // Everything wrapped in a single scrollable area
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Existing categories
-                                  _categories(appsService.categoriesWithApps),
-                                  
-                                  // HDMI Inputs section
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                                    child: Text(
-                                      "Inputs", // Section Title
-                                      style: Theme.of(context).textTheme.headlineSmall,
-                                    ),
-                                  ),
-                                  const HdmiInputsSection(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : _emptyState(context),
+          // "Apps" title
+          Padding(
+            padding: EdgeInsets.only(left: 16, bottom: 16),
+            child: Text(
+              "Apps",
+              style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
+          // Categories
+          _categories(categoriesWithApps),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInputsPage() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "Inputs" title
+          Padding(
+            padding: EdgeInsets.only(left: 16, bottom: 16),
+            child: Text(
+              "Inputs",
+              style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // HDMI Inputs section
+          const HdmiInputsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator() {
+    return Positioned(
+      right: 16,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(2, (index) {
+            return Container(
+              margin: EdgeInsets.symmetric(vertical: 4),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _currentPage == index
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.3),
+              ),
+            );
+          }),
+        ),
       ),
     );
   }
