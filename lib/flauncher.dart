@@ -41,7 +41,6 @@ class FLauncher extends StatefulWidget {
 class _FLauncherState extends State<FLauncher> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  bool _isOnBottomRow = false;
   FocusNode? _lastFocusedAppNode;
 
   @override
@@ -74,7 +73,7 @@ class _FLauncherState extends State<FLauncher> {
           });
         } else if (page == 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_lastFocusedAppNode != null && _lastFocusedAppNode!.mounted) {
+            if (_lastFocusedAppNode != null && _lastFocusedAppNode!.attached) {
               _lastFocusedAppNode!.requestFocus();
             } else {
               final scope = FocusManager.instance.primaryFocus?.nearestScope;
