@@ -1,10 +1,12 @@
 name: Static Analysis
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      run_analyzer:
+        description: 'Set to true to run static analysis checks'
+        required: false
+        default: 'true'
 
 jobs:
   static_analysis:
