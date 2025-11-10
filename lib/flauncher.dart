@@ -150,16 +150,16 @@ class _FLauncherState extends State<FLauncher> {
     final key = event.logicalKey;
     final focusNode = FocusManager.instance.primaryFocus;
     
-    // Handle page navigation
+    // Only handle page navigation at boundaries
     if (key == LogicalKeyboardKey.arrowDown && _currentPage == 0) {
-      // Check if we're on the bottom row of the Apps page
-      if (focusNode != null && _isOnBottomRow(focusNode)) {
+      // Check if we're on the bottom row and there's no node below
+      if (focusNode != null && _isOnBottomRow(focusNode) && !_hasNodeBelow(focusNode)) {
         _lastFocusedAppNode = focusNode;
         _navigateToPage(1);
       }
     } else if (key == LogicalKeyboardKey.arrowUp && _currentPage == 1) {
-      // Check if there's no node above (we're at the top of Inputs page)
-      if (focusNode != null && _isOnTopRow(focusNode)) {
+      // Check if we're at the top and there's no node above
+      if (focusNode != null && _isOnTopRow(focusNode) && !_hasNodeAbove(focusNode)) {
         _navigateToPage(0);
       }
     }
@@ -191,6 +191,26 @@ class _FLauncherState extends State<FLauncher> {
     
     // Check if current node is on the top row (within 10 pixels tolerance)
     return (currentNode.rect.center.dy - minY).abs() <= 10;
+  }
+
+  bool _hasNodeBelow(FocusNode currentNode) {
+    final scope = currentNode.nearestScope;
+    if (scope == null) return false;
+
+    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+    
+    // Check if there's any node below the current one
+    return allNodes.any((node) => node.rect.center.dy > currentNode.rect.center.dy + 10);
+  }
+
+  bool _hasNodeAbove(FocusNode currentNode) {
+    final scope = currentNode.nearestScope;
+    if (scope == null) return false;
+
+    final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+    
+    // Check if there's any node above the current one
+    return allNodes.any((node) => node.rect.center.dy < currentNode.rect.center.dy - 10);
   }
 
   Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
