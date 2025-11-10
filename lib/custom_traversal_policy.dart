@@ -18,6 +18,39 @@ class RowByRowTraversalPolicy extends FocusTraversalPolicy with DirectionalFocus
       return super.inDirection(currentNode, direction);
     }
 
+    // For left/right navigation, implement infinite loop cycling within the same row
+    if (direction == TraversalDirection.left || direction == TraversalDirection.right) {
+      // Get all nodes on the same row
+      List<FocusNode> sameRowNodes = nodes.where((node) => node.isOnTheSameRow(currentNode)).toList();
+      
+      if (sameRowNodes.length > 1) {
+        // Sort nodes by horizontal position
+        sameRowNodes.sort((a, b) => a.rect.center.dx.compareTo(b.rect.center.dx));
+        
+        int currentIndex = sameRowNodes.indexWhere((node) => node == currentNode);
+        if (currentIndex != -1) {
+          FocusNode? nextNode;
+          
+          if (direction == TraversalDirection.right) {
+            // Move to next item, or wrap to first if at the end
+            nextNode = sameRowNodes[(currentIndex + 1) % sameRowNodes.length];
+          } else {
+            // Move to previous item, or wrap to last if at the beginning
+            nextNode = sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
+          }
+          
+          if (nextNode != null) {
+            nextNode.requestFocus();
+            return true;
+          }
+        }
+      }
+      
+      // If we can't handle it (single item or error), don't move
+      return true;
+    }
+
+    // For up/down navigation, use the original logic
     NodeSearcher searcher = NodeSearcher(direction);
     List<CandidateNode> candidates = searcher.findCandidates(nodes, currentNode);
     if (candidates.isEmpty) {
