@@ -61,12 +61,16 @@ class AppsGrid extends StatelessWidget {
                     (context, index) => EnsureVisible(
                       key: Key("${category.id}-${applications[index].packageName}"),
                       alignment: 0.5,
-                      child: AppCard(
-                        category: category,
-                        application: applications[index],
-                        autofocus: index == 0,
-                        onMove: (direction) => _onMove(context, direction, index),
-                        onMoveEnd: () => _saveOrder(context),
+                      child: SizedBox(
+                        width: 195, // Fixed width to match CategoryRow cards (110 * 16/9)
+                        height: 110,
+                        child: AppCard(
+                          category: category,
+                          application: applications[index],
+                          autofocus: index == 0,
+                          onMove: (direction) => _onMove(context, direction, index),
+                          onMoveEnd: () => _saveOrder(context),
+                        ),
                       ),
                     ),
                     childCount: applications.length,
@@ -120,10 +124,9 @@ class AppsGrid extends StatelessWidget {
 
   SliverGridDelegate _buildSliverGridDelegate() => SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: category.columnsCount,
-        childAspectRatio: 16 / 9,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        mainAxisExtent: 134, // Fixed height matching CategoryRow cards (150 - 16 padding)
+        mainAxisExtent: 110, // Fixed height matching CategoryRow cards (126 - 16 padding)
       );
 
   Widget _emptyState(BuildContext context) => Padding(

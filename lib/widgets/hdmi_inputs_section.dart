@@ -166,22 +166,22 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       // Show placeholder or loading indicator for the section height
-      return const SizedBox(height: 150, child: Center(child: CircularProgressIndicator()));
+      return const SizedBox(height: 126, child: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
-      return SizedBox(height: 150, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
+      return SizedBox(height: 126, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
     }
 
     if (_hdmiInputs.isEmpty) {
-      return const SizedBox(height: 150, child: Center(child: Text('No HDMI inputs detected.')));
+      return const SizedBox(height: 126, child: Center(child: Text('No HDMI inputs detected.')));
     }
 
     // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
     _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
 
     return SizedBox(
-      height: 150,
+      height: 126,
       child: ListView.custom(
         padding: EdgeInsets.all(8),
         scrollDirection: Axis.horizontal,
