@@ -97,45 +97,44 @@ class _FLauncherState extends State<FLauncher> {
     return FocusTraversalGroup(
       policy: PageAwareTraversalPolicy(this),
       child: Stack(
-          children: [
-            Consumer<WallpaperService>(
-              builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
-            ),
-            Scaffold(
-              backgroundColor: Colors.transparent,
-              appBar: _appBar(context),
-              body: Stack(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: Consumer<AppsService>(
-                      builder: (context, appsService, _) => appsService.initialized
-                          ? PageView(
-                              controller: _pageController,
-                              scrollDirection: Axis.vertical,
-                              physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
-                              onPageChanged: (page) {
-                                setState(() {
-                                  _currentPage = page;
-                                });
-                              },
-                              children: [
-                                // Apps Page
-                                _buildAppsPage(appsService.categoriesWithApps),
-                                // Inputs Page
-                                _buildInputsPage(),
-                              ],
-                            )
-                          : _emptyState(context),
-                    ),
+        children: [
+          Consumer<WallpaperService>(
+            builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+          ),
+          Scaffold(
+            backgroundColor: Colors.transparent,
+            appBar: _appBar(context),
+            body: Stack(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Consumer<AppsService>(
+                    builder: (context, appsService, _) => appsService.initialized
+                        ? PageView(
+                            controller: _pageController,
+                            scrollDirection: Axis.vertical,
+                            physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
+                            onPageChanged: (page) {
+                              setState(() {
+                                _currentPage = page;
+                              });
+                            },
+                            children: [
+                              // Apps Page
+                              _buildAppsPage(appsService.categoriesWithApps),
+                              // Inputs Page
+                              _buildInputsPage(),
+                            ],
+                          )
+                        : _emptyState(context),
                   ),
-                  // Page indicator dots
-                  _buildPageIndicator(),
-                ],
-              ),
+                ),
+                // Page indicator dots
+                _buildPageIndicator(),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
