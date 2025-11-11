@@ -83,6 +83,16 @@ mixin FLauncherGradients {
       transform: GradientRotation(5.5),
     ),
   );
+  static final midnightSlate = FLauncherGradient(
+    "a1b2c3d4-e5f6-4a5b-8c9d-1e2f3a4b5c6d",
+    "Midnight Slate",
+    LinearGradient(colors: [Color(0xFF1a1f2e), Color(0xFF2d3748)], transform: GradientRotation(1.8)),
+  );
+  static final charcoalDepths = FLauncherGradient(
+    "f7e8d9c0-b1a2-4d3e-9f8e-7d6c5b4a3210",
+    "Charcoal Depths",
+    LinearGradient(colors: [Color(0xFF1c1c1e), Color(0xFF2c2c2e)], transform: GradientRotation(2.1)),
+  );
 
   static List<FLauncherGradient> get all => [
         greatWhale,
@@ -95,5 +105,7 @@ mixin FLauncherGradients {
         saintPetersburg,
         africanField,
         grassShampoo,
+        midnightSlate,
+        charcoalDepths,
       ];
 }
