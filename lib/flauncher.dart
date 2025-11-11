@@ -61,34 +61,43 @@ class _FLauncherState extends State<FLauncher> {
       ).then((_) {
         // After page animation completes, focus on the first focusable element
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (page == 1) {
-            // Focus the first HDMI input on Inputs page
-            _focusFirstNode();
-          } else if (page == 0) {
-            // Restore focus to last focused app or first node
-            final node = _lastFocusedAppNode;
-            if (node != null && node.context != null) {
-              node.requestFocus();
-            } else {
-              _focusFirstNode();
+          Future.delayed(Duration(milliseconds: 100), () {
+            if (page == 1) {
+              // Focus the first HDMI input on Inputs page
+              _focusFirstContentNode();
+            } else if (page == 0) {
+              // Focus the first app card in the top category
+              _focusFirstContentNode();
             }
-          }
+          });
         });
       });
     }
   }
 
-  void _focusFirstNode() {
-    // Try multiple times to ensure the page is built
-    Future.delayed(Duration(milliseconds: 50), () {
-      final scope = FocusManager.instance.primaryFocus?.nearestScope;
-      if (scope != null) {
-        final nodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
-        if (nodes.isNotEmpty) {
-          nodes.first.requestFocus();
-        }
+  void _focusFirstContentNode() {
+    final scope = FocusManager.instance.primaryFocus?.nearestScope;
+    if (scope != null) {
+      // Get all focusable nodes and filter out app bar icons
+      final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+      
+      // Sort by Y position to get top-to-bottom order, then by X position
+      allNodes.sort((a, b) {
+        final dyDiff = a.rect.center.dy.compareTo(b.rect.center.dy);
+        if (dyDiff.abs() > 50) return dyDiff; // Different rows
+        return a.rect.center.dx.compareTo(b.rect.center.dx); // Same row, sort by X
+      });
+      
+      // Find the first node that's not in the app bar (Y > 100)
+      final contentNode = allNodes.firstWhere(
+        (node) => node.rect.center.dy > 100,
+        orElse: () => allNodes.isNotEmpty ? allNodes.first : null as FocusNode,
+      );
+      
+      if (contentNode != null) {
+        contentNode.requestFocus();
       }
-    });
+    }
   }
 
   @override
