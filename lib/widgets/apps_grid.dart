@@ -123,6 +123,7 @@ class AppsGrid extends StatelessWidget {
         childAspectRatio: 16 / 9,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
+        mainAxisExtent: 134, // Fixed height matching CategoryRow cards (150 - 16 padding)
       );
 
   Widget _emptyState(BuildContext context) => Padding(
