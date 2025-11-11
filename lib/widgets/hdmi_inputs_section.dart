@@ -192,7 +192,7 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: SizedBox(
-                width: 225, // Fixed width to match other categories
+                width: 200, // Fixed width to match other categories
                 height: 110, // Fixed height to match other categories
                 child: HdmiCard(
                   input: _hdmiInputs[index],
@@ -263,81 +263,78 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        transformAlignment: Alignment.center,
-        transform: _scaleTransform(context),
-        child: Material(
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          elevation: Focus.of(context).hasFocus ? 16 : 0,
-          shadowColor: Colors.black,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InkWell(
-                autofocus: widget.autofocus,
-                focusColor: Colors.transparent,
-                onTap: widget.onTap,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.settings_input_hdmi, size: 40),
-                        SizedBox(height: 8),
-                        Text(
-                          widget.input.name,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      transformAlignment: Alignment.center,
+      transform: _scaleTransform(context),
+      child: Material(
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        elevation: Focus.of(context).hasFocus ? 16 : 0,
+        shadowColor: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            InkWell(
+              autofocus: widget.autofocus,
+              focusColor: Colors.transparent,
+              onTap: widget.onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.settings_input_hdmi, size: 40),
+                      SizedBox(height: 8),
+                      Text(
+                        widget.input.name,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              IgnorePointer(
-                child: AnimatedOpacity(
-                  duration: Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  opacity: Focus.of(context).hasFocus ? 0 : 0.10,
-                  child: Container(color: Colors.black),
-                ),
+            ),
+            IgnorePointer(
+              child: AnimatedOpacity(
+                duration: Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                opacity: Focus.of(context).hasFocus ? 0 : 0.10,
+                child: Container(color: Colors.black),
               ),
-              Selector<SettingsService, bool>(
-                selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
-                builder: (context, appHighlightAnimationEnabled, __) {
-                  if (appHighlightAnimationEnabled) {
-                    _animation.forward();
-                    return AnimatedBuilder(
-                      animation: _animation,
-                      builder: (context, child) => IgnorePointer(
-                        child: AnimatedContainer(
-                          duration: Duration(milliseconds: 200),
-                          curve: Curves.easeInOut,
-                          decoration: BoxDecoration(
-                            border: Focus.of(context).hasFocus
-                                ? Border.all(
-                                    color: _lastBorderColor =
-                                        computeBorderColor(_animation.value, _lastBorderColor),
-                                    width: 3)
-                                : null,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+            ),
+            Selector<SettingsService, bool>(
+              selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
+              builder: (context, appHighlightAnimationEnabled, __) {
+                if (appHighlightAnimationEnabled) {
+                  _animation.forward();
+                  return AnimatedBuilder(
+                    animation: _animation,
+                    builder: (context, child) => IgnorePointer(
+                      child: AnimatedContainer(
+                        duration: Duration(milliseconds: 200),
+                        curve: Curves.easeInOut,
+                        decoration: BoxDecoration(
+                          border: Focus.of(context).hasFocus
+                              ? Border.all(
+                                  color: _lastBorderColor =
+                                      computeBorderColor(_animation.value, _lastBorderColor),
+                                  width: 3)
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                    );
-                  }
-                  _animation.stop();
-                  return SizedBox();
-                },
-              ),
-            ],
-          ),
+                    ),
+                  );
+                }
+                _animation.stop();
+                return SizedBox();
+              },
+            ),
+          ],
         ),
       ),
     );

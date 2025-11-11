@@ -60,7 +60,7 @@ class CategoryRow extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 8),
                           child: SizedBox(
-                            width: 225, // Fixed width to match other categories
+                            width: 200, // Fixed width to match other categories
                             height: 110, // Fixed height to match other categories
                             child: AppCard(
                               category: category,

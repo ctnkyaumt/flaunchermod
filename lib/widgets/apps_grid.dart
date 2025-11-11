@@ -52,30 +52,55 @@ class AppsGrid extends StatelessWidget {
             ),
           ),
           applications.isNotEmpty
-              ? GridView.custom(
-                  shrinkWrap: true,
-                  primary: false,
-                  gridDelegate: _buildSliverGridDelegate(),
-                  padding: EdgeInsets.all(16),
-                  childrenDelegate: SliverChildBuilderDelegate(
-                    (context, index) => EnsureVisible(
-                      key: Key("${category.id}-${applications[index].packageName}"),
-                      alignment: 0.5,
-                      child: SizedBox(
-                        width: 195, // Fixed width to match CategoryRow cards (110 * 16/9)
-                        height: 110,
-                        child: AppCard(
-                          category: category,
-                          application: applications[index],
-                          autofocus: index == 0,
-                          onMove: (direction) => _onMove(context, direction, index),
-                          onMoveEnd: () => _saveOrder(context),
-                        ),
+              ? LayoutBuilder(
+                  builder: (context, constraints) {
+                    const targetWidth = 200.0;
+                    const cardHeight = 110.0;
+                    const spacing = 16.0;
+                    const padding = 32.0; // 16 on each side
+
+                    final availableWidth = max(constraints.maxWidth - padding, targetWidth);
+                    int crossAxisCount = max(1, ((availableWidth + spacing) / (targetWidth + spacing)).floor());
+
+                    double tileWidth =
+                        (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
+                    while (tileWidth > targetWidth && crossAxisCount < 50) {
+                      crossAxisCount++;
+                      tileWidth =
+                          (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
+                    }
+
+                    return GridView.custom(
+                      shrinkWrap: true,
+                      primary: false,
+                      padding: EdgeInsets.all(16),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: crossAxisCount,
+                        mainAxisSpacing: spacing,
+                        crossAxisSpacing: spacing,
+                        mainAxisExtent: cardHeight,
                       ),
-                    ),
-                    childCount: applications.length,
-                    findChildIndexCallback: _findChildIndex,
-                  ),
+                      childrenDelegate: SliverChildBuilderDelegate(
+                        (context, index) => EnsureVisible(
+                          key: Key("${category.id}-${applications[index].packageName}"),
+                          alignment: 0.5,
+                          child: SizedBox(
+                            width: targetWidth,
+                            height: cardHeight,
+                            child: AppCard(
+                              category: category,
+                              application: applications[index],
+                              autofocus: index == 0,
+                              onMove: (direction) => _onMove(context, direction, index),
+                              onMoveEnd: () => _saveOrder(context),
+                            ),
+                          ),
+                        ),
+                        childCount: applications.length,
+                        findChildIndexCallback: _findChildIndex,
+                      ),
+                    );
+                  },
                 )
               : _emptyState(context),
         ],
@@ -121,13 +146,6 @@ class AppsGrid extends StatelessWidget {
     final appsService = context.read<AppsService>();
     appsService.saveOrderInCategory(category);
   }
-
-  SliverGridDelegate _buildSliverGridDelegate() => SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: category.columnsCount,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        mainAxisExtent: 110, // Fixed height matching CategoryRow cards (126 - 16 padding)
-      );
 
   Widget _emptyState(BuildContext context) => Padding(
         padding: EdgeInsets.only(top: 8),
