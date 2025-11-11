@@ -1,0 +1,132 @@
+name: Manual Release Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Version to release (must match pubspec.yaml)'
+        required: true
+      post_release_version:
+        description: 'Next development version after releasing (optional)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build, publish, and bump version
+    runs-on: ubuntu-latest
+    env:
+      FLUTTER_VERSION: '3.7.5'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure release version matches pubspec.yaml
+        run: |
+          CURRENT_VERSION=$(grep ^version pubspec.yaml | sed -E 's/^version: //')
+          RELEASE_VERSION="${{ inputs.release_version }}"
+          echo "pubspec.yaml version: $CURRENT_VERSION"
+          if [ "$CURRENT_VERSION" != "$RELEASE_VERSION" ]; then
+            echo "Provided release_version ($RELEASE_VERSION) does not match pubspec.yaml ($CURRENT_VERSION)."
+            exit 1
+          fi
+
+      - name: Decode keystore
+        env:
+          SIGNING_JKS_FILE_BASE64: ${{ secrets.SIGNING_JKS_FILE_BASE64 }}
+        run: |
+          if [ -z "$SIGNING_JKS_FILE_BASE64" ]; then
+            echo "Missing SIGNING_JKS_FILE_BASE64 secret."
+            exit 1
+          fi
+          mkdir -p android/app
+          echo "$SIGNING_JKS_FILE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APKs (armeabi-v7a & arm64-v8a)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          flutter build apk \
+            --release \
+            --target-platform android-arm,android-arm64 \
+            --split-per-abi
+          ls -lha build/app/outputs/flutter-apk
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apks-${{ inputs.release_version }}
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.release_version }}
+          name: v${{ inputs.release_version }}
+          body: |
+            Automated release for version ${{ inputs.release_version }}.
+          files: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          generate_release_notes: true
+
+      - name: Determine next version
+        id: next_version
+        run: |
+          if [ -n "${{ inputs.post_release_version }}" ]; then
+            NEXT_VERSION="${{ inputs.post_release_version }}"
+          else
+            VERSION="${{ inputs.release_version }}"
+            BASE="${VERSION%%+*}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+            PATCH=${PATCH:-0}
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH"
+          fi
+          echo "Next version: $NEXT_VERSION"
+          echo "value=$NEXT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Bump pubspec.yaml version
+        run: |
+          NEXT_VERSION="${{ steps.next_version.outputs.value }}"
+          sed -i "s/^version: .*/version: $NEXT_VERSION/" pubspec.yaml
+
+      - name: Commit version bump
+        id: commit_bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            echo "committed=false" >> $GITHUB_OUTPUT
+          else
+            git commit -m "chore: bump version to ${{ steps.next_version.outputs.value }}"
+            echo "committed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Push changes
+        if: steps.commit_bump.outputs.committed == 'true'
+        run: git push origin HEAD:${{ github.ref }}
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f android/app/upload-keystore.jks
