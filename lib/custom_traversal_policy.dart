@@ -168,3 +168,65 @@ extension Geometry on FocusNode {
         pow(rect.center.dy.round() - other.rect.center.dy.round(), 2));
   }
 }
+
+/// Custom traversal policy that handles page navigation at boundaries
+class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocusTraversalPolicyMixin {
+  final dynamic state;
+
+  PageAwareTraversalPolicy(this.state);
+
+  @override
+  Iterable<FocusNode> sortDescendants(Iterable<FocusNode> descendants, FocusNode currentNode) => descendants;
+
+  @override
+  bool inDirection(FocusNode currentNode, TraversalDirection direction) {
+    List<FocusNode>? nodes = currentNode.nearestScope?.traversalDescendants.toList();
+    if (nodes == null) {
+      return super.inDirection(currentNode, direction);
+    }
+
+    // For left/right navigation, implement infinite loop cycling within the same row
+    if (direction == TraversalDirection.left || direction == TraversalDirection.right) {
+      List<FocusNode> sameRowNodes = nodes.where((node) => node.isOnTheSameRow(currentNode)).toList();
+      
+      if (sameRowNodes.length > 1) {
+        sameRowNodes.sort((a, b) => a.rect.center.dx.compareTo(b.rect.center.dx));
+        
+        int currentIndex = sameRowNodes.indexWhere((node) => node == currentNode);
+        if (currentIndex != -1) {
+          FocusNode? nextNode;
+          
+          if (direction == TraversalDirection.right) {
+            nextNode = sameRowNodes[(currentIndex + 1) % sameRowNodes.length];
+          } else {
+            nextNode = sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
+          }
+          
+          if (nextNode != null) {
+            nextNode.requestFocus();
+            return true;
+          }
+        }
+      }
+      
+      return true;
+    }
+
+    // For up/down navigation, check if we're at a boundary
+    NodeSearcher searcher = NodeSearcher(direction);
+    List<CandidateNode> candidates = searcher.findCandidates(nodes, currentNode);
+    
+    // If no candidates found, we're at a boundary - trigger page navigation
+    if (candidates.isEmpty) {
+      if (state != null && state.handlePageNavigation != null) {
+        state.handlePageNavigation(direction, currentNode);
+        return true;
+      }
+      return super.inDirection(currentNode, direction);
+    }
+    
+    FocusNode nextNode = searcher.findBestFocusNode(candidates, currentNode);
+    nextNode.requestFocus();
+    return true;
+  }
+}

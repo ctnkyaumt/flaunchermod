@@ -166,59 +166,49 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       // Show placeholder or loading indicator for the section height
-      return const SizedBox(height: 150, child: Center(child: CircularProgressIndicator()));
+      return const SizedBox(height: 126, child: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
-      return SizedBox(height: 150, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
+      return SizedBox(height: 126, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
     }
 
     if (_hdmiInputs.isEmpty) {
-      return const SizedBox(height: 150, child: Center(child: Text('No HDMI inputs detected.')));
+      return const SizedBox(height: 126, child: Center(child: Text('No HDMI inputs detected.')));
     }
 
     // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
     _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: EdgeInsets.only(left: 16, bottom: 8),
-          child: Text(
-            "HDMI Inputs",
-            style: Theme.of(context).textTheme.titleLarge!.copyWith(
-              shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)]
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 150,
-          child: ListView.custom(
-            padding: EdgeInsets.all(8),
-            scrollDirection: Axis.horizontal,
-            childrenDelegate: SliverChildBuilderDelegate(
-              (context, index) => EnsureVisible(
-                key: Key("hdmi-${_hdmiInputs[index].id}"),
-                alignment: 0.1,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                  child: HdmiCard(
-                    input: _hdmiInputs[index],
-                    autofocus: index == 0,
-                    onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
-                  ),
+    return SizedBox(
+      height: 126,
+      child: ListView.custom(
+        padding: EdgeInsets.all(8),
+        scrollDirection: Axis.horizontal,
+        childrenDelegate: SliverChildBuilderDelegate(
+          (context, index) => EnsureVisible(
+            key: Key("hdmi-${_hdmiInputs[index].id}"),
+            alignment: 0.1,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: SizedBox(
+                width: 200, // Fixed width to match other categories
+                height: 110, // Fixed height to match other categories
+                child: HdmiCard(
+                  input: _hdmiInputs[index],
+                  autofocus: index == 0,
+                  onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
                 ),
               ),
-              childCount: _hdmiInputs.length,
-              findChildIndexCallback: (Key key) {
-                final keyValue = (key as ValueKey<String>).value;
-                return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
-              },
             ),
           ),
+          childCount: _hdmiInputs.length,
+          findChildIndexCallback: (Key key) {
+            final keyValue = (key as ValueKey<String>).value;
+            return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
+          },
         ),
-      ],
+      ),
     );
   }
 }
@@ -273,81 +263,78 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        transformAlignment: Alignment.center,
-        transform: _scaleTransform(context),
-        child: Material(
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          elevation: Focus.of(context).hasFocus ? 16 : 0,
-          shadowColor: Colors.black,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InkWell(
-                autofocus: widget.autofocus,
-                focusColor: Colors.transparent,
-                onTap: widget.onTap,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.settings_input_hdmi, size: 40),
-                        SizedBox(height: 8),
-                        Text(
-                          widget.input.name,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      transformAlignment: Alignment.center,
+      transform: _scaleTransform(context),
+      child: Material(
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        elevation: Focus.of(context).hasFocus ? 16 : 0,
+        shadowColor: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            InkWell(
+              autofocus: widget.autofocus,
+              focusColor: Colors.transparent,
+              onTap: widget.onTap,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.settings_input_hdmi, size: 40),
+                      SizedBox(height: 8),
+                      Text(
+                        widget.input.name,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
-              IgnorePointer(
-                child: AnimatedOpacity(
-                  duration: Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  opacity: Focus.of(context).hasFocus ? 0 : 0.10,
-                  child: Container(color: Colors.black),
-                ),
+            ),
+            IgnorePointer(
+              child: AnimatedOpacity(
+                duration: Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                opacity: Focus.of(context).hasFocus ? 0 : 0.10,
+                child: Container(color: Colors.black),
               ),
-              Selector<SettingsService, bool>(
-                selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
-                builder: (context, appHighlightAnimationEnabled, __) {
-                  if (appHighlightAnimationEnabled) {
-                    _animation.forward();
-                    return AnimatedBuilder(
-                      animation: _animation,
-                      builder: (context, child) => IgnorePointer(
-                        child: AnimatedContainer(
-                          duration: Duration(milliseconds: 200),
-                          curve: Curves.easeInOut,
-                          decoration: BoxDecoration(
-                            border: Focus.of(context).hasFocus
-                                ? Border.all(
-                                    color: _lastBorderColor =
-                                        computeBorderColor(_animation.value, _lastBorderColor),
-                                    width: 3)
-                                : null,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+            ),
+            Selector<SettingsService, bool>(
+              selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
+              builder: (context, appHighlightAnimationEnabled, __) {
+                if (appHighlightAnimationEnabled) {
+                  _animation.forward();
+                  return AnimatedBuilder(
+                    animation: _animation,
+                    builder: (context, child) => IgnorePointer(
+                      child: AnimatedContainer(
+                        duration: Duration(milliseconds: 200),
+                        curve: Curves.easeInOut,
+                        decoration: BoxDecoration(
+                          border: Focus.of(context).hasFocus
+                              ? Border.all(
+                                  color: _lastBorderColor =
+                                      computeBorderColor(_animation.value, _lastBorderColor),
+                                  width: 3)
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                    );
-                  }
-                  _animation.stop();
-                  return SizedBox();
-                },
-              ),
-            ],
-          ),
+                    ),
+                  );
+                }
+                _animation.stop();
+                return SizedBox();
+              },
+            ),
+          ],
         ),
       ),
     );

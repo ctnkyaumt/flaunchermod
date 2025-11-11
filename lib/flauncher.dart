@@ -30,14 +30,81 @@ import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
 import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-class FLauncher extends StatelessWidget {
+class FLauncher extends StatefulWidget {
+  @override
+  _FLauncherState createState() => _FLauncherState();
+}
+
+class _FLauncherState extends State<FLauncher> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+  FocusNode? _lastFocusedAppNode;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _navigateToPage(int page) {
+    if (page >= 0 && page <= 1) {
+      setState(() {
+        _currentPage = page;
+      });
+      _pageController.animateToPage(
+        page,
+        duration: Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      ).then((_) {
+        // After page animation completes, focus on the first focusable element
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Future.delayed(Duration(milliseconds: 100), () {
+            if (page == 1) {
+              // Focus the first HDMI input on Inputs page
+              _focusFirstContentNode();
+            } else if (page == 0) {
+              // Focus the first app card in the top category
+              _focusFirstContentNode();
+            }
+          });
+        });
+      });
+    }
+  }
+
+  void _focusFirstContentNode() {
+    final scope = FocusManager.instance.primaryFocus?.nearestScope;
+    if (scope != null) {
+      // Get all focusable nodes and filter out app bar icons
+      final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+      
+      // Sort by Y position to get top-to-bottom order, then by X position
+      allNodes.sort((a, b) {
+        final dyDiff = a.rect.center.dy.compareTo(b.rect.center.dy);
+        if (dyDiff.abs() > 50) return dyDiff; // Different rows
+        return a.rect.center.dx.compareTo(b.rect.center.dx); // Same row, sort by X
+      });
+      
+      // Find the first node that's not in the app bar (Y > 100)
+      final contentNode = allNodes.firstWhere(
+        (node) => node.rect.center.dy > 100,
+        orElse: () => allNodes.isNotEmpty ? allNodes.first : null as FocusNode,
+      );
+      
+      if (contentNode != null) {
+        contentNode.requestFocus();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     debugPrint("FLauncher: Building main UI widget");
     return FocusTraversalGroup(
-      policy: RowByRowTraversalPolicy(),
+      policy: PageAwareTraversalPolicy(this),
       child: Stack(
         children: [
           Consumer<WallpaperService>(
@@ -46,41 +113,118 @@ class FLauncher extends StatelessWidget {
           Scaffold(
             backgroundColor: Colors.transparent,
             appBar: _appBar(context),
-            body: Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Consumer<AppsService>(
-                builder: (context, appsService, _) => appsService.initialized
-                    ? Column(
-                        children: [
-                          // Everything wrapped in a single scrollable area
-                          Expanded(
-                            child: SingleChildScrollView(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // Existing categories
-                                  _categories(appsService.categoriesWithApps),
-                                  
-                                  // HDMI Inputs section
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                                    child: Text(
-                                      "Inputs", // Section Title
-                                      style: Theme.of(context).textTheme.headlineSmall,
-                                    ),
-                                  ),
-                                  const HdmiInputsSection(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : _emptyState(context),
-              ),
+            body: Stack(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Consumer<AppsService>(
+                    builder: (context, appsService, _) => appsService.initialized
+                        ? PageView(
+                            controller: _pageController,
+                            scrollDirection: Axis.vertical,
+                            physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
+                            onPageChanged: (page) {
+                              setState(() {
+                                _currentPage = page;
+                              });
+                            },
+                            children: [
+                              // Apps Page
+                              _buildAppsPage(appsService.categoriesWithApps),
+                              // Inputs Page
+                              _buildInputsPage(),
+                            ],
+                          )
+                        : _emptyState(context),
+                  ),
+                ),
+                // Page indicator dots
+                _buildPageIndicator(),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
+    if (direction == TraversalDirection.down && _currentPage == 0) {
+      _lastFocusedAppNode = currentNode;
+      _navigateToPage(1);
+    } else if (direction == TraversalDirection.up && _currentPage == 1) {
+      _navigateToPage(0);
+    }
+  }
+
+  Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "Apps" title
+          Padding(
+            padding: EdgeInsets.only(left: 16, bottom: 16),
+            child: Text(
+              "Apps",
+              style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // Categories
+          _categories(categoriesWithApps),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputsPage() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "Inputs" title
+          Padding(
+            padding: EdgeInsets.only(left: 16, bottom: 16),
+            child: Text(
+              "Inputs",
+              style: Theme.of(context).textTheme.headlineMedium!.copyWith(
+                shadows: [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // HDMI Inputs section
+          const HdmiInputsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator() {
+    return Positioned(
+      right: 16,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(2, (index) {
+            return Container(
+              margin: EdgeInsets.symmetric(vertical: 4),
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _currentPage == index
+                    ? Colors.white
+                    : Colors.white.withOpacity(0.3),
+              ),
+            );
+          }),
+        ),
       ),
     );
   }

@@ -49,7 +49,7 @@ class CategoryRow extends StatelessWidget {
           ),
           applications.isNotEmpty
               ? SizedBox(
-                  height: category.rowHeight.toDouble(),
+                  height: 126.0, // Fixed uniform height for all categories (110 card + 16 padding)
                   child: ListView.custom(
                     padding: EdgeInsets.all(8),
                     scrollDirection: Axis.horizontal,
@@ -59,12 +59,16 @@ class CategoryRow extends StatelessWidget {
                         alignment: 0.1,
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: AppCard(
-                            category: category,
-                            application: applications[index],
-                            autofocus: index == 0,
-                            onMove: (direction) => _onMove(context, direction, index),
-                            onMoveEnd: () => _onMoveEnd(context),
+                          child: SizedBox(
+                            width: 200, // Fixed width to match other categories
+                            height: 110, // Fixed height to match other categories
+                            child: AppCard(
+                              category: category,
+                              application: applications[index],
+                              autofocus: index == 0,
+                              onMove: (direction) => _onMove(context, direction, index),
+                              onMoveEnd: () => _onMoveEnd(context),
+                            ),
                           ),
                         ),
                       ),
