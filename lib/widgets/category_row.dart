@@ -59,12 +59,16 @@ class CategoryRow extends StatelessWidget {
                         alignment: 0.1,
                         child: Padding(
                           padding: EdgeInsets.symmetric(horizontal: 8),
-                          child: AppCard(
-                            category: category,
-                            application: applications[index],
-                            autofocus: index == 0,
-                            onMove: (direction) => _onMove(context, direction, index),
-                            onMoveEnd: () => _onMoveEnd(context),
+                          child: SizedBox(
+                            width: 225, // Fixed width to match other categories
+                            height: 110, // Fixed height to match other categories
+                            child: AppCard(
+                              category: category,
+                              application: applications[index],
+                              autofocus: index == 0,
+                              onMove: (direction) => _onMove(context, direction, index),
+                              onMoveEnd: () => _onMoveEnd(context),
+                            ),
                           ),
                         ),
                       ),

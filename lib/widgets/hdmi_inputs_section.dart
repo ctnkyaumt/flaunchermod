@@ -191,10 +191,14 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
             alignment: 0.1,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
-              child: HdmiCard(
-                input: _hdmiInputs[index],
-                autofocus: index == 0,
-                onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
+              child: SizedBox(
+                width: 225, // Fixed width to match other categories
+                height: 110, // Fixed height to match other categories
+                child: HdmiCard(
+                  input: _hdmiInputs[index],
+                  autofocus: index == 0,
+                  onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
+                ),
               ),
             ),
           ),
