@@ -80,6 +80,10 @@ class _FLauncherState extends State<FLauncher> {
     if (scope != null) {
       // Get all focusable nodes and filter out app bar icons
       final allNodes = scope.traversalDescendants.where((node) => node.canRequestFocus).toList();
+
+      if (allNodes.isEmpty) {
+        return;
+      }
       
       // Sort by Y position to get top-to-bottom order, then by X position
       allNodes.sort((a, b) {
@@ -91,12 +95,10 @@ class _FLauncherState extends State<FLauncher> {
       // Find the first node that's not in the app bar (Y > 100)
       final contentNode = allNodes.firstWhere(
         (node) => node.rect.center.dy > 100,
-        orElse: () => allNodes.isNotEmpty ? allNodes.first : null as FocusNode,
+        orElse: () => allNodes.first,
       );
       
-      if (contentNode != null) {
-        contentNode.requestFocus();
-      }
+      contentNode.requestFocus();
     }
   }
 

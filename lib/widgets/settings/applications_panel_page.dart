@@ -119,7 +119,13 @@ Widget _appCard(BuildContext context, App application) => Card(
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        leading: Image.memory(application.icon!, height: 48),
+        leading: application.icon != null
+            ? Image.memory(application.icon!, height: 48)
+            : SizedBox(
+                width: 48,
+                height: 48,
+                child: Center(child: Icon(Icons.apps)),
+              ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

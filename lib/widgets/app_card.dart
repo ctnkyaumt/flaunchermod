@@ -125,10 +125,15 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
                               children: [
                                 Expanded(
                                   flex: 2,
-                                  child: Ink.image(
-                                    image: _cachedMemoryImage(widget.application.icon!),
-                                    height: double.infinity,
-                                  ),
+                                  child: widget.application.icon != null
+                                      ? Ink.image(
+                                          image: _cachedMemoryImage(widget.application.icon!),
+                                          height: double.infinity,
+                                        )
+                                      : SizedBox(
+                                          height: double.infinity,
+                                          child: Center(child: Icon(Icons.apps)),
+                                        ),
                                 ),
                                 Flexible(
                                   flex: 3,
