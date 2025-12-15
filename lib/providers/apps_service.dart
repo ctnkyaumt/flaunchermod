@@ -75,7 +75,18 @@ class AppsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  AppsCompanion _buildAppCompanion(dynamic data, {required bool? existingHidden}) => AppsCompanion(
+  AppsCompanion _buildAppCompanion(dynamic data) => AppsCompanion(
+        packageName: Value(data["packageName"]),
+        name: Value(data["name"]),
+        version: Value(data["version"] ?? "(unknown)"),
+        banner: Value(data["banner"]),
+        icon: Value(data["icon"]),
+        hidden: Value(data["isSystemApp"] ?? false), // Hide pre-installed system apps by default
+        sideloaded: Value(data["sideloaded"]),
+        isSystemApp: Value(data["isSystemApp"] ?? false),
+      );
+
+  AppsCompanion _buildAppCompanionPreservingHidden(dynamic data, {required bool? existingHidden}) => AppsCompanion(
         packageName: Value(data["packageName"]),
         name: Value(data["name"]),
         version: Value(data["version"] ?? "(unknown)"),
@@ -128,7 +139,7 @@ class AppsService extends ChangeNotifier {
       };
 
       final appsFromSystem = (await _fLauncherChannel.getApplications())
-          .map((data) => _buildAppCompanion(
+          .map((data) => _buildAppCompanionPreservingHidden(
                 data,
                 existingHidden: existingAppsByPackageName[data["packageName"]]?.hidden,
               ))
