@@ -60,15 +60,7 @@ class AppsGrid extends StatelessWidget {
                     const padding = 32.0; // 16 on each side
 
                     final availableWidth = max(constraints.maxWidth - padding, targetWidth);
-                    int crossAxisCount = max(1, ((availableWidth + spacing) / (targetWidth + spacing)).floor());
-
-                    double tileWidth =
-                        (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
-                    while (tileWidth > targetWidth && crossAxisCount < 50) {
-                      crossAxisCount++;
-                      tileWidth =
-                          (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
-                    }
+                    final crossAxisCount = max(1, ((availableWidth + spacing) / (targetWidth + spacing)).floor());
 
                     return GridView.custom(
                       shrinkWrap: true,
