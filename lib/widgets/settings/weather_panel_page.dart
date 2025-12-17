@@ -1,6 +1,7 @@
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
+import 'package:flauncher/widgets/tv_keyboard_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -13,53 +14,19 @@ class WeatherPanelPage extends StatefulWidget {
 }
 
 class _WeatherPanelPageState extends State<WeatherPanelPage> {
-  final TextEditingController _cityController = TextEditingController();
-  final TextEditingController _latitudeController = TextEditingController();
-  final TextEditingController _longitudeController = TextEditingController();
-  final TextEditingController _displayNameController = TextEditingController();
-
-  final FocusNode _latitudeFocus = FocusNode();
-  final FocusNode _longitudeFocus = FocusNode();
-  final FocusNode _displayNameFocus = FocusNode();
+  String _cityDraft = '';
 
   bool _useCitySearch = true;
   bool _busy = false;
 
-  bool _initializedFromSettings = false;
-
   @override
   void dispose() {
-    _cityController.dispose();
-    _latitudeController.dispose();
-    _longitudeController.dispose();
-    _displayNameController.dispose();
-
-    _latitudeFocus.dispose();
-    _longitudeFocus.dispose();
-    _displayNameFocus.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
-
-    if (!_initializedFromSettings) {
-      _displayNameController.text = settings.weatherLocationName ?? '';
-      _latitudeController.text = settings.weatherLatitude?.toString() ?? '';
-      _longitudeController.text = settings.weatherLongitude?.toString() ?? '';
-      _initializedFromSettings = true;
-    } else {
-      if (!_displayNameFocus.hasFocus) {
-        _displayNameController.text = settings.weatherLocationName ?? '';
-      }
-      if (!_latitudeFocus.hasFocus) {
-        _latitudeController.text = settings.weatherLatitude?.toString() ?? '';
-      }
-      if (!_longitudeFocus.hasFocus) {
-        _longitudeController.text = settings.weatherLongitude?.toString() ?? '';
-      }
-    }
 
     return Column(
       children: [
@@ -106,7 +73,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
           child: Text('Location', style: Theme.of(context).textTheme.titleSmall),
         ),
         const SizedBox(height: 8),
-        if (_useCitySearch) _citySearch(context, settings) else _coordinateInput(settings),
+        if (_useCitySearch) _citySearch(context, settings) else _coordinateInput(context, settings),
         const SizedBox(height: 8),
         TextButton(
           onPressed: () => setState(() => _useCitySearch = !_useCitySearch),
@@ -115,11 +82,10 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TextField(
-            focusNode: _displayNameFocus,
-            controller: _displayNameController,
-            decoration: const InputDecoration(labelText: 'Location display name', isDense: true),
-            onSubmitted: (value) => settings.setWeatherLocationName(value),
+          child: _editButton(
+            title: 'Location display name',
+            value: settings.weatherLocationName ?? '',
+            onPressed: () => _editLocationName(context, settings),
           ),
         ),
       ],
@@ -127,6 +93,8 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
   }
 
   Widget _citySearch(BuildContext context, SettingsService settings) {
+    final currentName = settings.weatherLocationName ?? '';
+    final display = currentName.isNotEmpty ? currentName : (_cityDraft.isNotEmpty ? _cityDraft : '');
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: FocusKeyboardListener(
@@ -144,16 +112,16 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
         builder: (context) => Row(
           children: [
             Expanded(
-              child: TextField(
-                controller: _cityController,
-                decoration: const InputDecoration(labelText: 'Search for city', isDense: true),
-                keyboardType: TextInputType.text,
-                onSubmitted: (value) => _applyCity(context, settings, value),
+              child: _editButton(
+                title: 'Search for city',
+                value: display,
+                placeholder: 'Press OK to type',
+                onPressed: () => _editCity(context),
               ),
             ),
             const SizedBox(width: 8),
             TextButton(
-              onPressed: () => _applyCity(context, settings, _cityController.text),
+              onPressed: _cityDraft.trim().isEmpty ? null : () => _applyCity(context, settings, _cityDraft),
               child: const Icon(Icons.search),
             ),
           ],
@@ -162,28 +130,26 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     );
   }
 
-  Widget _coordinateInput(SettingsService settings) {
+  Widget _coordinateInput(BuildContext context, SettingsService settings) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              focusNode: _latitudeFocus,
-              controller: _latitudeController,
-              decoration: const InputDecoration(labelText: 'Latitude', isDense: true),
-              keyboardType: TextInputType.number,
-              onSubmitted: (_) => _applyCoordinates(settings),
+            child: _editButton(
+              title: 'Latitude',
+              value: settings.weatherLatitude?.toString() ?? '',
+              placeholder: 'Press OK to type',
+              onPressed: () => _editLatitude(context, settings),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              focusNode: _longitudeFocus,
-              controller: _longitudeController,
-              decoration: const InputDecoration(labelText: 'Longitude', isDense: true),
-              keyboardType: TextInputType.number,
-              onSubmitted: (_) => _applyCoordinates(settings),
+            child: _editButton(
+              title: 'Longitude',
+              value: settings.weatherLongitude?.toString() ?? '',
+              placeholder: 'Press OK to type',
+              onPressed: () => _editLongitude(context, settings),
             ),
           ),
         ],
@@ -218,10 +184,106 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     }
   }
 
-  Future<void> _applyCoordinates(SettingsService settings) async {
-    final lat = double.tryParse(_latitudeController.text.trim());
-    final lon = double.tryParse(_longitudeController.text.trim());
-    await settings.setWeatherCoordinates(latitude: lat, longitude: lon);
+  Widget _editButton({
+    required String title,
+    required String value,
+    required VoidCallback onPressed,
+    String? placeholder,
+  }) {
+    final display = value.isNotEmpty ? value : (placeholder ?? '');
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        backgroundColor: Colors.black12,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      onPressed: onPressed,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 4),
+                Text(
+                  display,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.edit, size: 18),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editCity(BuildContext context) async {
+    final next = await TvKeyboardDialog.show(
+      context,
+      title: 'Search for city',
+      initialValue: _cityDraft,
+      layout: TvKeyboardLayout.text,
+    );
+
+    if (next == null) {
+      return;
+    }
+
+    setState(() {
+      _cityDraft = next;
+    });
+  }
+
+  Future<void> _editLocationName(BuildContext context, SettingsService settings) async {
+    final next = await TvKeyboardDialog.show(
+      context,
+      title: 'Location display name',
+      initialValue: settings.weatherLocationName ?? '',
+      layout: TvKeyboardLayout.text,
+    );
+
+    if (next == null) {
+      return;
+    }
+
+    await settings.setWeatherLocationName(next);
+  }
+
+  Future<void> _editLatitude(BuildContext context, SettingsService settings) async {
+    final next = await TvKeyboardDialog.show(
+      context,
+      title: 'Latitude',
+      initialValue: settings.weatherLatitude?.toString() ?? '',
+      layout: TvKeyboardLayout.number,
+    );
+
+    if (next == null) {
+      return;
+    }
+
+    final lat = double.tryParse(next.trim());
+    await settings.setWeatherCoordinates(latitude: lat, longitude: settings.weatherLongitude);
+  }
+
+  Future<void> _editLongitude(BuildContext context, SettingsService settings) async {
+    final next = await TvKeyboardDialog.show(
+      context,
+      title: 'Longitude',
+      initialValue: settings.weatherLongitude?.toString() ?? '',
+      layout: TvKeyboardLayout.number,
+    );
+
+    if (next == null) {
+      return;
+    }
+
+    final lon = double.tryParse(next.trim());
+    await settings.setWeatherCoordinates(latitude: settings.weatherLatitude, longitude: lon);
   }
 
   Widget _optionsSection(SettingsService settings) {

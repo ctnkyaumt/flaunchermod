@@ -22,6 +22,7 @@ import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
+import 'package:flauncher/widgets/settings/weather_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -69,6 +70,16 @@ class SettingsPanelPage extends StatelessWidget {
                   ],
                 ),
                 onPressed: () => Navigator.of(context).pushNamed(WallpaperPanelPage.routeName),
+              ),
+              TextButton(
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_outlined),
+                    Container(width: 8),
+                    Text("Weather", style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+                onPressed: () => Navigator.of(context).pushNamed(WeatherPanelPage.routeName),
               ),
               Divider(),
               TextButton(
