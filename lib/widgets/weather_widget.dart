@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class WeatherWidget extends StatelessWidget {
-  const WeatherWidget({super.key});
+  const WeatherWidget({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) => Selector<SettingsService, _WeatherUiConfig>(
