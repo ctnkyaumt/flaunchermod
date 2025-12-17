@@ -53,31 +53,36 @@ class AppsGrid extends StatelessWidget {
           ),
           applications.isNotEmpty
               ? Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: applications
-                        .asMap()
-                        .entries
-                        .map(
-                          (entry) => EnsureVisible(
-                            key: Key("${category.id}-${entry.value.packageName}"),
-                            alignment: 0.5,
-                            child: SizedBox(
-                              width: 200,
-                              height: 110,
-                              child: AppCard(
-                                category: category,
-                                application: entry.value,
-                                autofocus: entry.key == 0,
-                                onMove: (direction) => _onMove(context, direction, entry.key),
-                                onMoveEnd: () => _saveOrder(context),
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      runAlignment: WrapAlignment.start,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: applications
+                          .asMap()
+                          .entries
+                          .map(
+                            (entry) => EnsureVisible(
+                              key: Key("${category.id}-${entry.value.packageName}"),
+                              alignment: 0.1,
+                              child: SizedBox(
+                                width: 200,
+                                height: 110,
+                                child: AppCard(
+                                  category: category,
+                                  application: entry.value,
+                                  autofocus: entry.key == 0,
+                                  onMove: (direction) => _onMove(context, direction, entry.key),
+                                  onMoveEnd: () => _saveOrder(context),
+                                ),
                               ),
                             ),
-                          ),
-                        )
-                        .toList(growable: false),
+                          )
+                          .toList(growable: false),
+                    ),
                   ),
                 )
               : _emptyState(context),
