@@ -24,11 +24,10 @@ import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
-import 'package:flauncher/widgets/apps_grid.dart';
-import 'package:flauncher/widgets/category_row.dart';
+import 'package:flauncher/widgets/app_card.dart';
+import 'package:flauncher/widgets/weather_widget.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
-import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -255,6 +254,10 @@ class _FLauncherState extends State<FLauncher> {
       );
 
   AppBar _appBar(BuildContext context) => AppBar(
+        title: Center(
+          child: WeatherWidget(),
+        ),
+        centerTitle: true,
         actions: [
           // Spacer to push elements to the right
           Spacer(),

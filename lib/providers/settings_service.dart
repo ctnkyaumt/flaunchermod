@@ -31,6 +31,19 @@ const _gradientUuidKey = "gradient_uuid";
 const _unsplashEnabledKey = "unsplash_enabled";
 const _unsplashAuthorKey = "unsplash_author";
 
+const _weatherEnabledKey = "weather_enabled";
+const _weatherLatitudeKey = "weather_latitude";
+const _weatherLongitudeKey = "weather_longitude";
+const _weatherLocationNameKey = "weather_location_name";
+const _weatherShowDetailsKey = "weather_show_details";
+const _weatherShowCityKey = "weather_show_city";
+const _weatherUnitsKey = "weather_units";
+
+enum WeatherUnits {
+  si,
+  us,
+}
+
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
   final FirebaseCrashlytics? _firebaseCrashlytics;
@@ -51,6 +64,35 @@ class SettingsService extends ChangeNotifier {
   bool get unsplashEnabled => _firebaseRemoteConfig.getBool(_unsplashEnabledKey);
 
   String? get unsplashAuthor => _sharedPreferences.getString(_unsplashAuthorKey);
+
+  bool get weatherEnabled => _sharedPreferences.getBool(_weatherEnabledKey) ?? false;
+
+  double? get weatherLatitude {
+    final value = _sharedPreferences.getDouble(_weatherLatitudeKey);
+    return value;
+  }
+
+  double? get weatherLongitude {
+    final value = _sharedPreferences.getDouble(_weatherLongitudeKey);
+    return value;
+  }
+
+  String? get weatherLocationName => _sharedPreferences.getString(_weatherLocationNameKey);
+
+  bool get weatherShowDetails => _sharedPreferences.getBool(_weatherShowDetailsKey) ?? false;
+
+  bool get weatherShowCity => _sharedPreferences.getBool(_weatherShowCityKey) ?? true;
+
+  WeatherUnits get weatherUnits {
+    final raw = _sharedPreferences.getString(_weatherUnitsKey);
+    switch (raw) {
+      case 'us':
+        return WeatherUnits.us;
+      case 'si':
+      default:
+        return WeatherUnits.si;
+    }
+  }
 
   SettingsService(
     this._sharedPreferences,
@@ -106,6 +148,52 @@ class SettingsService extends ChangeNotifier {
     } else {
       await _sharedPreferences.setString(_unsplashAuthorKey, value);
     }
+    notifyListeners();
+  }
+
+  Future<void> setWeatherEnabled(bool value) async {
+    await _sharedPreferences.setBool(_weatherEnabledKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setWeatherCoordinates({double? latitude, double? longitude}) async {
+    if (latitude == null) {
+      await _sharedPreferences.remove(_weatherLatitudeKey);
+    } else {
+      await _sharedPreferences.setDouble(_weatherLatitudeKey, latitude);
+    }
+
+    if (longitude == null) {
+      await _sharedPreferences.remove(_weatherLongitudeKey);
+    } else {
+      await _sharedPreferences.setDouble(_weatherLongitudeKey, longitude);
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> setWeatherLocationName(String? value) async {
+    if (value == null || value.trim().isEmpty) {
+      await _sharedPreferences.remove(_weatherLocationNameKey);
+    } else {
+      await _sharedPreferences.setString(_weatherLocationNameKey, value);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setWeatherShowDetails(bool value) async {
+    await _sharedPreferences.setBool(_weatherShowDetailsKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setWeatherShowCity(bool value) async {
+    await _sharedPreferences.setBool(_weatherShowCityKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setWeatherUnits(WeatherUnits units) async {
+    final raw = units == WeatherUnits.us ? 'us' : 'si';
+    await _sharedPreferences.setString(_weatherUnitsKey, raw);
     notifyListeners();
   }
 
