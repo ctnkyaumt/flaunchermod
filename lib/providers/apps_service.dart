@@ -86,6 +86,17 @@ class AppsService extends ChangeNotifier {
         isSystemApp: Value(data["isSystemApp"] ?? false),
       );
 
+  AppsCompanion _buildAppCompanionPreservingHidden(dynamic data, {required bool? existingHidden}) => AppsCompanion(
+        packageName: Value(data["packageName"]),
+        name: Value(data["name"]),
+        version: Value(data["version"] ?? "(unknown)"),
+        banner: Value(data["banner"]),
+        icon: Value(data["icon"]),
+        hidden: Value(existingHidden ?? (data["isSystemApp"] ?? false)),
+        sideloaded: Value(data["sideloaded"]),
+        isSystemApp: Value(data["isSystemApp"] ?? false),
+      );
+
   Future<void> _initDefaultCategories() => _database.transaction(() async {
         final tvApplications = _applications.where((element) => element.sideloaded == false);
         final nonTvApplications = _applications.where((element) => element.sideloaded == true);
@@ -122,7 +133,17 @@ class AppsService extends ChangeNotifier {
 
   Future<void> _refreshState({bool shouldNotifyListeners = true}) async {
     await _database.transaction(() async {
-      final appsFromSystem = (await _fLauncherChannel.getApplications()).map(_buildAppCompanion).toList();
+      final existingApps = await _database.listApplications();
+      final existingAppsByPackageName = <String, App>{
+        for (final app in existingApps) app.packageName: app,
+      };
+
+      final appsFromSystem = (await _fLauncherChannel.getApplications())
+          .map((data) => _buildAppCompanionPreservingHidden(
+                data,
+                existingHidden: existingAppsByPackageName[data["packageName"]]?.hidden,
+              ))
+          .toList();
 
       final appsRemovedFromSystem = (await _database.listApplications())
           .where((app) => !appsFromSystem.any((systemApp) => systemApp.packageName.value == app.packageName))

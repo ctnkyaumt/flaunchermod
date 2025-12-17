@@ -38,7 +38,14 @@ class ApplicationInfoPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                Image.memory(application.icon!, width: 50),
+                if (application.icon != null)
+                  Image.memory(application.icon!, width: 50)
+                else
+                  SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: Center(child: Icon(Icons.apps)),
+                  ),
                 SizedBox(width: 8),
                 Flexible(
                   child: Text(

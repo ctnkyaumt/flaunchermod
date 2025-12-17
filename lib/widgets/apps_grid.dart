@@ -52,55 +52,38 @@ class AppsGrid extends StatelessWidget {
             ),
           ),
           applications.isNotEmpty
-              ? LayoutBuilder(
-                  builder: (context, constraints) {
-                    const targetWidth = 200.0;
-                    const cardHeight = 110.0;
-                    const spacing = 16.0;
-                    const padding = 32.0; // 16 on each side
-
-                    final availableWidth = max(constraints.maxWidth - padding, targetWidth);
-                    int crossAxisCount = max(1, ((availableWidth + spacing) / (targetWidth + spacing)).floor());
-
-                    double tileWidth =
-                        (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
-                    while (tileWidth > targetWidth && crossAxisCount < 50) {
-                      crossAxisCount++;
-                      tileWidth =
-                          (availableWidth - (crossAxisCount - 1) * spacing) / crossAxisCount;
-                    }
-
-                    return GridView.custom(
-                      shrinkWrap: true,
-                      primary: false,
-                      padding: EdgeInsets.all(16),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        mainAxisSpacing: spacing,
-                        crossAxisSpacing: spacing,
-                        mainAxisExtent: cardHeight,
-                      ),
-                      childrenDelegate: SliverChildBuilderDelegate(
-                        (context, index) => EnsureVisible(
-                          key: Key("${category.id}-${applications[index].packageName}"),
-                          alignment: 0.5,
-                          child: SizedBox(
-                            width: targetWidth,
-                            height: cardHeight,
-                            child: AppCard(
-                              category: category,
-                              application: applications[index],
-                              autofocus: index == 0,
-                              onMove: (direction) => _onMove(context, direction, index),
-                              onMoveEnd: () => _saveOrder(context),
+              ? Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      alignment: WrapAlignment.start,
+                      runAlignment: WrapAlignment.start,
+                      spacing: 16,
+                      runSpacing: 16,
+                      children: applications
+                          .asMap()
+                          .entries
+                          .map(
+                            (entry) => EnsureVisible(
+                              key: Key("${category.id}-${entry.value.packageName}"),
+                              alignment: 0.1,
+                              child: SizedBox(
+                                width: 200,
+                                height: 110,
+                                child: AppCard(
+                                  category: category,
+                                  application: entry.value,
+                                  autofocus: entry.key == 0,
+                                  onMove: (direction) => _onMove(context, direction, entry.key),
+                                  onMoveEnd: () => _saveOrder(context),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        childCount: applications.length,
-                        findChildIndexCallback: _findChildIndex,
-                      ),
-                    );
-                  },
+                          )
+                          .toList(growable: false),
+                    ),
+                  ),
                 )
               : _emptyState(context),
         ],
