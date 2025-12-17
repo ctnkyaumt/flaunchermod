@@ -23,20 +23,72 @@ class WeatherWidget extends StatelessWidget {
           return Consumer<WeatherService>(
             builder: (context, weatherService, _) {
               final current = weatherService.findCurrent(DateTime.now());
-              if (current == null) {
-                return const _WeatherContainer(child: Text('-'));
-              }
-
               return _WeatherContainer(
-                child: _WeatherContent(
-                  config: config,
-                  conditions: current,
-                ),
+                child: current == null
+                    ? _WeatherContentPlaceholder(config: config)
+                    : _WeatherContent(
+                        config: config,
+                        conditions: current,
+                      ),
               );
             },
           );
         },
       );
+}
+
+class _WeatherContentPlaceholder extends StatelessWidget {
+  final _WeatherUiConfig config;
+
+  const _WeatherContentPlaceholder({required this.config});
+
+  @override
+  Widget build(BuildContext context) => Focus(
+        canRequestFocus: true,
+        onKey: (_, event) => _handleKey(context, event),
+        child: Builder(
+          builder: (context) {
+            final hasFocus = Focus.of(context).hasFocus;
+            final border = hasFocus ? Border.all(color: Colors.white, width: 2) : null;
+
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(8),
+                border: border,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (config.name != null && config.showCity) ...[
+                    Text(config.name!),
+                    const SizedBox(width: 12),
+                  ],
+                  const Icon(Icons.cloud, color: Colors.white, size: 22),
+                  const SizedBox(width: 10),
+                  const Text('-', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+  KeyEventResult _handleKey(BuildContext context, RawKeyEvent event) {
+    if (event is RawKeyUpEvent) {
+      final key = event.logicalKey;
+      if (key == LogicalKeyboardKey.select ||
+          key == LogicalKeyboardKey.enter ||
+          key == LogicalKeyboardKey.gameButtonA) {
+        final settings = context.read<SettingsService>();
+        settings.setWeatherShowDetails(!settings.weatherShowDetails);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
 }
 
 class _WeatherContainer extends StatelessWidget {

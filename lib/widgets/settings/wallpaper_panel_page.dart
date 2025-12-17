@@ -22,7 +22,6 @@ import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/widgets/settings/gradient_panel_page.dart';
 import 'package:flauncher/widgets/settings/unsplash_panel_page.dart';
-import 'package:flauncher/widgets/settings/weather_panel_page.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -84,16 +83,6 @@ class WallpaperPanelPage extends StatelessWidget {
                 );
               }
             },
-          ),
-          TextButton(
-            child: Row(
-              children: [
-                Icon(Icons.cloud_outlined),
-                Container(width: 8),
-                Text("Weather", style: Theme.of(context).textTheme.bodyMedium),
-              ],
-            ),
-            onPressed: () => Navigator.of(context).pushNamed(WeatherPanelPage.routeName),
           ),
           Spacer(),
           Selector<SettingsService, String?>(

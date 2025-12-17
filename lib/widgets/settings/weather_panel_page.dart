@@ -32,12 +32,14 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
       children: [
         Text("Weather", style: Theme.of(context).textTheme.titleLarge),
         Divider(),
-        SwitchListTile(
-          contentPadding: EdgeInsets.symmetric(horizontal: 8),
-          value: settings.weatherEnabled,
-          onChanged: (value) => settings.setWeatherEnabled(value),
-          title: Text("Enabled"),
-          dense: true,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _focusableToggle(
+            title: 'Enabled',
+            value: settings.weatherEnabled,
+            autofocus: true,
+            onChanged: (value) => settings.setWeatherEnabled(value),
+          ),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -182,6 +184,43 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     } finally {
       setState(() => _busy = false);
     }
+  }
+
+  Widget _focusableToggle({
+    required String title,
+    required bool value,
+    required bool autofocus,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Focus(
+      autofocus: autofocus,
+      canRequestFocus: true,
+      child: Builder(
+        builder: (context) {
+          final hasFocus = Focus.of(context).hasFocus;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              borderRadius: BorderRadius.circular(8),
+              border: hasFocus ? Border.all(color: Colors.white, width: 2) : null,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                ),
+                Switch(
+                  value: value,
+                  onChanged: onChanged,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _editButton({

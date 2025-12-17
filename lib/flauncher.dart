@@ -257,14 +257,9 @@ class _FLauncherState extends State<FLauncher> {
       );
 
   AppBar _appBar(BuildContext context) => AppBar(
-        title: Center(
-          child: WeatherWidget(),
-        ),
+        title: WeatherWidget(),
         centerTitle: true,
         actions: [
-          // Spacer to push elements to the right
-          Spacer(),
-          
           // Shutdown button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
