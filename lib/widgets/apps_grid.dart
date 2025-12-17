@@ -16,8 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'dart:math';
-
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/widgets/app_card.dart';
@@ -52,47 +50,33 @@ class AppsGrid extends StatelessWidget {
             ),
           ),
           applications.isNotEmpty
-              ? LayoutBuilder(
-                  builder: (context, constraints) {
-                    const targetWidth = 200.0;
-                    const cardHeight = 110.0;
-                    const spacing = 16.0;
-                    const padding = 32.0; // 16 on each side
-
-                    final availableWidth = max(constraints.maxWidth - padding, targetWidth);
-                    final crossAxisCount = max(1, ((availableWidth + spacing) / (targetWidth + spacing)).floor());
-
-                    return GridView.custom(
-                      shrinkWrap: true,
-                      primary: false,
-                      padding: EdgeInsets.all(16),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: crossAxisCount,
-                        mainAxisSpacing: spacing,
-                        crossAxisSpacing: spacing,
-                        mainAxisExtent: cardHeight,
-                      ),
-                      childrenDelegate: SliverChildBuilderDelegate(
-                        (context, index) => EnsureVisible(
-                          key: Key("${category.id}-${applications[index].packageName}"),
-                          alignment: 0.5,
-                          child: SizedBox(
-                            width: targetWidth,
-                            height: cardHeight,
-                            child: AppCard(
-                              category: category,
-                              application: applications[index],
-                              autofocus: index == 0,
-                              onMove: (direction) => _onMove(context, direction, index),
-                              onMoveEnd: () => _saveOrder(context),
+              ? Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: applications
+                        .asMap()
+                        .entries
+                        .map(
+                          (entry) => EnsureVisible(
+                            key: Key("${category.id}-${entry.value.packageName}"),
+                            alignment: 0.5,
+                            child: SizedBox(
+                              width: 200,
+                              height: 110,
+                              child: AppCard(
+                                category: category,
+                                application: entry.value,
+                                autofocus: entry.key == 0,
+                                onMove: (direction) => _onMove(context, direction, entry.key),
+                                onMoveEnd: () => _saveOrder(context),
+                              ),
                             ),
                           ),
-                        ),
-                        childCount: applications.length,
-                        findChildIndexCallback: _findChildIndex,
-                      ),
-                    );
-                  },
+                        )
+                        .toList(growable: false),
+                  ),
                 )
               : _emptyState(context),
         ],
