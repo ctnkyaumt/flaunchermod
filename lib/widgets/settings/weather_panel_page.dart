@@ -195,6 +195,18 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     return Focus(
       autofocus: autofocus,
       canRequestFocus: true,
+      onKey: (_, event) {
+        if (event is RawKeyUpEvent) {
+          final key = event.logicalKey;
+          if (key == LogicalKeyboardKey.select ||
+              key == LogicalKeyboardKey.enter ||
+              key == LogicalKeyboardKey.gameButtonA) {
+            onChanged(!value);
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
       child: Builder(
         builder: (context) {
           final hasFocus = Focus.of(context).hasFocus;
@@ -206,16 +218,81 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
               borderRadius: BorderRadius.circular(8),
               border: hasFocus ? Border.all(color: Colors.white, width: 2) : null,
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(title, style: Theme.of(context).textTheme.bodyMedium),
-                ),
-                Switch(
-                  value: value,
-                  onChanged: onChanged,
-                ),
-              ],
+            child: InkWell(
+              canRequestFocus: false,
+              focusColor: Colors.transparent,
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              splashColor: Colors.transparent,
+              onTap: () => onChanged(!value),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(title, style: Theme.of(context).textTheme.bodyMedium),
+                  ),
+                  IgnorePointer(
+                    ignoring: true,
+                    child: Switch(
+                      value: value,
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _focusableOption({
+    required String title,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    return Focus(
+      canRequestFocus: true,
+      onKey: (_, event) {
+        if (event is RawKeyUpEvent) {
+          final key = event.logicalKey;
+          if (key == LogicalKeyboardKey.select ||
+              key == LogicalKeyboardKey.enter ||
+              key == LogicalKeyboardKey.gameButtonA) {
+            onSelected();
+            return KeyEventResult.handled;
+          }
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Builder(
+        builder: (context) {
+          final hasFocus = Focus.of(context).hasFocus;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              borderRadius: BorderRadius.circular(8),
+              border: hasFocus ? Border.all(color: Colors.white, width: 2) : null,
+            ),
+            child: InkWell(
+              canRequestFocus: false,
+              focusColor: Colors.transparent,
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              splashColor: Colors.transparent,
+              onTap: onSelected,
+              child: Row(
+                children: [
+                  Expanded(child: Text(title)),
+                  Icon(
+                    selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -343,33 +420,81 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
           title: const Text('Show city display name'),
           dense: true,
         ),
-        const Divider(),
-        RadioListTile<WeatherUnits>(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          value: WeatherUnits.si,
-          groupValue: settings.weatherUnits,
-          onChanged: (value) {
-            if (value != null) {
-              settings.setWeatherUnits(value);
-            }
-          },
-          title: const Text('Metric units'),
-          dense: true,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _editButton(
+            title: 'Refresh interval',
+            value: _formatRefreshInterval(settings.weatherRefreshIntervalMinutes),
+            onPressed: () => _editRefreshInterval(context, settings),
+          ),
         ),
-        RadioListTile<WeatherUnits>(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          value: WeatherUnits.us,
-          groupValue: settings.weatherUnits,
-          onChanged: (value) {
-            if (value != null) {
-              settings.setWeatherUnits(value);
-            }
-          },
-          title: const Text('Imperial units'),
-          dense: true,
+        const Divider(),
+        _focusableOption(
+          title: 'Metric units',
+          selected: settings.weatherUnits == WeatherUnits.si,
+          onSelected: () => settings.setWeatherUnits(WeatherUnits.si),
+        ),
+        _focusableOption(
+          title: 'Imperial units',
+          selected: settings.weatherUnits == WeatherUnits.us,
+          onSelected: () => settings.setWeatherUnits(WeatherUnits.us),
         ),
       ],
     );
+  }
+
+  String _formatRefreshInterval(int minutes) {
+    if (minutes < 60) {
+      return '$minutes minutes';
+    }
+    final hours = minutes ~/ 60;
+    final rem = minutes % 60;
+    if (rem == 0) {
+      return hours == 1 ? '1 hour' : '$hours hours';
+    }
+    final hourLabel = hours == 1 ? '1 hour' : '$hours hours';
+    return '$hourLabel $rem minutes';
+  }
+
+  Future<void> _editRefreshInterval(BuildContext context, SettingsService settings) async {
+    final values = <int>[15, 30, 45, 60, 75, 90, 105, 120];
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Refresh interval'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: ListView(
+              shrinkWrap: true,
+              children: values
+                  .map(
+                    (m) => TextButton(
+                      onPressed: () => Navigator.of(context).pop(m),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(_formatRefreshInterval(m)),
+                      ),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('CANCEL'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (selected == null) {
+      return;
+    }
+
+    await settings.setWeatherRefreshIntervalMinutes(selected);
   }
 
   Widget _dataAttribution() {

@@ -23,6 +23,7 @@ import 'dart:ui';
 import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
@@ -256,57 +257,63 @@ class _FLauncherState extends State<FLauncher> {
         }).toList(),
       );
 
-  AppBar _appBar(BuildContext context) => AppBar(
-        title: WeatherWidget(),
-        centerTitle: true,
-        actions: [
-          // Shutdown button
-          Container(
-            margin: EdgeInsets.symmetric(horizontal: 8),
-            child: IconButton(
-              padding: EdgeInsets.all(8),
-              iconSize: 36,
-              splashRadius: 24,
-              icon: Icon(Icons.power_settings_new, color: Colors.white),
-              onPressed: () => _showShutdownDialog(context),
-            ),
+  AppBar _appBar(BuildContext context) {
+    final settings = context.watch<SettingsService>();
+    final expandedWeather = settings.weatherEnabled && settings.weatherShowDetails;
+    final toolbarHeight = expandedWeather ? 120.0 : 64.0;
+
+    return AppBar(
+      toolbarHeight: toolbarHeight,
+      title: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: WeatherWidget(),
+        ),
+      ),
+      centerTitle: true,
+      actions: [
+        Container(
+          margin: EdgeInsets.symmetric(horizontal: 8),
+          child: IconButton(
+            padding: EdgeInsets.all(8),
+            iconSize: 36,
+            splashRadius: 24,
+            icon: Icon(Icons.power_settings_new, color: Colors.white),
+            onPressed: () => _showShutdownDialog(context),
           ),
-          
-          // Wi-Fi button
-          Container(
-            margin: EdgeInsets.symmetric(horizontal: 8),
-            child: IconButton(
-              padding: EdgeInsets.all(8),
-              iconSize: 36,
-              splashRadius: 24,
-              icon: Icon(Icons.wifi, color: Colors.white),
-              onPressed: () => context.read<AppsService>().openWifiSettings(),
-            ),
+        ),
+        Container(
+          margin: EdgeInsets.symmetric(horizontal: 8),
+          child: IconButton(
+            padding: EdgeInsets.all(8),
+            iconSize: 36,
+            splashRadius: 24,
+            icon: Icon(Icons.wifi, color: Colors.white),
+            onPressed: () => context.read<AppsService>().openWifiSettings(),
           ),
-          
-          // Settings button
-          Container(
-            margin: EdgeInsets.symmetric(horizontal: 8),
-            child: IconButton(
-              padding: EdgeInsets.all(8),
-              iconSize: 36,
-              splashRadius: 24,
-              icon: Icon(Icons.settings_outlined, color: Colors.white),
-              onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
-            ),
+        ),
+        Container(
+          margin: EdgeInsets.symmetric(horizontal: 8),
+          child: IconButton(
+            padding: EdgeInsets.all(8),
+            iconSize: 36,
+            splashRadius: 24,
+            icon: Icon(Icons.settings_outlined, color: Colors.white),
+            onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
           ),
-          
-          // Time display
-          Container(
-            margin: EdgeInsets.only(left: 16, right: 32),
-            alignment: Alignment.center,
-            height: 56, // Match AppBar default height
-            child: Center(
-              child: TimeWidget(),
-            ),
+        ),
+        Container(
+          margin: EdgeInsets.only(left: 16, right: 32),
+          alignment: Alignment.center,
+          height: 56,
+          child: Center(
+            child: TimeWidget(),
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
   Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) {
     debugPrint("FLauncher: Building wallpaper");

@@ -151,6 +151,8 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
       _specs('QWERTYUIOP'),
       _specs('ASDFGHJKL'),
       _specs('ZXCVBNM'),
+      _specs('ÇĞİÖŞÜ'),
+      _specs('çğıöşü'),
       [
         _KeySpec(label: 'SPACE', type: _KeyType.space, value: '', width: 160),
         _KeySpec(label: 'BACK', type: _KeyType.backspace, value: '', width: 90),

@@ -38,6 +38,7 @@ const _weatherLocationNameKey = "weather_location_name";
 const _weatherShowDetailsKey = "weather_show_details";
 const _weatherShowCityKey = "weather_show_city";
 const _weatherUnitsKey = "weather_units";
+const _weatherRefreshIntervalMinutesKey = "weather_refresh_interval_minutes";
 
 enum WeatherUnits {
   si,
@@ -92,6 +93,16 @@ class SettingsService extends ChangeNotifier {
       default:
         return WeatherUnits.si;
     }
+  }
+
+  int get weatherRefreshIntervalMinutes {
+    final raw = _sharedPreferences.getInt(_weatherRefreshIntervalMinutesKey);
+    if (raw == null) {
+      return 60;
+    }
+    final clamped = raw < 15 ? 15 : (raw > 120 ? 120 : raw);
+    final normalized = ((clamped / 15).round() * 15);
+    return normalized < 15 ? 15 : (normalized > 120 ? 120 : normalized);
   }
 
   SettingsService(
@@ -194,6 +205,14 @@ class SettingsService extends ChangeNotifier {
   Future<void> setWeatherUnits(WeatherUnits units) async {
     final raw = units == WeatherUnits.us ? 'us' : 'si';
     await _sharedPreferences.setString(_weatherUnitsKey, raw);
+    notifyListeners();
+  }
+
+  Future<void> setWeatherRefreshIntervalMinutes(int minutes) async {
+    final clamped = minutes < 15 ? 15 : (minutes > 120 ? 120 : minutes);
+    final normalized = ((clamped / 15).round() * 15);
+    final saved = normalized < 15 ? 15 : (normalized > 120 ? 120 : normalized);
+    await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, saved);
     notifyListeners();
   }
 

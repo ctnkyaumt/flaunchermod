@@ -40,10 +40,14 @@ class WeatherCache {
 }
 
 class WeatherService extends ChangeNotifier {
-  static const Duration cacheDuration = Duration(hours: 6);
-
   SettingsService? _settingsService;
   Timer? _refreshTimer;
+
+  bool? _lastEnabled;
+  double? _lastLat;
+  double? _lastLon;
+  WeatherUnits? _lastUnits;
+  int? _lastRefreshMinutes;
 
   WeatherCache? _cache;
   bool _fetching = false;
@@ -73,7 +77,25 @@ class WeatherService extends ChangeNotifier {
   }
 
   Future<void> _handleSettingsChanged() async {
-    await _maybeRefresh(force: true);
+    final settings = _settingsService;
+    if (settings == null) {
+      return;
+    }
+
+    final shouldForce = _lastEnabled == null ||
+        settings.weatherEnabled != _lastEnabled ||
+        settings.weatherLatitude != _lastLat ||
+        settings.weatherLongitude != _lastLon ||
+        settings.weatherUnits != _lastUnits ||
+        settings.weatherRefreshIntervalMinutes != _lastRefreshMinutes;
+
+    _lastEnabled = settings.weatherEnabled;
+    _lastLat = settings.weatherLatitude;
+    _lastLon = settings.weatherLongitude;
+    _lastUnits = settings.weatherUnits;
+    _lastRefreshMinutes = settings.weatherRefreshIntervalMinutes;
+
+    await _maybeRefresh(force: shouldForce);
   }
 
   Future<void> _maybeRefresh({bool force = false}) async {
@@ -99,6 +121,8 @@ class WeatherService extends ChangeNotifier {
       }
       return;
     }
+
+    final cacheDuration = Duration(minutes: settings.weatherRefreshIntervalMinutes);
 
     final shouldFetch =
         force || _cache == null || DateTime.now().difference(_cache!.fetchedAt) >= cacheDuration;

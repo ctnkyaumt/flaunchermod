@@ -132,6 +132,11 @@ class _WeatherContent extends StatelessWidget {
                 border: border,
               ),
               child: InkWell(
+                canRequestFocus: false,
+                focusColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
                 onTap: () => _toggleDetails(context),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
