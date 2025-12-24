@@ -45,22 +45,36 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
   @override
   Widget build(BuildContext context) {
     final keyRows = widget.layout == TvKeyboardLayout.number ? _numberRows() : _textRows();
+    final dialogHeight = widget.layout == TvKeyboardLayout.number ? 360.0 : 440.0;
 
     return AlertDialog(
       title: Text(widget.title),
       contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       content: FocusTraversalGroup(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: BoxConstraints(maxWidth: 520, maxHeight: dialogHeight),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
             children: [
               _valueDisplay(context),
               const SizedBox(height: 12),
-              ...keyRows.asMap().entries.map((entry) => Padding(
-                    padding: EdgeInsets.only(bottom: entry.key == keyRows.length - 1 ? 0 : 10),
-                    child: _keyRow(context, entry.value, autofocus: entry.key == 0),
-                  )),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: keyRows
+                        .asMap()
+                        .entries
+                        .map(
+                          (entry) => Padding(
+                            padding: EdgeInsets.only(bottom: entry.key == keyRows.length - 1 ? 0 : 6),
+                            child: _keyRow(context, entry.value, autofocus: entry.key == 0),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -105,13 +119,14 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
         final isFirst = autofocus && index == 0;
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 3),
           child: SizedBox(
             width: spec.width,
-            height: 44,
+            height: 38,
             child: TextButton(
               autofocus: isFirst,
               onPressed: () => _onKeyPressed(spec),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
               child: Text(spec.label, textAlign: TextAlign.center),
             ),
           ),
@@ -147,14 +162,17 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
 
   List<List<_KeySpec>> _textRows() {
     return [
-      _specs('QWERTYUIOPĞÜ'),
-      _specs('ASDFGHJKLŞİ'),
-      _specs('ZXCVBNMÖÇ'),
+      _specs('1234567890'),
+      _specs('QWERTYUIOP'),
+      _specs('ASDFGHJKL'),
+      _specs('ZXCVBNM'),
+      _specs('ÇĞİÖŞÜ'),
+      _specs('çğıöşü'),
       [
-        _KeySpec(label: 'SPACE', type: _KeyType.space, value: '', width: 160),
-        _KeySpec(label: 'BACK', type: _KeyType.backspace, value: '', width: 90),
-        _KeySpec(label: 'CLEAR', type: _KeyType.clear, value: '', width: 90),
-        _KeySpec(label: 'DONE', type: _KeyType.done, value: '', width: 90),
+        _KeySpec(label: 'SPACE', type: _KeyType.space, value: '', width: 140),
+        _KeySpec(label: 'BACK', type: _KeyType.backspace, value: '', width: 78),
+        _KeySpec(label: 'CLEAR', type: _KeyType.clear, value: '', width: 78),
+        _KeySpec(label: 'DONE', type: _KeyType.done, value: '', width: 78),
       ]
     ];
   }
@@ -180,7 +198,7 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
   List<_KeySpec> _specs(String chars) {
     return chars
         .split('')
-        .map((c) => _KeySpec(label: c, type: _KeyType.char, value: c, width: 44))
+        .map((c) => _KeySpec(label: c, type: _KeyType.char, value: c, width: 38))
         .toList(growable: false);
   }
 }

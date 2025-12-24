@@ -16,8 +16,16 @@ class WeatherPanelPage extends StatefulWidget {
 class _WeatherPanelPageState extends State<WeatherPanelPage> {
   String _cityDraft = '';
 
+  late DateTime _ignoreSelectUntil;
+
   bool _useCitySearch = true;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ignoreSelectUntil = DateTime.now().add(const Duration(milliseconds: 350));
+  }
 
   @override
   void dispose() {
@@ -201,6 +209,9 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
           if (key == LogicalKeyboardKey.select ||
               key == LogicalKeyboardKey.enter ||
               key == LogicalKeyboardKey.gameButtonA) {
+            if (DateTime.now().isBefore(_ignoreSelectUntil)) {
+              return KeyEventResult.ignored;
+            }
             onChanged(!value);
             return KeyEventResult.handled;
           }

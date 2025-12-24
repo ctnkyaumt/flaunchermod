@@ -1,5 +1,7 @@
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
+import 'package:flauncher/providers/ticker_model.dart';
+import 'package:flauncher/widgets/color_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -108,11 +110,61 @@ class _WeatherContainer extends StatelessWidget {
       );
 }
 
-class _WeatherContent extends StatelessWidget {
+class _WeatherContent extends StatefulWidget {
   final _WeatherUiConfig config;
   final WeatherConditions conditions;
 
   const _WeatherContent({required this.config, required this.conditions});
+
+  @override
+  State<_WeatherContent> createState() => _WeatherContentState();
+}
+
+class _WeatherContentState extends State<_WeatherContent> with SingleTickerProviderStateMixin {
+  late final AnimationController _animation = AnimationController(
+    vsync: Provider.of<TickerModel>(context, listen: false).tickerProvider ?? this,
+    duration: const Duration(milliseconds: 800),
+  );
+
+  Color _lastBorderColor = Colors.white;
+  bool _pressed = false;
+
+  void _flashPressed() {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _pressed = true);
+    Future.delayed(const Duration(milliseconds: 140), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _pressed = false);
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _animation.addStatusListener((animationStatus) {
+      switch (animationStatus) {
+        case AnimationStatus.completed:
+          _animation.reverse();
+          break;
+        case AnimationStatus.dismissed:
+          _animation.forward();
+          break;
+        case AnimationStatus.forward:
+        case AnimationStatus.reverse:
+          break;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Focus(
@@ -121,31 +173,84 @@ class _WeatherContent extends StatelessWidget {
         child: Builder(
           builder: (context) {
             final hasFocus = Focus.of(context).hasFocus;
-            final border = hasFocus ? Border.all(color: Colors.white, width: 2) : null;
+
+            final shouldAnimate = context.select<SettingsService, bool>(
+              (s) => s.appHighlightAnimationEnabled,
+            );
+            if (hasFocus && shouldAnimate) {
+              _animation.forward();
+            } else {
+              _animation.stop();
+            }
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.black26,
+                color: _pressed ? Colors.white12 : Colors.black26,
                 borderRadius: BorderRadius.circular(8),
-                border: border,
               ),
-              child: InkWell(
-                canRequestFocus: false,
-                focusColor: Colors.transparent,
-                hoverColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-                splashColor: Colors.transparent,
-                onTap: () => _toggleDetails(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _summary(context),
-                    if (config.showDetails) const SizedBox(height: 8),
-                    if (config.showDetails) _details(context),
-                  ],
-                ),
+              child: Stack(
+                children: [
+                  InkWell(
+                    canRequestFocus: false,
+                    focusColor: Colors.transparent,
+                    hoverColor: Colors.transparent,
+                    highlightColor: Colors.transparent,
+                    splashColor: Colors.transparent,
+                    onTap: () {
+                      _flashPressed();
+                      _toggleDetails(context);
+                    },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _summary(context),
+                        if (widget.config.showDetails) const SizedBox(width: 16),
+                        if (widget.config.showDetails)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 260),
+                            child: _details(context),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (shouldAnimate)
+                    AnimatedBuilder(
+                      animation: _animation,
+                      builder: (context, _) {
+                        if (!hasFocus) {
+                          return const SizedBox.shrink();
+                        }
+                        return IgnorePointer(
+                          child: Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _lastBorderColor =
+                                      computeBorderColor(_animation.value, _lastBorderColor),
+                                  width: 3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  else if (hasFocus)
+                    IgnorePointer(
+                      child: Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             );
           },
@@ -158,6 +263,7 @@ class _WeatherContent extends StatelessWidget {
       if (key == LogicalKeyboardKey.select ||
           key == LogicalKeyboardKey.enter ||
           key == LogicalKeyboardKey.gameButtonA) {
+        _flashPressed();
         _toggleDetails(context);
         return KeyEventResult.handled;
       }
@@ -174,13 +280,14 @@ class _WeatherContent extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (config.name != null && config.showCity) ...[
-          Text(config.name!),
+        if (widget.config.name != null && widget.config.showCity) ...[
+          Text(widget.config.name!),
           const SizedBox(width: 12),
         ],
-        Icon(_iconForWeatherCode(conditions.weatherCode), color: Colors.white, size: 22),
+        Icon(_iconForWeatherCode(widget.conditions.weatherCode), color: Colors.white, size: 22),
         const SizedBox(width: 10),
-        Text('${conditions.temperature.round()}°', style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text('${widget.conditions.temperature.round()}°',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -189,9 +296,9 @@ class _WeatherContent extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _detailItem('${conditions.apparentTemperature.round()}°', 'Feels like'),
+        _detailItem('${widget.conditions.apparentTemperature.round()}°', 'Feels like'),
         const SizedBox(width: 16),
-        _detailItem('${conditions.humidity}%', 'Humidity'),
+        _detailItem('${widget.conditions.humidity}%', 'Humidity'),
       ],
     );
   }
