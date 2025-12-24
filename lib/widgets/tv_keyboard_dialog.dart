@@ -147,12 +147,9 @@ class _TvKeyboardDialogState extends State<TvKeyboardDialog> {
 
   List<List<_KeySpec>> _textRows() {
     return [
-      _specs('1234567890'),
-      _specs('QWERTYUIOP'),
-      _specs('ASDFGHJKL'),
-      _specs('ZXCVBNM'),
-      _specs('ÇĞİÖŞÜ'),
-      _specs('çğıöşü'),
+      _specs('QWERTYUIOPĞÜ'),
+      _specs('ASDFGHJKLŞİ'),
+      _specs('ZXCVBNMÖÇ'),
       [
         _KeySpec(label: 'SPACE', type: _KeyType.space, value: '', width: 160),
         _KeySpec(label: 'BACK', type: _KeyType.backspace, value: '', width: 90),
