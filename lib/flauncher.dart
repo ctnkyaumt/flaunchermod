@@ -152,13 +152,16 @@ class _FLauncherState extends State<FLauncher> {
     );
   }
 
-  void handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
+  bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
     if (direction == TraversalDirection.down && _currentPage == 0) {
       _lastFocusedAppNode = currentNode;
       _navigateToPage(1);
+      return true;
     } else if (direction == TraversalDirection.up && _currentPage == 1) {
       _navigateToPage(0);
+      return true;
     }
+    return false;
   }
 
   Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
@@ -257,8 +260,12 @@ class _FLauncherState extends State<FLauncher> {
       );
 
   AppBar _appBar(BuildContext context) => AppBar(
-        title: WeatherWidget(),
-        centerTitle: true,
+        title: Container(
+          alignment: Alignment.centerLeft,
+          padding: EdgeInsets.only(left: 60),
+          child: WeatherWidget(),
+        ),
+        centerTitle: false,
         actions: [
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),

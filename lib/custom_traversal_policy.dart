@@ -234,8 +234,11 @@ class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocu
       final toAppBar = nextNode.rect.center.dy <= 100;
       if (fromContent && toAppBar) {
         if (state != null && state.handlePageNavigation != null) {
-          state.handlePageNavigation(direction, currentNode);
-          return true;
+          final handled = state.handlePageNavigation(direction, currentNode);
+          if (handled == true) {
+            return true;
+          }
+          // If not handled (e.g. we are on the first page), allow traversal to AppBar
         }
       }
     }
