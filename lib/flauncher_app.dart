@@ -22,6 +22,7 @@ import 'package:flauncher/actions.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/ticker_model.dart';
+import 'package:flauncher/providers/weather_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/unsplash_service.dart';
 import 'package:flutter/material.dart';
@@ -79,6 +80,9 @@ class FLauncherApp extends StatelessWidget {
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(
               create: (_) => WallpaperService(_imagePicker, _fLauncherChannel, _unsplashService),
               update: (_, settingsService, wallpaperService) => wallpaperService!..settingsService = settingsService),
+          ChangeNotifierProxyProvider<SettingsService, WeatherService>(
+              create: (_) => WeatherService(),
+              update: (_, settingsService, weatherService) => weatherService!..settingsService = settingsService),
           Provider<TickerModel>(create: (context) => TickerModel(null))
         ],
         child: MaterialApp(

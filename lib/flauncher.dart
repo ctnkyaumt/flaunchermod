@@ -24,11 +24,13 @@ import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
+import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
+import 'package:flauncher/widgets/hdmi_inputs_section.dart';
+import 'package:flauncher/widgets/weather_widget.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
-import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -150,13 +152,16 @@ class _FLauncherState extends State<FLauncher> {
     );
   }
 
-  void handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
+  bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
     if (direction == TraversalDirection.down && _currentPage == 0) {
       _lastFocusedAppNode = currentNode;
       _navigateToPage(1);
+      return true;
     } else if (direction == TraversalDirection.up && _currentPage == 1) {
       _navigateToPage(0);
+      return true;
     }
+    return false;
   }
 
   Widget _buildAppsPage(List<CategoryWithApps> categoriesWithApps) {
@@ -255,11 +260,15 @@ class _FLauncherState extends State<FLauncher> {
       );
 
   AppBar _appBar(BuildContext context) => AppBar(
+        title: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: EdgeInsets.only(left: 60),
+            child: WeatherWidget(),
+          ),
+        ),
+        centerTitle: false,
         actions: [
-          // Spacer to push elements to the right
-          Spacer(),
-          
-          // Shutdown button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
             child: IconButton(
@@ -270,8 +279,6 @@ class _FLauncherState extends State<FLauncher> {
               onPressed: () => _showShutdownDialog(context),
             ),
           ),
-          
-          // Wi-Fi button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
             child: IconButton(
@@ -282,8 +289,6 @@ class _FLauncherState extends State<FLauncher> {
               onPressed: () => context.read<AppsService>().openWifiSettings(),
             ),
           ),
-          
-          // Settings button
           Container(
             margin: EdgeInsets.symmetric(horizontal: 8),
             child: IconButton(
@@ -294,12 +299,10 @@ class _FLauncherState extends State<FLauncher> {
               onPressed: () => showDialog(context: context, builder: (_) => SettingsPanel()),
             ),
           ),
-          
-          // Time display
           Container(
             margin: EdgeInsets.only(left: 16, right: 32),
             alignment: Alignment.center,
-            height: 56, // Match AppBar default height
+            height: 56,
             child: Center(
               child: TimeWidget(),
             ),

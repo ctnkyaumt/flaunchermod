@@ -226,6 +226,23 @@ class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocu
     }
     
     FocusNode nextNode = searcher.findBestFocusNode(candidates, currentNode);
+
+    // When moving UP from page content, skip focusing AppBar actions; treat as a boundary
+    // so one press can move between pages.
+    if (direction == TraversalDirection.up) {
+      final fromContent = currentNode.rect.center.dy > 100;
+      final toAppBar = nextNode.rect.center.dy <= 100;
+      if (fromContent && toAppBar) {
+        if (state != null && state.handlePageNavigation != null) {
+          final handled = state.handlePageNavigation(direction, currentNode);
+          if (handled == true) {
+            return true;
+          }
+          // If not handled (e.g. we are on the first page), allow traversal to AppBar
+        }
+      }
+    }
+
     nextNode.requestFocus();
     return true;
   }
