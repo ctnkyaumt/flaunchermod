@@ -14,6 +14,7 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [x] Support for non-TV (sideloaded) apps
 - [x] Navigation sound feedback
 - [x] HDMI inputs
+- [x] Weather widget
 - [ ] Force stop app
 
 ## Screenshots
