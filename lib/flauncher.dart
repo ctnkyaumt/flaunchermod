@@ -260,10 +260,12 @@ class _FLauncherState extends State<FLauncher> {
       );
 
   AppBar _appBar(BuildContext context) => AppBar(
-        title: Container(
+        title: Align(
           alignment: Alignment.centerLeft,
-          padding: EdgeInsets.only(left: 60),
-          child: WeatherWidget(),
+          child: Padding(
+            padding: EdgeInsets.only(left: 60),
+            child: WeatherWidget(),
+          ),
         ),
         centerTitle: false,
         actions: [

@@ -99,14 +99,19 @@ class _WeatherContainer extends StatelessWidget {
   const _WeatherContainer({required this.child});
 
   @override
-  Widget build(BuildContext context) => Material(
-        type: MaterialType.transparency,
-        child: DefaultTextStyle(
-          style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                shadows: const [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
-              ),
-          child: child,
-        ),
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            type: MaterialType.transparency,
+            child: DefaultTextStyle(
+              style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                    shadows: const [Shadow(color: Colors.black54, offset: Offset(1, 1), blurRadius: 8)],
+                  ),
+              child: child,
+            ),
+          ),
+        ],
       );
 }
 
@@ -120,12 +125,7 @@ class _WeatherContent extends StatefulWidget {
   State<_WeatherContent> createState() => _WeatherContentState();
 }
 
-class _WeatherContentState extends State<_WeatherContent> with SingleTickerProviderStateMixin {
-  late final AnimationController _animation = AnimationController(
-    vsync: Provider.of<TickerModel>(context, listen: false).tickerProvider ?? this,
-    duration: const Duration(milliseconds: 800),
-  );
-
+class _WeatherContentState extends State<_WeatherContent> {
   Color _lastBorderColor = Colors.white;
   bool _pressed = false;
 
@@ -143,45 +143,12 @@ class _WeatherContentState extends State<_WeatherContent> with SingleTickerProvi
   }
 
   @override
-  void initState() {
-    super.initState();
-    _animation.addStatusListener((animationStatus) {
-      switch (animationStatus) {
-        case AnimationStatus.completed:
-          _animation.reverse();
-          break;
-        case AnimationStatus.dismissed:
-          _animation.forward();
-          break;
-        case AnimationStatus.forward:
-        case AnimationStatus.reverse:
-          break;
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _animation.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) => Focus(
         canRequestFocus: true,
         onKey: (_, event) => _handleKey(context, event),
         child: Builder(
           builder: (context) {
             final hasFocus = Focus.of(context).hasFocus;
-
-            final shouldAnimate = context.select<SettingsService, bool>(
-              (s) => s.appHighlightAnimationEnabled,
-            );
-            if (hasFocus && shouldAnimate) {
-              _animation.forward();
-            } else {
-              _animation.stop();
-            }
 
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
@@ -190,67 +157,35 @@ class _WeatherContentState extends State<_WeatherContent> with SingleTickerProvi
                 color: _pressed ? Colors.white12 : Colors.black26,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Stack(
-                children: [
-                  InkWell(
-                    canRequestFocus: false,
-                    focusColor: Colors.transparent,
-                    hoverColor: Colors.transparent,
-                    highlightColor: Colors.transparent,
-                    splashColor: Colors.transparent,
-                    onTap: () {
-                      _flashPressed();
-                      _toggleDetails(context);
-                    },
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        _summary(context),
-                        if (widget.config.showDetails) const SizedBox(width: 16),
-                        if (widget.config.showDetails)
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 260),
-                            child: _details(context),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (shouldAnimate)
-                    AnimatedBuilder(
-                      animation: _animation,
-                      builder: (context, _) {
-                        if (!hasFocus) {
-                          return const SizedBox.shrink();
-                        }
-                        return IgnorePointer(
-                          child: Positioned.fill(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: _lastBorderColor =
-                                      computeBorderColor(_animation.value, _lastBorderColor),
-                                  width: 3,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+              foregroundDecoration: hasFocus
+                  ? BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white, width: 2),
                     )
-                  else if (hasFocus)
-                    IgnorePointer(
-                      child: Positioned.fill(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                        ),
+                  : null,
+              child: InkWell(
+                canRequestFocus: false,
+                focusColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                splashColor: Colors.transparent,
+                onTap: () {
+                  _flashPressed();
+                  _toggleDetails(context);
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _summary(context),
+                    if (widget.config.showDetails) const SizedBox(width: 16),
+                    if (widget.config.showDetails)
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 260),
+                        child: _details(context),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             );
           },
