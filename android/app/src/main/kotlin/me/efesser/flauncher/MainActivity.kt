@@ -41,6 +41,8 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.EventChannel.EventSink
 import io.flutter.plugin.common.EventChannel.StreamHandler
 import io.flutter.plugin.common.MethodChannel
+import androidx.core.content.FileProvider
+import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.Serializable
 
@@ -632,5 +634,22 @@ class MainActivity : FlutterActivity() {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
         return stream.toByteArray()
+    }
+
+    private fun installApk(filePath: String) {
+        val file = File(filePath)
+        if (file.exists()) {
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(
+                FileProvider.getUriForFile(
+                    this,
+                    applicationContext.packageName + ".fileprovider",
+                    file
+                ),
+                "application/vnd.android.package-archive"
+            )
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            startActivity(intent)
+        }
     }
 }

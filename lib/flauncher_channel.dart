@@ -68,4 +68,6 @@ class FLauncherChannel {
     final result = await _methodChannel.invokeMethod('launchTvInput', {'inputId': inputId});
     return result ?? false;
   }
+
+  Future<void> installApk(String filePath) async => await _methodChannel.invokeMethod('installApk', filePath);
 }

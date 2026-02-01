@@ -68,6 +68,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     return MaterialPageRoute(builder: (_) => ApplicationsPanelPage());
                   case CategoriesPanelPage.routeName:
                     return MaterialPageRoute(builder: (_) => CategoriesPanelPage());
+                  case InstallAppsPanelPage.routeName:
+                    return MaterialPageRoute(builder: (_) => InstallAppsPanelPage());
                   case CategoryPanelPage.routeName:
                     return MaterialPageRoute(
                       builder: (_) => CategoryPanelPage(categoryId: settings.arguments! as int),
