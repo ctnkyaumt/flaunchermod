@@ -73,7 +73,13 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     ),
     _AppSpec(
       name: "Tivimate",
-      sources: ["TIVIMATE"],
+      packageName: "ar.tvplayer.tv",
+      sources: [
+        "APKPURE:ar.tvplayer.tv",
+        "APKCOMBO:ar.tvplayer.tv",
+        "APKPREMIER:ar.tvplayer.tv",
+        "APKSUPPORT:ar.tvplayer.tv",
+      ],
     ),
   ];
 
@@ -102,22 +108,46 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
   bool _isQueued(_AppSpec app) => _queue.any((e) => e.name == app.name);
 
+  String _normalizeAppName(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
   Future<void> _refreshInstalledPackages() async {
     try {
-      final apps = await FLauncherChannel().getApplications();
-      final packages = apps
+      final channel = FLauncherChannel();
+      final apps = await channel.getApplications();
+      final packagesFromList = apps
           .whereType<Map>()
           .map((e) => e["packageName"])
           .whereType<String>()
           .toSet();
+      final namesFromList = apps
+          .whereType<Map>()
+          .map((e) => e["name"])
+          .whereType<String>()
+          .map(_normalizeAppName)
+          .toSet();
+
+      final installed = <String>{...packagesFromList};
+      for (final app in _apps) {
+        final packageName = app.packageName;
+        if (packageName != null && !installed.contains(packageName)) {
+          final exists = await channel.applicationExists(packageName);
+          if (exists) {
+            installed.add(packageName);
+          }
+        }
+      }
 
       if (!mounted) return;
       setState(() {
         _installedPackages
           ..clear()
-          ..addAll(packages);
+          ..addAll(installed);
         for (final app in _apps) {
-          if (_isInstalled(app)) {
+          final appInstalled = _isInstalled(app) ||
+              (app.packageName == null && namesFromList.contains(_normalizeAppName(app.name))) ||
+              (_normalizeAppName(app.name).contains("smarttube") && namesFromList.any((n) => n.contains("smarttube"))) ||
+              (_normalizeAppName(app.name).contains("blackbulb") && namesFromList.any((n) => n.contains("blackbulb")));
+          if (appInstalled) {
             _status[app.name] = "Already installed";
             _progress[app.name] = 1.0;
           } else if (_status[app.name] == "Already installed") {
@@ -169,32 +199,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
       return null;
     } catch (e) {
-      return null;
-    }
-  }
-
-  Future<String?> _getTivimateLink() async {
-    try {
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse("https://tivimate.com/"));
-      final response = await request.close();
-      final html = await response.transform(SystemEncoding().decoder).join();
-
-      final apkMatch = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
-      if (apkMatch != null) return apkMatch.group(1);
-
-      final hrefMatch = RegExp(r'href="([^"]+\.apk[^"]*)"', caseSensitive: false).firstMatch(html);
-      if (hrefMatch != null) {
-        final href = hrefMatch.group(1);
-        if (href == null) return null;
-        if (href.startsWith("http")) return href;
-        if (href.startsWith("//")) return "https:$href";
-        if (href.startsWith("/")) return "https://tivimate.com$href";
-        return "https://tivimate.com/$href";
-      }
-
-      return null;
-    } catch (_) {
       return null;
     }
   }
@@ -265,7 +269,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   Future<String?> _resolveUrl(String token) async {
     if (token == "STREMIO") return _getStremioLink();
     if (token == "KODI") return _getKodiUrl();
-    if (token == "TIVIMATE") return _getTivimateLink();
     if (token.startsWith("GITHUB:")) return _getGithubLatestApk(token.substring("GITHUB:".length));
     if (token.startsWith("APKPURE:")) {
       final packageName = token.substring("APKPURE:".length);
