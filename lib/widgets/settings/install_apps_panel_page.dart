@@ -15,7 +15,8 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   final Map<String, String> _apps = {
     "SmartTube": "https://github.com/yuliskov/SmartTube/releases/download/latest/smarttube_stable.apk",
     "Stremio": "STREMIO_PLACEHOLDER",
-    "AnExplorer": "https://d.apkpure.com/b/APK/dev.dworks.apps.anexplorer?version=latest"
+    "AnExplorer": "https://d.apkpure.com/b/APK/dev.dworks.apps.anexplorer?version=latest",
+    "Blackbulb": "https://github.com/ctnkyaumt/Blackbulb/releases/download/v2.2.1/app-release-unsigned.apk"
   };
 
   final Map<String, String> _status = {};
