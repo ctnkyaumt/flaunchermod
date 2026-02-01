@@ -646,15 +646,24 @@ class MainActivity : FlutterActivity() {
         val file = File(filePath)
         if (!file.exists()) return "file_missing"
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-            try {
-                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-                return "needs_permission"
-            } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
-                return "needs_permission"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val canInstall = try {
+                packageManager.canRequestPackageInstalls()
+            } catch (e: SecurityException) {
+                android.util.Log.e("FLauncher", "Missing REQUEST_INSTALL_PACKAGES in manifest: ${e.message}")
+                return "missing_manifest_permission"
+            }
+
+            if (!canInstall) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    return "needs_permission"
+                } catch (e: Exception) {
+                    android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
+                    return "needs_permission"
+                }
             }
         }
 

@@ -144,6 +144,8 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
           _status[name] = "Installer opened";
         } else if (installResult == "needs_permission") {
           _status[name] = "Allow 'Install unknown apps', then tap again";
+        } else if (installResult == "missing_manifest_permission") {
+          _status[name] = "App missing install permission (rebuild/reinstall)";
         } else {
           _status[name] = "Failed to start installer";
         }
