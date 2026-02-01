@@ -100,6 +100,9 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       final client = HttpClient();
       final request = await client.getUrl(Uri.parse(downloadUrl));
       final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception("Download failed (${response.statusCode})");
+      }
       
       final dir = await getTemporaryDirectory();
       // sanitize filename
@@ -122,20 +125,28 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       
       if (!mounted) return;
 
-      setState(() => _status[name] = "Installing...");
-      await FLauncherChannel().installApk(file.path);
+      setState(() => _status[name] = "Opening installer...");
+      final installResult = await FLauncherChannel().installApk(file.path);
       
       // Wait a bit before deleting to allow Intent to read it
-      Future.delayed(Duration(minutes: 1), () async {
-        if (await file.exists()) {
-          await file.delete();
-        }
-      });
+      if (installResult == "started") {
+        Future.delayed(Duration(minutes: 15), () async {
+          if (await file.exists()) {
+            await file.delete();
+          }
+        });
+      }
 
       if (!mounted) return;
 
       setState(() {
-        _status[name] = "Installed (check screen)";
+        if (installResult == "started") {
+          _status[name] = "Installer opened";
+        } else if (installResult == "needs_permission") {
+          _status[name] = "Allow 'Install unknown apps', then tap again";
+        } else {
+          _status[name] = "Failed to start installer";
+        }
         _progress[name] = 1.0;
       });
 

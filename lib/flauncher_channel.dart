@@ -69,5 +69,5 @@ class FLauncherChannel {
     return result ?? false;
   }
 
-  Future<void> installApk(String filePath) async => await _methodChannel.invokeMethod('installApk', filePath);
+  Future<String?> installApk(String filePath) async => await _methodChannel.invokeMethod('installApk', filePath);
 }

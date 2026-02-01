@@ -642,28 +642,40 @@ class MainActivity : FlutterActivity() {
         return stream.toByteArray()
     }
 
-    private fun installApk(filePath: String): Boolean {
+    private fun installApk(filePath: String): String {
         val file = File(filePath)
-        if (file.exists()) {
+        if (!file.exists()) return "file_missing"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
             try {
-                val intent = Intent(Intent.ACTION_VIEW)
-                intent.setDataAndType(
-                    FileProvider.getUriForFile(
-                        this,
-                        applicationContext.packageName + ".fileprovider",
-                        file
-                    ),
-                    "application/vnd.android.package-archive"
-                )
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
-                return true
+                return "needs_permission"
             } catch (e: Exception) {
-                android.util.Log.e("FLauncher", "Error installing APK: ${e.message}")
-                e.printStackTrace()
-                return false
+                android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
+                return "needs_permission"
             }
         }
-        return false
+
+        return try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                applicationContext.packageName + ".fileprovider",
+                file
+            )
+
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE)
+            intent.data = uri
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            startActivity(intent)
+            "started"
+        } catch (e: Exception) {
+            android.util.Log.e("FLauncher", "Error installing APK: ${e.message}")
+            e.printStackTrace()
+            "error"
+        }
     }
 }
