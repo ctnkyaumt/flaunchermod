@@ -255,7 +255,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       final response = await request.close();
       if (response.statusCode < 200 || response.statusCode >= 300) return null;
       final html = await response.transform(utf8.decoder).join();
-      final match = RegExp(r'(https?://[^"\']+\.apk[^"\']*)', caseSensitive: false).firstMatch(html);
+      final match = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
       return match?.group(1);
     } catch (_) {
       return null;
@@ -311,7 +311,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     final mimeType = response.headers.contentType?.mimeType;
     if (mimeType == "text/html" || mimeType == "application/xhtml+xml") {
       final html = await response.transform(utf8.decoder).join();
-      final match = RegExp(r'(https?://[^"\']+\.apk[^"\']*)', caseSensitive: false).firstMatch(html);
+      final match = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
       final nextUrl = match?.group(1);
       if (nextUrl == null) return null;
       return _downloadApk(name, nextUrl, depth: depth + 1);
