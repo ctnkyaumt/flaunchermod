@@ -58,21 +58,27 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getApplications" -> result.success(getApplications())
-                "applicationExists" -> result.success(applicationExists(call.arguments as String))
-                "launchApp" -> result.success(launchApp(call.arguments as String))
-                "openSettings" -> result.success(openSettings())
-                "openWifiSettings" -> result.success(openWifiSettings())
-                "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
-                "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
-                "isDefaultLauncher" -> result.success(isDefaultLauncher())
-                "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
-                "startAmbientMode" -> result.success(startAmbientMode())
-                "getHdmiInputs" -> result.success(getHdmiInputs())
-                "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
-                "shutdownDevice" -> result.success(shutdownDevice())
-                else -> throw IllegalArgumentException()
+            try {
+                when (call.method) {
+                    "getApplications" -> result.success(getApplications())
+                    "applicationExists" -> result.success(applicationExists(call.arguments as String))
+                    "launchApp" -> result.success(launchApp(call.arguments as String))
+                    "openSettings" -> result.success(openSettings())
+                    "openWifiSettings" -> result.success(openWifiSettings())
+                    "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
+                    "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
+                    "isDefaultLauncher" -> result.success(isDefaultLauncher())
+                    "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
+                    "startAmbientMode" -> result.success(startAmbientMode())
+                    "getHdmiInputs" -> result.success(getHdmiInputs())
+                    "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
+                    "shutdownDevice" -> result.success(shutdownDevice())
+                    "installApk" -> result.success(installApk(call.arguments as String))
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "MethodChannel error (${call.method}): ${e.message}")
+                result.error("native_error", e.message, null)
             }
         }
 
