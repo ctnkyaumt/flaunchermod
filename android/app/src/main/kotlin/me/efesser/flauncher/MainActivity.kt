@@ -636,20 +636,28 @@ class MainActivity : FlutterActivity() {
         return stream.toByteArray()
     }
 
-    private fun installApk(filePath: String) {
+    private fun installApk(filePath: String): Boolean {
         val file = File(filePath)
         if (file.exists()) {
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.setDataAndType(
-                FileProvider.getUriForFile(
-                    this,
-                    applicationContext.packageName + ".fileprovider",
-                    file
-                ),
-                "application/vnd.android.package-archive"
-            )
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            startActivity(intent)
+            try {
+                val intent = Intent(Intent.ACTION_VIEW)
+                intent.setDataAndType(
+                    FileProvider.getUriForFile(
+                        this,
+                        applicationContext.packageName + ".fileprovider",
+                        file
+                    ),
+                    "application/vnd.android.package-archive"
+                )
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "Error installing APK: ${e.message}")
+                e.printStackTrace()
+                return false
+            }
         }
+        return false
     }
 }
