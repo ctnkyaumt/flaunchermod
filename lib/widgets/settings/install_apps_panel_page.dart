@@ -113,13 +113,15 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       await response.listen((data) {
         sink.add(data);
         received += data.length;
-        if (total > 0) {
+        if (total > 0 && mounted) {
             setState(() => _progress[name] = received / total);
         }
       }).asFuture();
       
       await sink.close();
       
+      if (!mounted) return;
+
       setState(() => _status[name] = "Installing...");
       await FLauncherChannel().installApk(file.path);
       
@@ -130,12 +132,15 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
         }
       });
 
+      if (!mounted) return;
+
       setState(() {
         _status[name] = "Installed (check screen)";
         _progress[name] = 1.0;
       });
 
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _status[name] = "Error: $e";
         _progress[name] = 0.0;
