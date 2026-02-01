@@ -91,7 +91,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       final response = await request.close();
       final html = await response.transform(SystemEncoding().decoder).join();
 
-      final apkMatch = RegExp(r'(https?://[^"\']+\.apk[^"\']*)', caseSensitive: false).firstMatch(html);
+      final apkMatch = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
       if (apkMatch != null) return apkMatch.group(1);
 
       final hrefMatch = RegExp(r'href="([^"]+\.apk[^"]*)"', caseSensitive: false).firstMatch(html);
@@ -216,7 +216,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       
       await sink.close();
       
-      if (!mounted) return;
+      if (!mounted) return null;
 
       setState(() => _status[name] = "Opening installer...");
       final installResult = await FLauncherChannel().installApk(file.path);
@@ -230,7 +230,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
         });
       }
 
-      if (!mounted) return;
+      if (!mounted) return null;
 
       setState(() {
         if (installResult == "silent_started") {
@@ -249,7 +249,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
       return installResult;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() {
         _status[name] = "Error: $e";
         _progress[name] = 0.0;
