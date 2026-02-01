@@ -13,31 +13,120 @@ class InstallAppsPanelPage extends StatefulWidget {
   _InstallAppsPanelPageState createState() => _InstallAppsPanelPageState();
 }
 
+class _AppSpec {
+  final String name;
+  final String? packageName;
+  final List<String> sources;
+
+  _AppSpec({
+    required this.name,
+    required this.sources,
+    this.packageName,
+  });
+}
+
 class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
-  final Map<String, String> _apps = {
-    "SmartTube": "https://github.com/yuliskov/SmartTube/releases/download/latest/smarttube_stable.apk",
-    "Stremio": "STREMIO",
-    "X-Plore": "https://mobdisc.com/fdl/7a6d5bea-1458-49df-ade3-f4f4fbebfeb3/X-plore-Donate-v4-45-02.apk",
-    "AnExplorer": "https://mobdisc.com/fdl/680789f3-ac9c-4885-959d-1b2c2be0cc60/AnExplorer-Pro-v5-7-4.apk",
-    "Fluffy File Manager": "GITHUB:mlm-games/Fluffy",
-    "Kodi": "KODI",
-    "Cloudstream": "GITHUB:recloudstream/cloudstream",
-    "Blackbulb": "GITHUB:ctnkyaumt/Blackbulb",
-    "Tivimate": "TIVIMATE",
-  };
+  final List<_AppSpec> _apps = [
+    _AppSpec(
+      name: "SmartTube",
+      packageName: "com.teamsmart.videomanager.tv",
+      sources: ["https://github.com/yuliskov/SmartTube/releases/download/latest/smarttube_stable.apk"],
+    ),
+    _AppSpec(
+      name: "Stremio",
+      packageName: "com.stremio.one",
+      sources: ["STREMIO"],
+    ),
+    _AppSpec(
+      name: "FX File Manager",
+      packageName: "nextapp.fx",
+      sources: [
+        "APKPURE:nextapp.fx",
+        "APKCOMBO:nextapp.fx",
+        "APKPREMIER:nextapp.fx",
+        "APKSUPPORT:nextapp.fx",
+      ],
+    ),
+    _AppSpec(
+      name: "Total Commander",
+      packageName: "com.ghisler.android.TotalCommander",
+      sources: [
+        "APKPURE:com.ghisler.android.TotalCommander",
+        "APKCOMBO:com.ghisler.android.TotalCommander",
+        "APKPREMIER:com.ghisler.android.TotalCommander",
+        "APKSUPPORT:com.ghisler.android.TotalCommander",
+      ],
+    ),
+    _AppSpec(
+      name: "Kodi",
+      packageName: "org.xbmc.kodi",
+      sources: ["KODI"],
+    ),
+    _AppSpec(
+      name: "Cloudstream",
+      packageName: "com.lagradost.cloudstream3",
+      sources: ["GITHUB:recloudstream/cloudstream"],
+    ),
+    _AppSpec(
+      name: "Blackbulb",
+      sources: ["GITHUB:ctnkyaumt/Blackbulb"],
+    ),
+    _AppSpec(
+      name: "Tivimate",
+      sources: ["TIVIMATE"],
+    ),
+  ];
 
   final Map<String, String> _status = {};
   final Map<String, double> _progress = {};
-  bool _installAllInProgress = false;
-  int _installAllNextIndex = 0;
+  final List<_AppSpec> _queue = [];
+  bool _queueRunning = false;
+  final Set<String> _installedPackages = {};
+  String? _activeAppName;
 
   @override
   void initState() {
     super.initState();
-    _apps.keys.forEach((app) {
-      _status[app] = "Idle";
-      _progress[app] = 0.0;
-    });
+    for (final app in _apps) {
+      _status[app.name] = "Idle";
+      _progress[app.name] = 0.0;
+    }
+    _refreshInstalledPackages();
+  }
+
+  bool _isInstalled(_AppSpec app) {
+    final packageName = app.packageName;
+    if (packageName == null) return false;
+    return _installedPackages.contains(packageName);
+  }
+
+  bool _isQueued(_AppSpec app) => _queue.any((e) => e.name == app.name);
+
+  Future<void> _refreshInstalledPackages() async {
+    try {
+      final apps = await FLauncherChannel().getApplications();
+      final packages = apps
+          .whereType<Map>()
+          .map((e) => e["packageName"])
+          .whereType<String>()
+          .toSet();
+
+      if (!mounted) return;
+      setState(() {
+        _installedPackages
+          ..clear()
+          ..addAll(packages);
+        for (final app in _apps) {
+          if (_isInstalled(app)) {
+            _status[app.name] = "Already installed";
+            _progress[app.name] = 1.0;
+          } else if (_status[app.name] == "Already installed") {
+            _status[app.name] = "Idle";
+            _progress[app.name] = 0.0;
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   bool _isArm64() {
@@ -158,96 +247,196 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     return "https://mirrors.kodi.tv/releases/android/arm/kodi-21.3-Omega-armeabi-v7a.apk?https=1";
   }
 
+  Future<String?> _getApkSupportDirectLink(String packageName) async {
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse("https://apk.support/download-app/$packageName"));
+      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final html = await response.transform(utf8.decoder).join();
+      final match = RegExp(r'(https?://[^"\']+\.apk[^"\']*)', caseSensitive: false).firstMatch(html);
+      return match?.group(1);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String?> _resolveUrl(String token) async {
     if (token == "STREMIO") return _getStremioLink();
     if (token == "KODI") return _getKodiUrl();
     if (token == "TIVIMATE") return _getTivimateLink();
     if (token.startsWith("GITHUB:")) return _getGithubLatestApk(token.substring("GITHUB:".length));
+    if (token.startsWith("APKPURE:")) {
+      final packageName = token.substring("APKPURE:".length);
+      return "https://d.apkpure.com/b/APK/$packageName?version=latest";
+    }
+    if (token.startsWith("APKCOMBO:")) {
+      final packageName = token.substring("APKCOMBO:".length);
+      return "https://apkcombo.com/genericApp/$packageName/download/apk";
+    }
+    if (token.startsWith("APKPREMIER:")) {
+      final packageName = token.substring("APKPREMIER:".length);
+      return "https://apkpremier.com/download/${packageName.replaceAll('.', '-')}";
+    }
+    if (token.startsWith("APKSUPPORT:")) {
+      final packageName = token.substring("APKSUPPORT:".length);
+      final resolved = await _getApkSupportDirectLink(packageName);
+      return resolved ?? "https://apk.support/download-app/$packageName";
+    }
     return token;
   }
 
-  Future<String?> _installApp(String name, String url) async {
+  Future<bool> _looksLikeApk(File file) async {
+    try {
+      final raf = await file.open(mode: FileMode.read);
+      final bytes = await raf.read(2);
+      await raf.close();
+      return bytes.length == 2 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<File?> _downloadApk(String name, String downloadUrl, {int depth = 0}) async {
+    if (depth > 2) return null;
+    final client = HttpClient();
+    final request = await client.getUrl(Uri.parse(downloadUrl));
+    request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
+    final response = await request.close();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return null;
+    }
+
+    final mimeType = response.headers.contentType?.mimeType;
+    if (mimeType == "text/html" || mimeType == "application/xhtml+xml") {
+      final html = await response.transform(utf8.decoder).join();
+      final match = RegExp(r'(https?://[^"\']+\.apk[^"\']*)', caseSensitive: false).firstMatch(html);
+      final nextUrl = match?.group(1);
+      if (nextUrl == null) return null;
+      return _downloadApk(name, nextUrl, depth: depth + 1);
+    }
+
+    final dir = await getTemporaryDirectory();
+    final fileName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    final file = File('${dir.path}/$fileName-${DateTime.now().millisecondsSinceEpoch}.apk');
+    final sink = file.openWrite();
+
+    final total = response.contentLength;
+    int received = 0;
+    await response.listen((data) {
+      sink.add(data);
+      received += data.length;
+      if (total > 0 && mounted) {
+        setState(() => _progress[name] = received / total);
+      }
+    }).asFuture();
+    await sink.close();
+
+    final isApk = await _looksLikeApk(file);
+    if (!isApk) {
+      try {
+        await file.delete();
+      } catch (_) {}
+      return null;
+    }
+    return file;
+  }
+
+  Future<String?> _installAppSpec(_AppSpec app) async {
+    final name = app.name;
+    if (_isInstalled(app)) {
+      if (!mounted) return "already_installed";
+      setState(() {
+        _status[name] = "Already installed";
+        _progress[name] = 1.0;
+      });
+      return "already_installed";
+    }
+
     setState(() {
-      _status[name] = "Preparing...";
+      _status[name] = "Preparing…";
       _progress[name] = 0.0;
     });
 
     try {
-      setState(() => _status[name] = "Resolving link...");
-      final resolved = await _resolveUrl(url);
-      if (resolved == null) {
-        throw Exception("Could not resolve download link");
-      }
+      for (int i = 0; i < app.sources.length; i++) {
+        if (!mounted) return null;
+        final source = app.sources[i];
 
-      String downloadUrl = resolved;
-      if (!downloadUrl.startsWith("http")) {
-        if (downloadUrl.startsWith("//")) {
-          downloadUrl = "https:$downloadUrl";
-        } else if (downloadUrl.startsWith("/")) {
-          downloadUrl = "https://www.stremio.com$downloadUrl";
-        }
-      }
-
-      setState(() => _status[name] = "Downloading...");
-
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse(downloadUrl));
-      final response = await request.close();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception("Download failed (${response.statusCode})");
-      }
-      
-      final dir = await getTemporaryDirectory();
-      // sanitize filename
-      final fileName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-      final file = File('${dir.path}/$fileName.apk');
-      final sink = file.openWrite();
-      
-      final total = response.contentLength;
-      int received = 0;
-      
-      await response.listen((data) {
-        sink.add(data);
-        received += data.length;
-        if (total > 0 && mounted) {
-            setState(() => _progress[name] = received / total);
-        }
-      }).asFuture();
-      
-      await sink.close();
-      
-      if (!mounted) return null;
-
-      setState(() => _status[name] = "Opening installer...");
-      final installResult = await FLauncherChannel().installApk(file.path);
-      
-      // Wait a bit before deleting to allow Intent to read it
-      if (installResult == "started" || installResult == "silent_started") {
-        Future.delayed(Duration(minutes: 15), () async {
-          if (await file.exists()) {
-            await file.delete();
-          }
+        setState(() {
+          _status[name] = "Resolving link… (${i + 1}/${app.sources.length})";
+          _progress[name] = 0.0;
         });
+
+        final resolved = await _resolveUrl(source);
+        if (resolved == null) {
+          continue;
+        }
+
+        var downloadUrl = resolved;
+        if (!downloadUrl.startsWith("http")) {
+          if (downloadUrl.startsWith("//")) {
+            downloadUrl = "https:$downloadUrl";
+          } else if (downloadUrl.startsWith("/")) {
+            downloadUrl = "https://www.stremio.com$downloadUrl";
+          }
+        }
+
+        if (!mounted) return null;
+        setState(() => _status[name] = "Downloading… (${i + 1}/${app.sources.length})");
+
+        final file = await _downloadApk(name, downloadUrl);
+        if (file == null) {
+          continue;
+        }
+
+        if (!mounted) return null;
+        setState(() => _status[name] = "Opening installer…");
+        final installResult = await FLauncherChannel().installApk(file.path);
+
+        if (installResult == "started" || installResult == "silent_started") {
+          Future.delayed(Duration(minutes: 15), () async {
+            try {
+              if (await file.exists()) {
+                await file.delete();
+              }
+            } catch (_) {}
+          });
+        } else {
+          try {
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (_) {}
+        }
+
+        if (!mounted) return null;
+        setState(() {
+          if (installResult == "silent_started") {
+            _status[name] = "Install requested";
+          } else if (installResult == "started") {
+            _status[name] = "Installer opened";
+          } else if (installResult == "needs_permission") {
+            _status[name] = "Allow 'Install unknown apps', then tap again";
+          } else if (installResult == "missing_manifest_permission") {
+            _status[name] = "App missing install permission (rebuild/reinstall)";
+          } else {
+            _status[name] = "Failed to start installer";
+          }
+          _progress[name] = 1.0;
+        });
+
+        Future.delayed(Duration(seconds: 2), _refreshInstalledPackages);
+        return installResult;
       }
 
       if (!mounted) return null;
-
       setState(() {
-        if (installResult == "silent_started") {
-          _status[name] = "Install requested";
-        } else if (installResult == "started") {
-          _status[name] = "Installer opened";
-        } else if (installResult == "needs_permission") {
-          _status[name] = "Allow 'Install unknown apps', then tap again";
-        } else if (installResult == "missing_manifest_permission") {
-          _status[name] = "App missing install permission (rebuild/reinstall)";
-        } else {
-          _status[name] = "Failed to start installer";
-        }
-        _progress[name] = 1.0;
+        _status[name] = "All sources failed";
+        _progress[name] = 0.0;
       });
-
-      return installResult;
+      return null;
     } catch (e) {
       if (!mounted) return null;
       setState(() {
@@ -258,38 +447,38 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     }
   }
 
-  Future<void> _installAll() async {
-    if (_installAllInProgress) return;
-
+  void _enqueueInstall(_AppSpec app) {
+    if (_isInstalled(app)) return;
+    if (_activeAppName == app.name) return;
+    if (_isQueued(app)) return;
     setState(() {
-      _installAllInProgress = true;
+      _queue.add(app);
+      _status[app.name] = "Queued";
+      _progress[app.name] = 0.0;
     });
+    _processQueue();
+  }
 
-    final entries = _apps.entries.toList();
-    for (var i = _installAllNextIndex; i < entries.length; i++) {
+  Future<void> _processQueue() async {
+    if (_queueRunning) return;
+    _queueRunning = true;
+    if (mounted) {
+      setState(() {});
+    }
+
+    while (_queue.isNotEmpty) {
+      final next = _queue.removeAt(0);
       if (!mounted) return;
-
-      final entry = entries[i];
-      final name = entry.key;
-      final url = entry.value;
-
-      final result = await _installApp(name, url);
-      _installAllNextIndex = i + 1;
-
+      setState(() => _activeAppName = next.name);
+      await _installAppSpec(next);
+      await _refreshInstalledPackages();
       if (!mounted) return;
-
-      if (result == "started" || result == "needs_permission") {
-        setState(() {
-          _installAllInProgress = false;
-        });
-        return;
-      }
+      setState(() => _activeAppName = null);
     }
 
     if (!mounted) return;
     setState(() {
-      _installAllInProgress = false;
-      _installAllNextIndex = 0;
+      _queueRunning = false;
     });
   }
 
@@ -304,10 +493,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
               Expanded(
                 child: Text("Install Apps", style: Theme.of(context).textTheme.titleLarge),
               ),
-              ElevatedButton(
-                onPressed: _installAllInProgress ? null : _installAll,
-                child: Text(_installAllNextIndex == 0 ? "Install All" : "Install All (${_installAllNextIndex}/${_apps.length})"),
-              ),
             ],
           ),
         ),
@@ -316,8 +501,25 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
           child: ListView.builder(
             itemCount: _apps.length,
             itemBuilder: (context, index) {
-              final name = _apps.keys.elementAt(index);
-              final url = _apps[name]!;
+              final app = _apps[index];
+              final name = app.name;
+              final installed = _isInstalled(app);
+              final queued = _isQueued(app);
+              final busy = _activeAppName == name ||
+                  _status[name] == "Preparing…" ||
+                  (_status[name]?.startsWith("Resolving link…") ?? false) ||
+                  (_status[name]?.startsWith("Downloading…") ?? false) ||
+                  _status[name] == "Opening installer…";
+
+              final onPressed = (installed || queued || busy) ? null : () => _enqueueInstall(app);
+              final buttonText = installed
+                  ? "Installed"
+                  : queued
+                      ? "Queued"
+                      : busy
+                          ? "Working"
+                          : "Install";
+
               return EnsureVisible(
                 alignment: 0.5,
                 child: Card(
@@ -327,19 +529,13 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(_status[name] ?? ""),
-                        if (_status[name] == "Downloading...")
+                        if ((_status[name]?.startsWith("Downloading…") ?? false) && (_progress[name] ?? 0) > 0)
                           LinearProgressIndicator(value: _progress[name]),
                       ],
                     ),
                     trailing: ElevatedButton(
-                      child: Text("Install"),
-                      onPressed: (_status[name] == "Downloading..." ||
-                              _status[name] == "Resolving link..." ||
-                              _status[name] == "Preparing..." ||
-                              _status[name] == "Opening installer..." ||
-                              _installAllInProgress)
-                          ? null
-                          : () => _installApp(name, url),
+                      child: Text(buttonText),
+                      onPressed: onPressed,
                     ),
                   ),
                 ),
