@@ -31,6 +31,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
 import android.provider.Settings
+import android.app.PendingIntent
+import android.app.admin.DevicePolicyManager
+import android.content.Context
+import android.content.pm.PackageInstaller
 import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
@@ -44,6 +48,7 @@ import io.flutter.plugin.common.MethodChannel
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
 import java.io.Serializable
 
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
@@ -646,6 +651,40 @@ class MainActivity : FlutterActivity() {
         val file = File(filePath)
         if (!file.exists()) return "file_missing"
 
+        if (isDeviceOwnerApp()) {
+            try {
+                val packageInstaller = packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                val sessionId = packageInstaller.createSession(params)
+                val session = packageInstaller.openSession(sessionId)
+
+                FileInputStream(file).use { input ->
+                    session.openWrite("base.apk", 0, -1).use { output ->
+                        val buffer = ByteArray(1024 * 64)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                        }
+                        output.flush()
+                        session.fsync(output)
+                    }
+                }
+
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    0
+                }
+                val pendingIntent = PendingIntent.getActivity(this, sessionId, Intent(this, MainActivity::class.java), flags)
+                session.commit(pendingIntent.intentSender)
+                session.close()
+                return "silent_started"
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "Silent install attempt failed: ${e.message}")
+            }
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val canInstall = try {
                 packageManager.canRequestPackageInstalls()
@@ -685,6 +724,15 @@ class MainActivity : FlutterActivity() {
             android.util.Log.e("FLauncher", "Error installing APK: ${e.message}")
             e.printStackTrace()
             "error"
+        }
+    }
+
+    private fun isDeviceOwnerApp(): Boolean {
+        return try {
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            dpm.isDeviceOwnerApp(packageName)
+        } catch (_: Exception) {
+            false
         }
     }
 }
