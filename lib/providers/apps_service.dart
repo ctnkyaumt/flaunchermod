@@ -83,7 +83,7 @@ class AppsService extends ChangeNotifier {
         version: Value(data["version"] ?? "(unknown)"),
         banner: Value(data["banner"]),
         icon: Value(data["icon"]),
-        hidden: Value(data["isSystemApp"] ?? false), // Hide pre-installed system apps by default
+        hidden: Value((data["isSystemApp"] ?? false) || data["packageName"] == "me.efesser.flauncher"),
         sideloaded: Value(data["sideloaded"]),
         isSystemApp: Value(data["isSystemApp"] ?? false),
       );
@@ -94,7 +94,7 @@ class AppsService extends ChangeNotifier {
         version: Value(data["version"] ?? "(unknown)"),
         banner: Value(data["banner"]),
         icon: Value(data["icon"]),
-        hidden: Value(existingHidden ?? (data["isSystemApp"] ?? false)),
+        hidden: Value(existingHidden ?? ((data["isSystemApp"] ?? false) || data["packageName"] == "me.efesser.flauncher")),
         sideloaded: Value(data["sideloaded"]),
         isSystemApp: Value(data["isSystemApp"] ?? false),
       );

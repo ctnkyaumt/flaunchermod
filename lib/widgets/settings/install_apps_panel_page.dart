@@ -35,7 +35,12 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     _AppSpec(
       name: "Stremio",
       packageName: "com.stremio.one",
-      sources: ["STREMIO"],
+      sources: [
+        "APKPURE:com.stremio.one",
+        "APKCOMBO:com.stremio.one",
+        "APKPREMIER:com.stremio.one",
+        "APKSUPPORT:com.stremio.one",
+      ],
     ),
     _AppSpec(
       name: "FX File Manager",
@@ -173,42 +178,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     }
   }
 
-  Future<String?> _getStremioLink() async {
-    try {
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse("https://www.stremio.com/downloads"));
-      final response = await request.close();
-      final html = await response.transform(SystemEncoding().decoder).join();
-
-      final blocks = RegExp(
-        r'<div class="table-body-cell other-download-links text-left">([\s\S]*?)</div>',
-        caseSensitive: false,
-      ).allMatches(html).map((m) => m.group(1) ?? "").toList();
-
-      if (blocks.length >= 4) {
-        final block = blocks[3];
-        final links = RegExp(r'href="([^"]+)"', caseSensitive: false)
-            .allMatches(block)
-            .map((m) => m.group(1))
-            .whereType<String>()
-            .toList();
-
-        final index = _isArm64() ? 4 : 0;
-        if (links.length > index) {
-          return links[index];
-        }
-      }
-
-      final regExpFallback = RegExp(r'href="([^"]+\.apk[^"]*)"', caseSensitive: false);
-      final matchFallback = regExpFallback.firstMatch(html);
-      if (matchFallback != null) return matchFallback.group(1);
-
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<String?> _getGithubLatestApk(String ownerRepo) async {
     try {
       final uri = Uri.parse("https://api.github.com/repos/$ownerRepo/releases/latest");
@@ -273,7 +242,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   }
 
   Future<String?> _resolveUrl(String token) async {
-    if (token == "STREMIO") return _getStremioLink();
     if (token == "KODI") return _getKodiUrl();
     if (token.startsWith("GITHUB:")) return _getGithubLatestApk(token.substring("GITHUB:".length));
     if (token.startsWith("https://github.com/") && token.contains("/blob/")) {
@@ -399,8 +367,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
         if (!downloadUrl.startsWith("http")) {
           if (downloadUrl.startsWith("//")) {
             downloadUrl = "https:$downloadUrl";
-          } else if (downloadUrl.startsWith("/")) {
-            downloadUrl = "https://www.stremio.com$downloadUrl";
           }
         }
 
