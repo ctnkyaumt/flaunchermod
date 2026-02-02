@@ -91,8 +91,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
   final Map<String, String> _status = {};
   final Map<String, double> _progress = {};
-  final List<_AppSpec> _queue = [];
-  bool _queueRunning = false;
   final Set<String> _installedPackages = {};
   final Set<String> _installedAppNames = {};
   String? _activeAppName;
@@ -114,8 +112,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   }
 
   bool _isInstalledByName(_AppSpec app) => _installedAppNames.contains(app.name);
-
-  bool _isQueued(_AppSpec app) => _queue.any((e) => e.name == app.name);
 
   String _normalizeAppName(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 
@@ -434,39 +430,14 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     }
   }
 
-  void _enqueueInstall(_AppSpec app) {
-    if (_isInstalled(app)) return;
-    if (_activeAppName == app.name) return;
-    if (_isQueued(app)) return;
-    setState(() {
-      _queue.add(app);
-      _status[app.name] = "Queued";
-      _progress[app.name] = 0.0;
-    });
-    _processQueue();
-  }
-
-  Future<void> _processQueue() async {
-    if (_queueRunning) return;
-    _queueRunning = true;
-    if (mounted) {
-      setState(() {});
-    }
-
-    while (_queue.isNotEmpty) {
-      final next = _queue.removeAt(0);
-      if (!mounted) return;
-      setState(() => _activeAppName = next.name);
-      await _installAppSpec(next);
-      await _refreshInstalledPackages();
-      if (!mounted) return;
-      setState(() => _activeAppName = null);
-    }
-
+  Future<void> _startInstall(_AppSpec app) async {
+    if (_activeAppName != null) return;
+    
+    setState(() => _activeAppName = app.name);
+    await _installAppSpec(app);
+    await _refreshInstalledPackages();
     if (!mounted) return;
-    setState(() {
-      _queueRunning = false;
-    });
+    setState(() => _activeAppName = null);
   }
 
   @override
@@ -491,21 +462,19 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
               final app = _apps[index];
               final name = app.name;
               final installed = _isInstalled(app) || _isInstalledByName(app);
-              final queued = _isQueued(app);
               final busy = _activeAppName == name ||
                   _status[name] == "Preparing…" ||
                   (_status[name]?.startsWith("Resolving link…") ?? false) ||
                   (_status[name]?.startsWith("Downloading…") ?? false) ||
                   _status[name] == "Opening installer…";
+              final anyBusy = _activeAppName != null;
 
-              final onPressed = (installed || queued || busy) ? null : () => _enqueueInstall(app);
+              final onPressed = (installed || anyBusy) ? null : () => _startInstall(app);
               final buttonText = installed
                   ? "Installed"
-                  : queued
-                      ? "Queued"
-                      : busy
-                          ? "Working"
-                          : "Install";
+                  : busy
+                      ? "Working"
+                      : "Install";
 
               return EnsureVisible(
                 alignment: 0.5,

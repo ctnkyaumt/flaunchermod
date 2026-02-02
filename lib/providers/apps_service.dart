@@ -59,10 +59,69 @@ class AppsService extends ChangeNotifier {
       switch (event["action"]) {
         case "PACKAGE_ADDED":
         case "PACKAGE_CHANGED":
-          await _database.persistApps([_buildAppCompanion(event["activitiyInfo"])]);
+          final appInfo = event["activitiyInfo"];
+          await _database.persistApps([_buildAppCompanion(appInfo)]);
+          
+          // Auto-add to category if not hidden
+          if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+            _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+            final isSideloaded = appInfo["sideloaded"] == true;
+            final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
+            
+            var category = _categoriesWithApps
+                .map((e) => e.category)
+                .firstWhereOrNull((c) => c.name == targetCategoryName);
+            
+            if (category == null) {
+              await addCategory(targetCategoryName, shouldNotifyListeners: false);
+              _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+              category = _categoriesWithApps
+                  .map((e) => e.category)
+                  .firstWhereOrNull((c) => c.name == targetCategoryName);
+            }
+            
+            if (category != null) {
+              final app = await _database.getApp(appInfo["packageName"]);
+              if (app != null) {
+                // Check if already in any category to avoid duplicates if something weird happens
+                // But simplified: just add to target category if not present in it
+                // addToCategory handles insertion
+                await addToCategory(app, category, shouldNotifyListeners: false);
+              }
+            }
+          }
           break;
         case "PACKAGES_AVAILABLE":
-          await _database.persistApps((event["activitiesInfo"] as List<dynamic>).map(_buildAppCompanion).toList());
+          final appsInfo = (event["activitiesInfo"] as List<dynamic>);
+          await _database.persistApps(appsInfo.map(_buildAppCompanion).toList());
+          
+          _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+          
+          for (final appInfo in appsInfo) {
+             if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+                final isSideloaded = appInfo["sideloaded"] == true;
+                final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
+                
+                var category = _categoriesWithApps
+                    .map((e) => e.category)
+                    .firstWhereOrNull((c) => c.name == targetCategoryName);
+                    
+                if (category == null) {
+                  await addCategory(targetCategoryName, shouldNotifyListeners: false);
+                  _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+                  category = _categoriesWithApps
+                      .map((e) => e.category)
+                      .firstWhereOrNull((c) => c.name == targetCategoryName);
+                }
+                
+                if (category != null) {
+                   final app = await _database.getApp(appInfo["packageName"]);
+                   if (app != null) {
+                     await addToCategory(app, category, shouldNotifyListeners: false);
+                   }
+                }
+             }
+          }
           break;
         case "PACKAGE_REMOVED":
           await _database.deleteApps([event["packageName"]]);
