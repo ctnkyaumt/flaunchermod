@@ -84,7 +84,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     ),
     _AppSpec(
       name: "AnExplorer",
-      packageName: "dev.dworks.apps.anexplorer",
+      packageName: "dev.dworks.apps.anexplorer.pro",
       sources: ["https://github.com/ctnkyaumt/test/blob/main/anexp/anexp.apk"],
     ),
   ];
