@@ -79,6 +79,8 @@ class MainActivity : FlutterActivity() {
                     "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
                     "shutdownDevice" -> result.success(shutdownDevice())
                     "installApk" -> result.success(installApk(call.arguments as String))
+                    "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
+                    "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
@@ -645,6 +647,28 @@ class MainActivity : FlutterActivity() {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
         return stream.toByteArray()
+    }
+
+    private fun canRequestPackageInstalls(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return packageManager.canRequestPackageInstalls()
+        }
+        return true
+    }
+
+    private fun requestPackageInstallsPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
+                return false
+            }
+        }
+        return true
     }
 
     private fun installApk(filePath: String): String {

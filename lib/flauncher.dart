@@ -22,6 +22,7 @@ import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
+import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/widgets/app_card.dart';
@@ -29,6 +30,7 @@ import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
 import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flauncher/widgets/weather_widget.dart';
+import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
 import 'package:flutter/material.dart';
@@ -40,15 +42,43 @@ class FLauncher extends StatefulWidget {
   _FLauncherState createState() => _FLauncherState();
 }
 
-class _FLauncherState extends State<FLauncher> {
+class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   FocusNode? _lastFocusedAppNode;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInstallFlow();
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkInstallFlow();
+    }
+  }
+
+  void _checkInstallFlow() {
+    final installService = context.read<AppInstallService>();
+    if (installService.isInstallingFlow) {
+      installService.setInstallingFlow(false);
+      showDialog(
+        context: context,
+        builder: (_) => SettingsPanel(initialRoute: InstallAppsPanelPage.routeName),
+      );
+    }
   }
 
   void _navigateToPage(int page) {
