@@ -70,6 +70,7 @@ class AppsService extends ChangeNotifier {
       }
       _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
       _applications = await _database.listApplications();
+      await _ensureTvApplicationsTop(shouldNotifyListeners: false);
       notifyListeners();
     });
     _initialized = true;
@@ -122,7 +123,7 @@ class AppsService extends ChangeNotifier {
               _categoriesWithApps.map((e) => e.category).firstWhere((element) => element.name == "TV Applications");
           await setCategoryType(
             tvAppsCategory,
-            CategoryType.grid,
+            CategoryType.row,
             shouldNotifyListeners: false,
           );
           for (final app in tvApplications) {
@@ -137,13 +138,19 @@ class AppsService extends ChangeNotifier {
       final categoriesWithApps = await _database.listCategoriesWithVisibleApps();
       final categories = categoriesWithApps.map((e) => e.category).toList();
       final tvIndex = categories.indexWhere((c) => c.name == "TV Applications");
-      if (tvIndex <= 0) {
+      if (tvIndex == -1) {
         _categoriesWithApps = categoriesWithApps;
         return;
       }
 
       final tvCategory = categories.removeAt(tvIndex);
       categories.insert(0, tvCategory);
+
+      await _database.updateCategory(tvCategory.id, CategoriesCompanion(type: Value(CategoryType.row)));
+      if (tvIndex == 0) {
+        _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+        return;
+      }
 
       final orderedCategories = <CategoriesCompanion>[];
       for (int i = 0; i < categories.length; i++) {

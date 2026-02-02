@@ -69,17 +69,18 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     ),
     _AppSpec(
       name: "Blackbulb",
+      packageName: "info.papdt.blackblub",
       sources: ["GITHUB:ctnkyaumt/Blackbulb"],
     ),
     _AppSpec(
-      name: "Tivimate",
-      packageName: "ar.tvplayer.tv",
-      sources: [
-        "APKPURE:ar.tvplayer.tv",
-        "APKCOMBO:ar.tvplayer.tv",
-        "APKPREMIER:ar.tvplayer.tv",
-        "APKSUPPORT:ar.tvplayer.tv",
-      ],
+      name: "Sparkle",
+      packageName: "se.hedekonsult.sparkle",
+      sources: ["https://github.com/ctnkyaumt/test/blob/main/sitv/sitv.apk"],
+    ),
+    _AppSpec(
+      name: "AnExplorer",
+      packageName: "dev.dworks.apps.anexplorer",
+      sources: ["https://github.com/ctnkyaumt/test/blob/main/anexp/anexp.apk"],
     ),
   ];
 
@@ -88,6 +89,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   final List<_AppSpec> _queue = [];
   bool _queueRunning = false;
   final Set<String> _installedPackages = {};
+  final Set<String> _installedAppNames = {};
   String? _activeAppName;
 
   @override
@@ -105,6 +107,8 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     if (packageName == null) return false;
     return _installedPackages.contains(packageName);
   }
+
+  bool _isInstalledByName(_AppSpec app) => _installedAppNames.contains(app.name);
 
   bool _isQueued(_AppSpec app) => _queue.any((e) => e.name == app.name);
 
@@ -142,12 +146,14 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
         _installedPackages
           ..clear()
           ..addAll(installed);
+        _installedAppNames.clear();
         for (final app in _apps) {
           final appInstalled = _isInstalled(app) ||
               (app.packageName == null && namesFromList.contains(_normalizeAppName(app.name))) ||
               (_normalizeAppName(app.name).contains("smarttube") && namesFromList.any((n) => n.contains("smarttube"))) ||
               (_normalizeAppName(app.name).contains("blackbulb") && namesFromList.any((n) => n.contains("blackbulb")));
           if (appInstalled) {
+            _installedAppNames.add(app.name);
             _status[app.name] = "Already installed";
             _progress[app.name] = 1.0;
           } else if (_status[app.name] == "Already installed") {
@@ -270,6 +276,18 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     if (token == "STREMIO") return _getStremioLink();
     if (token == "KODI") return _getKodiUrl();
     if (token.startsWith("GITHUB:")) return _getGithubLatestApk(token.substring("GITHUB:".length));
+    if (token.startsWith("https://github.com/") && token.contains("/blob/")) {
+      final uri = Uri.parse(token);
+      final parts = uri.pathSegments;
+      final blobIndex = parts.indexOf("blob");
+      if (blobIndex > 1 && parts.length > blobIndex + 1) {
+        final owner = parts[0];
+        final repo = parts[1];
+        final branch = parts[blobIndex + 1];
+        final filePath = parts.sublist(blobIndex + 2).join("/");
+        return "https://raw.githubusercontent.com/$owner/$repo/$branch/$filePath";
+      }
+    }
     if (token.startsWith("APKPURE:")) {
       final packageName = token.substring("APKPURE:".length);
       return "https://d.apkpure.com/b/APK/$packageName?version=latest";
@@ -506,7 +524,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
             itemBuilder: (context, index) {
               final app = _apps[index];
               final name = app.name;
-              final installed = _isInstalled(app);
+              final installed = _isInstalled(app) || _isInstalledByName(app);
               final queued = _isQueued(app);
               final busy = _activeAppName == name ||
                   _status[name] == "Preparing…" ||
