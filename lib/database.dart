@@ -141,6 +141,9 @@ class FLauncherDatabase extends _$FLauncherDatabase {
   Future<List<App>> listApplications() =>
       (select(apps)..orderBy([(expr) => OrderingTerm.asc(expr.name.lower())])).get();
 
+  Future<App?> getApp(String packageName) =>
+      (select(apps)..where((tbl) => tbl.packageName.equals(packageName))).getSingleOrNull();
+
   Future<void> persistApps(List<AppsCompanion> applications) =>
       batch((batch) => batch.insertAllOnConflictUpdate(apps, applications));
 

@@ -21,6 +21,7 @@ import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
+import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
 import 'package:flauncher/widgets/settings/weather_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
@@ -60,6 +61,16 @@ class SettingsPanelPage extends StatelessWidget {
                   ],
                 ),
                 onPressed: () => Navigator.of(context).pushNamed(CategoriesPanelPage.routeName),
+              ),
+              TextButton(
+                child: Row(
+                  children: [
+                    Icon(Icons.download),
+                    Container(width: 8),
+                    Text("Install apps", style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+                onPressed: () => Navigator.of(context).pushNamed(InstallAppsPanelPage.routeName),
               ),
               TextButton(
                 child: Row(

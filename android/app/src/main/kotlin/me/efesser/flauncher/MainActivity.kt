@@ -31,6 +31,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
 import android.provider.Settings
+import android.app.PendingIntent
+import android.app.admin.DevicePolicyManager
+import android.content.Context
+import android.content.pm.PackageInstaller
 import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
@@ -41,7 +45,10 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.EventChannel.EventSink
 import io.flutter.plugin.common.EventChannel.StreamHandler
 import io.flutter.plugin.common.MethodChannel
+import androidx.core.content.FileProvider
+import java.io.File
 import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
 import java.io.Serializable
 
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
@@ -56,21 +63,29 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getApplications" -> result.success(getApplications())
-                "applicationExists" -> result.success(applicationExists(call.arguments as String))
-                "launchApp" -> result.success(launchApp(call.arguments as String))
-                "openSettings" -> result.success(openSettings())
-                "openWifiSettings" -> result.success(openWifiSettings())
-                "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
-                "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
-                "isDefaultLauncher" -> result.success(isDefaultLauncher())
-                "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
-                "startAmbientMode" -> result.success(startAmbientMode())
-                "getHdmiInputs" -> result.success(getHdmiInputs())
-                "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
-                "shutdownDevice" -> result.success(shutdownDevice())
-                else -> throw IllegalArgumentException()
+            try {
+                when (call.method) {
+                    "getApplications" -> result.success(getApplications())
+                    "applicationExists" -> result.success(applicationExists(call.arguments as String))
+                    "launchApp" -> result.success(launchApp(call.arguments as String))
+                    "openSettings" -> result.success(openSettings())
+                    "openWifiSettings" -> result.success(openWifiSettings())
+                    "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
+                    "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
+                    "isDefaultLauncher" -> result.success(isDefaultLauncher())
+                    "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
+                    "startAmbientMode" -> result.success(startAmbientMode())
+                    "getHdmiInputs" -> result.success(getHdmiInputs())
+                    "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
+                    "shutdownDevice" -> result.success(shutdownDevice())
+                    "installApk" -> result.success(installApk(call.arguments as String))
+                    "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
+                    "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "MethodChannel error (${call.method}): ${e.message}")
+                result.error("native_error", e.message, null)
             }
         }
 
@@ -632,5 +647,116 @@ class MainActivity : FlutterActivity() {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
         return stream.toByteArray()
+    }
+
+    private fun canRequestPackageInstalls(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return packageManager.canRequestPackageInstalls()
+        }
+        return true
+    }
+
+    private fun requestPackageInstallsPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
+                return false
+            }
+        }
+        return true
+    }
+
+    private fun installApk(filePath: String): String {
+        val file = File(filePath)
+        if (!file.exists()) return "file_missing"
+
+        if (isDeviceOwnerApp()) {
+            try {
+                val packageInstaller = packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                val sessionId = packageInstaller.createSession(params)
+                val session = packageInstaller.openSession(sessionId)
+
+                FileInputStream(file).use { input ->
+                    session.openWrite("base.apk", 0, -1).use { output ->
+                        val buffer = ByteArray(1024 * 64)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            output.write(buffer, 0, read)
+                        }
+                        output.flush()
+                        session.fsync(output)
+                    }
+                }
+
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    0
+                }
+                val pendingIntent = PendingIntent.getActivity(this, sessionId, Intent(this, MainActivity::class.java), flags)
+                session.commit(pendingIntent.intentSender)
+                session.close()
+                return "silent_started"
+            } catch (e: Exception) {
+                android.util.Log.w("FLauncher", "Silent install attempt failed: ${e.message}")
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val canInstall = try {
+                packageManager.canRequestPackageInstalls()
+            } catch (e: SecurityException) {
+                android.util.Log.e("FLauncher", "Missing REQUEST_INSTALL_PACKAGES in manifest: ${e.message}")
+                return "missing_manifest_permission"
+            }
+
+            if (!canInstall) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    return "needs_permission"
+                } catch (e: Exception) {
+                    android.util.Log.e("FLauncher", "Error opening unknown sources settings: ${e.message}")
+                    return "needs_permission"
+                }
+            }
+        }
+
+        return try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                applicationContext.packageName + ".fileprovider",
+                file
+            )
+
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE)
+            intent.data = uri
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            startActivity(intent)
+            "started"
+        } catch (e: Exception) {
+            android.util.Log.e("FLauncher", "Error installing APK: ${e.message}")
+            e.printStackTrace()
+            "error"
+        }
+    }
+
+    private fun isDeviceOwnerApp(): Boolean {
+        return try {
+            val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            dpm.isDeviceOwnerApp(packageName)
+        } catch (_: Exception) {
+            false
+        }
     }
 }

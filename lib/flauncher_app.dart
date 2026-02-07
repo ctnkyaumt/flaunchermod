@@ -20,6 +20,7 @@
 import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flauncher/actions.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/ticker_model.dart';
 import 'package:flauncher/providers/weather_service.dart';
@@ -77,6 +78,7 @@ class FLauncherApp extends StatelessWidget {
                   SettingsService(_sharedPreferences, _firebaseCrashlytics, _firebaseAnalytics, _firebaseRemoteConfig ?? FirebaseRemoteConfig.instance),
               lazy: false),
           ChangeNotifierProvider(create: (_) => AppsService(_fLauncherChannel, _fLauncherDatabase)),
+          ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences)),
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(
               create: (_) => WallpaperService(_imagePicker, _fLauncherChannel, _unsplashService),
               update: (_, settingsService, wallpaperService) => wallpaperService!..settingsService = settingsService),
