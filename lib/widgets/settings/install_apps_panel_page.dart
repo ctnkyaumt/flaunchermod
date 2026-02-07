@@ -26,10 +26,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       name: "Stremio",
       packageName: "com.stremio.one",
       sources: [
-        "APKPURE:com.stremio.one",
-        "APKCOMBO:com.stremio.one",
-        "APKPREMIER:com.stremio.one",
-        "APKSUPPORT:com.stremio.one",
+        "STREMIO",
       ],
     ),
     AppSpec(
@@ -81,14 +78,43 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
   final Set<String> _installedPackages = {};
   final Set<String> _installedAppNames = {};
+  final List<FocusNode> _focusNodes = [];
 
   @override
   void initState() {
     super.initState();
+    _focusNodes.addAll(List.generate(_apps.length, (_) => FocusNode()));
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppInstallService>().checkAndRequestPermission();
+      _requestFocus();
     });
     _refreshInstalledPackages();
+  }
+
+  @override
+  void dispose() {
+    for (var node in _focusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  void _requestFocus() {
+    if (!mounted) return;
+    // Attempt to focus the first available (not installed) app button
+    for (int i = 0; i < _apps.length; i++) {
+      if (!_isInstalled(_apps[i]) && !_isInstalledByName(_apps[i])) {
+        if (_focusNodes[i].canRequestFocus) {
+          _focusNodes[i].requestFocus();
+          return;
+        }
+      }
+    }
+    // Fallback: focus the first item if possible
+    if (_focusNodes.isNotEmpty && _focusNodes[0].canRequestFocus) {
+      _focusNodes[0].requestFocus();
+    }
   }
 
   bool _isInstalled(AppSpec app) {
@@ -144,6 +170,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
           }
         }
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _requestFocus());
     } catch (_) {}
   }
 
@@ -212,6 +239,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
                       ],
                     ),
                     trailing: ElevatedButton(
+                      focusNode: _focusNodes[index],
                       child: Text(buttonText),
                       onPressed: onPressed,
                     ),

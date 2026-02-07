@@ -262,7 +262,54 @@ class AppInstallService extends ChangeNotifier {
       final resolved = await _getApkSupportDirectLink(packageName);
       return resolved ?? "https://apk.support/download-app/$packageName";
     }
+    if (token == "STREMIO") {
+      return _getStremioApk();
+    }
     return token;
+  }
+
+  Future<String?> _getStremioApk() async {
+    try {
+      final client = HttpClient();
+      final request = await client.getUrl(Uri.parse("https://www.stremio.com/downloads"));
+      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final html = await response.transform(utf8.decoder).join();
+
+      // Find "Stremio for Android TV" section to ensure we get the TV version
+      // The user mentioned the 4th child div, which likely corresponds to the TV section.
+      // We'll search for the section header or just look for links that look like TV versions if possible.
+      // But Stremio APK names for TV usually contain "com.stremio.one" (same as mobile) but might be distinct builds.
+      // The site usually separates them.
+      
+      final tvIndex = html.indexOf("Stremio for Android TV");
+      final searchContext = tvIndex != -1 ? html.substring(tvIndex) : html;
+
+      final matches = RegExp(r'href=["\'](https://[^"\']+\.apk)["\']', caseSensitive: false).allMatches(searchContext);
+      final urls = matches.map((m) => m.group(1)!).toList();
+
+      if (urls.isEmpty) return null;
+
+      final isArm64 = _isArm64();
+      
+      // Filter for architecture
+      if (isArm64) {
+        // Look for arm64/v8a
+        return urls.firstWhere(
+          (u) => u.toLowerCase().contains("arm64") || u.toLowerCase().contains("v8a"),
+          orElse: () => urls.first, // Fallback
+        );
+      } else {
+        // Look for armeabi/v7a
+        return urls.firstWhere(
+          (u) => u.toLowerCase().contains("armeabi") || u.toLowerCase().contains("v7a"),
+          orElse: () => urls.first, // Fallback
+        );
+      }
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<bool> _looksLikeApk(File file) async {
