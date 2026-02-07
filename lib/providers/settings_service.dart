@@ -227,4 +227,29 @@ class SettingsService extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> restoreSettings(Map<String, dynamic> data) async {
+    if (data.containsKey("use24HourTimeFormat")) {
+      await _sharedPreferences.setBool(_use24HourTimeFormatKey, data["use24HourTimeFormat"]);
+    }
+    if (data.containsKey("appHighlightAnimationEnabled")) {
+      await _sharedPreferences.setBool(_appHighlightAnimationEnabledKey, data["appHighlightAnimationEnabled"]);
+    }
+    if (data.containsKey("gradientUuid")) {
+      await _sharedPreferences.setString(_gradientUuidKey, data["gradientUuid"]);
+    }
+    
+    if (data.containsKey("weather")) {
+      final w = data["weather"] as Map<String, dynamic>;
+      if (w.containsKey("enabled")) await _sharedPreferences.setBool(_weatherEnabledKey, w["enabled"]);
+      if (w.containsKey("lat")) await _sharedPreferences.setDouble(_weatherLatitudeKey, w["lat"]);
+      if (w.containsKey("lon")) await _sharedPreferences.setDouble(_weatherLongitudeKey, w["lon"]);
+      if (w.containsKey("locationName")) await _sharedPreferences.setString(_weatherLocationNameKey, w["locationName"]);
+      if (w.containsKey("showDetails")) await _sharedPreferences.setBool(_weatherShowDetailsKey, w["showDetails"]);
+      if (w.containsKey("showCity")) await _sharedPreferences.setBool(_weatherShowCityKey, w["showCity"]);
+      if (w.containsKey("units")) await _sharedPreferences.setString(_weatherUnitsKey, w["units"]);
+      if (w.containsKey("refreshInterval")) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, w["refreshInterval"]);
+    }
+    notifyListeners();
+  }
 }

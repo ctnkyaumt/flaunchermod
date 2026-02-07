@@ -24,6 +24,7 @@ import 'package:flauncher/widgets/settings/categories_panel_page.dart';
 import 'package:flauncher/widgets/settings/category_panel_page.dart';
 import 'package:flauncher/widgets/settings/gradient_panel_page.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
+import 'package:flauncher/widgets/settings/backup_restore_panel_page.dart';
 import 'package:flauncher/widgets/settings/weather_panel_page.dart';
 import 'package:flauncher/widgets/settings/settings_panel_page.dart';
 import 'package:flauncher/widgets/settings/unsplash_panel_page.dart';
@@ -71,6 +72,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     return MaterialPageRoute(builder: (_) => CategoriesPanelPage());
                   case InstallAppsPanelPage.routeName:
                     return MaterialPageRoute(builder: (_) => InstallAppsPanelPage());
+                  case BackupRestorePanelPage.routeName:
+                    return MaterialPageRoute(builder: (_) => BackupRestorePanelPage());
                   case CategoryPanelPage.routeName:
                     return MaterialPageRoute(
                       builder: (_) => CategoryPanelPage(categoryId: settings.arguments! as int),

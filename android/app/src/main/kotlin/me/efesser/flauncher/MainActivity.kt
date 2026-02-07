@@ -81,6 +81,21 @@ class MainActivity : FlutterActivity() {
                     "installApk" -> result.success(installApk(call.arguments as String))
                     "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
                     "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
+                    "shareFile" -> {
+                        val path = call.arguments as String
+                        val file = File(path)
+                        if (file.exists()) {
+                            val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.fileprovider", file)
+                            val intent = Intent(Intent.ACTION_SEND)
+                            intent.type = "application/json"
+                            intent.putExtra(Intent.EXTRA_STREAM, uri)
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            startActivity(Intent.createChooser(intent, "Share Backup"))
+                            result.success(true)
+                        } else {
+                            result.error("file_not_found", "File does not exist", null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
