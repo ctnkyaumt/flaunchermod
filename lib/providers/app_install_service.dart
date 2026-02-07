@@ -286,7 +286,7 @@ class AppInstallService extends ChangeNotifier {
       final tvIndex = html.indexOf("Stremio for Android TV");
       final searchContext = tvIndex != -1 ? html.substring(tvIndex) : html;
 
-      final matches = RegExp(r'href=["\'](https://[^"\']+\.apk)["\']', caseSensitive: false).allMatches(searchContext);
+      final matches = RegExp(r'''href=["'](https://[^"']+\.apk)["']''', caseSensitive: false).allMatches(searchContext);
       final urls = matches.map((m) => m.group(1)!).toList();
 
       if (urls.isEmpty) return null;
