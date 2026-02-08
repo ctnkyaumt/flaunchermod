@@ -26,6 +26,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.app.Activity
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -39,7 +40,6 @@ import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.media.tv.TvInputManager.TvInputCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -55,37 +55,13 @@ import java.io.Serializable
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
+private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
 
 class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
     private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pickBackupJsonResult: MethodChannel.Result? = null
-
-    private val pickBackupJsonLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        val pending = pickBackupJsonResult
-        pickBackupJsonResult = null
-        if (pending == null) return@registerForActivityResult
-
-        if (uri == null) {
-            pending.success(null)
-            return@registerForActivityResult
-        }
-
-        try {
-            contentResolver.openInputStream(uri).use { input ->
-                if (input == null) {
-                    pending.success(null)
-                    return@registerForActivityResult
-                }
-                val bytes = input.readBytes()
-                val text = bytes.toString(Charsets.UTF_8)
-                pending.success(text)
-            }
-        } catch (e: Exception) {
-            pending.error("read_error", e.message, null)
-        }
-    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -121,7 +97,13 @@ class MainActivity : FlutterActivity() {
                             result.error("busy", "A document picker is already active", null)
                         } else {
                             pickBackupJsonResult = result
-                            pickBackupJsonLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/*"))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivityForResult(intent, PICK_BACKUP_JSON_REQUEST_CODE)
                         }
                     }
                     "shareFile" -> {
@@ -226,6 +208,49 @@ class MainActivity : FlutterActivity() {
                 }
             }
         })
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == PICK_BACKUP_JSON_REQUEST_CODE) {
+            val pending = pickBackupJsonResult
+            pickBackupJsonResult = null
+
+            if (pending != null) {
+                if (resultCode != Activity.RESULT_OK) {
+                    pending.success(null)
+                    return
+                }
+
+                val uri = data?.data
+                if (uri == null) {
+                    pending.success(null)
+                    return
+                }
+
+                try {
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (_: Exception) {
+                        // Ignore if persistable permission isn't granted by the picker/provider
+                    }
+
+                    contentResolver.openInputStream(uri).use { input ->
+                        if (input == null) {
+                            pending.success(null)
+                            return
+                        }
+                        val bytes = input.readBytes()
+                        val text = bytes.toString(Charsets.UTF_8)
+                        pending.success(text)
+                    }
+                } catch (e: Exception) {
+                    pending.error("read_error", e.message, null)
+                }
+            }
+            return
+        }
+
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onDestroy() {
