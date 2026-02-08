@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/app_install_service.dart';
+import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/backup_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flutter/material.dart';
