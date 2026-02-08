@@ -132,50 +132,13 @@ class BackupService {
     }
     
     await _database.transaction(() async {
+      // 1. Delete existing assignments and categories
+      // Note: deleting categories will cascade delete apps_categories if foreign keys are enabled
+      // but we do it explicitly to be sure.
       await _database.delete(_database.appsCategories).go();
       await _database.delete(_database.categories).go();
       
-      final categoriesList = data["categories"];
-      if (categoriesList is List) {
-        for (var c in categoriesList) {
-          if (c is! Map<String, dynamic>) continue;
-          final id = c["id"];
-          if (id is! int) continue;
-
-          await _database.into(_database.categories).insert(
-            CategoriesCompanion(
-              id: drift.Value(id),
-              name: drift.Value(c["name"]?.toString() ?? "Category"),
-              sort: drift.Value(CategorySort.values[(c["sort"] as int?) ?? 0]),
-              type: drift.Value(CategoryType.values[(c["type"] as int?) ?? 0]),
-              rowHeight: drift.Value((c["rowHeight"] as int?) ?? 110),
-              columnsCount: drift.Value((c["columnsCount"] as int?) ?? 6),
-              order: drift.Value((c["order"] as int?) ?? 0),
-            ),
-            mode: drift.InsertMode.insertOrReplace
-          );
-        }
-      }
-
-      final appsCategoriesList = data["appsCategories"];
-      if (appsCategoriesList is List) {
-        for (var ac in appsCategoriesList) {
-          if (ac is! Map<String, dynamic>) continue;
-          final catId = ac["categoryId"];
-          final pkg = ac["appPackageName"];
-          if (catId is! int || pkg is! String) continue;
-
-          await _database.into(_database.appsCategories).insert(
-            AppsCategoriesCompanion(
-              categoryId: drift.Value(catId),
-              appPackageName: drift.Value(pkg),
-              order: drift.Value((ac["order"] as int?) ?? 0),
-            ),
-            mode: drift.InsertMode.insertOrReplace
-          );
-        }
-      }
-      
+      // 2. Insert/Update Apps first (so apps_categories can reference them)
       final appsList = data["apps"];
       if (appsList is List) {
         for (var a in appsList) {
@@ -203,6 +166,55 @@ class BackupService {
                 sideloaded: drift.Value((a["sideloaded"] as bool?) ?? false),
                 isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
               )
+            );
+          }
+        }
+      }
+
+      // 3. Insert Categories
+      final categoriesList = data["categories"];
+      if (categoriesList is List) {
+        for (var c in categoriesList) {
+          if (c is! Map<String, dynamic>) continue;
+          final id = c["id"];
+          if (id is! int) continue;
+
+          await _database.into(_database.categories).insert(
+            CategoriesCompanion(
+              id: drift.Value(id),
+              name: drift.Value(c["name"]?.toString() ?? "Category"),
+              sort: drift.Value(CategorySort.values[(c["sort"] as int?) ?? 0]),
+              type: drift.Value(CategoryType.values[(c["type"] as int?) ?? 0]),
+              rowHeight: drift.Value((c["rowHeight"] as int?) ?? 110),
+              columnsCount: drift.Value((c["columnsCount"] as int?) ?? 6),
+              order: drift.Value((c["order"] as int?) ?? 0),
+            ),
+            mode: drift.InsertMode.insertOrReplace
+          );
+        }
+      }
+
+      // 4. Finally insert Assignments (referencing both Apps and Categories)
+      final appsCategoriesList = data["appsCategories"];
+      if (appsCategoriesList is List) {
+        for (var ac in appsCategoriesList) {
+          if (ac is! Map<String, dynamic>) continue;
+          final catId = ac["categoryId"];
+          final pkg = ac["appPackageName"];
+          if (catId is! int || pkg is! String) continue;
+
+          // Verify both exist to avoid FK errors if backup is somehow inconsistent
+          final catExists = await (_database.select(_database.categories)..where((tbl) => tbl.id.equals(catId))).getSingleOrNull() != null;
+          final appExists = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(pkg))).getSingleOrNull() != null;
+          
+          if (catExists && appExists) {
+            await _database.into(_database.appsCategories).insert(
+              AppsCategoriesCompanion(
+                categoryId: drift.Value(catId),
+                appPackageName: drift.Value(pkg),
+                order: drift.Value((ac["order"] as int?) ?? 0),
+              ),
+              mode: drift.InsertMode.insertOrReplace
             );
           }
         }
