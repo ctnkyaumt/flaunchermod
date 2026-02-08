@@ -92,81 +92,99 @@ class BackupService {
       throw Exception("Unsupported backup version");
     }
 
-    await _settingsService.restoreSettings(data["settings"]);
+    if (data.containsKey("settings") && data["settings"] != null) {
+      await _settingsService.restoreSettings(data["settings"] as Map<String, dynamic>);
+    }
     
     await _database.transaction(() async {
       await _database.delete(_database.appsCategories).go();
       await _database.delete(_database.categories).go();
       
-      final categoriesData = (data["categories"] as List).cast<Map<String, dynamic>>();
-      for (var c in categoriesData) {
-        await _database.into(_database.categories).insert(
-          CategoriesCompanion(
-            id: drift.Value(c["id"]),
-            name: drift.Value(c["name"]),
-            sort: drift.Value(CategorySort.values[c["sort"]]),
-            type: drift.Value(CategoryType.values[c["type"]]),
-            rowHeight: drift.Value(c["rowHeight"]),
-            columnsCount: drift.Value(c["columnsCount"]),
-            order: drift.Value(c["order"]),
-          ),
-          mode: drift.InsertMode.insertOrReplace
-        );
+      final categoriesList = data["categories"] as List?;
+      if (categoriesList != null) {
+        final categoriesData = categoriesList.cast<Map<String, dynamic>>();
+        for (var c in categoriesData) {
+          await _database.into(_database.categories).insert(
+            CategoriesCompanion(
+              id: drift.Value(c["id"]),
+              name: drift.Value(c["name"] ?? "Category"),
+              sort: drift.Value(CategorySort.values[c["sort"] ?? 0]),
+              type: drift.Value(CategoryType.values[c["type"] ?? 0]),
+              rowHeight: drift.Value(c["rowHeight"] ?? 110),
+              columnsCount: drift.Value(c["columnsCount"] ?? 6),
+              order: drift.Value(c["order"] ?? 0),
+            ),
+            mode: drift.InsertMode.insertOrReplace
+          );
+        }
       }
 
-      final appsCategoriesData = (data["appsCategories"] as List).cast<Map<String, dynamic>>();
-      for (var ac in appsCategoriesData) {
-        await _database.into(_database.appsCategories).insert(
-          AppsCategoriesCompanion(
-            categoryId: drift.Value(ac["categoryId"]),
-            appPackageName: drift.Value(ac["appPackageName"]),
-            order: drift.Value(ac["order"]),
-          ),
-          mode: drift.InsertMode.insertOrReplace
-        );
+      final appsCategoriesList = data["appsCategories"] as List?;
+      if (appsCategoriesList != null) {
+        final appsCategoriesData = appsCategoriesList.cast<Map<String, dynamic>>();
+        for (var ac in appsCategoriesData) {
+          await _database.into(_database.appsCategories).insert(
+            AppsCategoriesCompanion(
+              categoryId: drift.Value(ac["categoryId"]),
+              appPackageName: drift.Value(ac["appPackageName"]),
+              order: drift.Value(ac["order"] ?? 0),
+            ),
+            mode: drift.InsertMode.insertOrReplace
+          );
+        }
       }
       
-      final appsData = (data["apps"] as List).cast<Map<String, dynamic>>();
-      for (var a in appsData) {
-        final packageName = a["packageName"];
-        final existing = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).getSingleOrNull();
-        
-        if (existing != null) {
-           await (_database.update(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).write(
-             AppsCompanion(
-               hidden: drift.Value(a["hidden"]),
-               sideloaded: drift.Value(a["sideloaded"]),
-               isSystemApp: drift.Value(a["isSystemApp"]),
-             )
-           );
-        } else {
-          await _database.into(_database.apps).insert(
-            AppsCompanion(
-              packageName: drift.Value(packageName),
-              name: drift.Value(a["name"]),
-              version: drift.Value(""),
-              hidden: drift.Value(a["hidden"]),
-              sideloaded: drift.Value(a["sideloaded"]),
-              isSystemApp: drift.Value(a["isSystemApp"]),
-            )
-          );
+      final appsList = data["apps"] as List?;
+      if (appsList != null) {
+        final appsData = appsList.cast<Map<String, dynamic>>();
+        for (var a in appsData) {
+          final packageName = a["packageName"];
+          if (packageName == null) continue;
+
+          final existing = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).getSingleOrNull();
+          
+          if (existing != null) {
+             await (_database.update(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).write(
+               AppsCompanion(
+                 hidden: drift.Value(a["hidden"] ?? false),
+                 sideloaded: drift.Value(a["sideloaded"] ?? false),
+                 isSystemApp: drift.Value(a["isSystemApp"] ?? false),
+               )
+             );
+          } else {
+            await _database.into(_database.apps).insert(
+              AppsCompanion(
+                packageName: drift.Value(packageName),
+                name: drift.Value(a["name"] ?? ""),
+                version: drift.Value(""),
+                hidden: drift.Value(a["hidden"] ?? false),
+                sideloaded: drift.Value(a["sideloaded"] ?? false),
+                isSystemApp: drift.Value(a["isSystemApp"] ?? false),
+              )
+            );
+          }
         }
       }
     });
 
-    final appsData = (data["apps"] as List).cast<Map<String, dynamic>>();
+    final appsList = data["apps"] as List?;
     final missingApps = <AppSpec>[];
     
-    for (var a in appsData) {
-      final packageName = a["packageName"];
-      final exists = await _channel.applicationExists(packageName);
-      if (!exists) {
-        final known = AppInstallService.knownApps.firstWhere(
-          (spec) => spec.packageName == packageName,
-          orElse: () => AppSpec(name: a["name"], packageName: packageName, sources: [])
-        );
-        if (known.sources.isNotEmpty) {
-           missingApps.add(known);
+    if (appsList != null) {
+      final appsData = appsList.cast<Map<String, dynamic>>();
+      for (var a in appsData) {
+        final packageName = a["packageName"];
+        if (packageName == null) continue;
+
+        final exists = await _channel.applicationExists(packageName);
+        if (!exists) {
+          final known = AppInstallService.knownApps.firstWhere(
+            (spec) => spec.packageName == packageName,
+            orElse: () => AppSpec(name: a["name"] ?? "Unknown", packageName: packageName, sources: [])
+          );
+          if (known.sources.isNotEmpty) {
+             missingApps.add(known);
+          }
         }
       }
     }
