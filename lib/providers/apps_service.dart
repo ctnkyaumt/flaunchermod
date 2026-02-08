@@ -31,9 +31,11 @@ class AppsService extends ChangeNotifier {
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _database;
   bool _initialized = false;
+  final StreamController<String> _packageAddedController = StreamController<String>.broadcast();
   
   /// Expose the FLauncherChannel to allow access to platform-specific functionality
   FLauncherChannel get fLauncherChannel => _fLauncherChannel;
+  Stream<String> get packageAddedStream => _packageAddedController.stream;
 
   List<App> _applications = [];
   List<CategoryWithApps> _categoriesWithApps = [];
@@ -61,6 +63,10 @@ class AppsService extends ChangeNotifier {
         case "PACKAGE_ADDED":
         case "PACKAGE_CHANGED":
           final appInfo = event["activitiyInfo"];
+          final packageName = appInfo["packageName"] as String?;
+          if (packageName != null) {
+             _packageAddedController.add(packageName);
+          }
           await _database.persistApps([_buildAppCompanion(appInfo)]);
           
           // Auto-add to category if not hidden

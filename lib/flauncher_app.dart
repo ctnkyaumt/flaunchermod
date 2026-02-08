@@ -82,7 +82,9 @@ class FLauncherApp extends StatelessWidget {
           ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences)),
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(
               create: (_) => WallpaperService(_imagePicker, _fLauncherChannel, _unsplashService),
-              update: (_, settingsService, wallpaperService) => wallpaperService!..settingsService = settingsService),
+              update: (_, settingsService, wallpaperService) => wallpaperService!
+                ..settingsService = settingsService
+                ..onSettingsChanged()),
           ChangeNotifierProxyProvider<SettingsService, WeatherService>(
               create: (_) => WeatherService(),
               update: (_, settingsService, weatherService) => weatherService!..settingsService = settingsService),

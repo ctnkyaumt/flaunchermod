@@ -21,6 +21,24 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   String? _status;
 
   @override
+  void initState() {
+    super.initState();
+    // Request storage permission immediately when opening the panel
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _requestPermissions();
+    });
+  }
+
+  Future<void> _requestPermissions() async {
+    try {
+      final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
+      await channel.requestStoragePermission();
+    } catch (e) {
+      debugPrint("Failed to request storage permission: $e");
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -104,16 +122,6 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 
   Future<void> _pickBackupFile() async {
-    // Request storage permission first to ensure we can see files from previous installs
-    try {
-      final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
-      await channel.requestStoragePermission();
-      // Wait a moment for permission result if needed (basic implementation)
-      await Future.delayed(Duration(milliseconds: 500));
-    } catch (e) {
-      debugPrint("Failed to request storage permission: $e");
-    }
-
     // List files
     List<File> files = [];
     
@@ -206,6 +214,7 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
 
   Future<void> _installMissingApps(List<AppSpec> apps) async {
     final installService = Provider.of<AppInstallService>(context, listen: false);
+    final appsService = Provider.of<AppsService>(context, listen: false);
     await installService.checkAndRequestPermission();
     
     for (var i = 0; i < apps.length; i++) {
@@ -236,8 +245,19 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (ctx) => _InstallProgressDialog(app: app),
+          builder: (ctx) => _InstallProgressDialog(
+            app: app, 
+            packageStream: appsService.packageAddedStream,
+          ),
         );
+      } else {
+        // User skipped installation, remove from database so it doesn't show up
+        try {
+          final db = Provider.of<FLauncherDatabase>(context, listen: false);
+          await db.deleteApps([app.packageName]);
+        } catch (e) {
+          debugPrint("Error removing skipped app ${app.packageName}: $e");
+        }
       }
     }
     
@@ -245,29 +265,62 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 }
 
-class _InstallProgressDialog extends StatelessWidget {
+class _InstallProgressDialog extends StatefulWidget {
   final AppSpec app;
+  final Stream<String> packageStream;
 
-  const _InstallProgressDialog({required this.app});
+  const _InstallProgressDialog({required this.app, required this.packageStream});
+
+  @override
+  _InstallProgressDialogState createState() => _InstallProgressDialogState();
+}
+
+class _InstallProgressDialogState extends State<_InstallProgressDialog> {
+  StreamSubscription? _subscription;
+  bool _installed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = widget.packageStream.listen((packageName) {
+      if (packageName == widget.app.packageName) {
+        setState(() {
+          _installed = true;
+        });
+        // Auto-close after a brief delay to let user see "Installed!"
+        Future.delayed(Duration(milliseconds: 1500), () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppInstallService>(
       builder: (context, service, _) {
-        final status = service.status[app.name] ?? "Starting...";
+        final status = _installed ? "Installed!" : (service.status[widget.app.name] ?? "Starting...");
         return AlertDialog(
-          title: Text("Installing ${app.name}"),
+          title: Text("Installing ${widget.app.name}"),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
+              if (!_installed) CircularProgressIndicator() else Icon(Icons.check_circle, color: Colors.green, size: 48),
               SizedBox(height: 16),
               Text(status),
             ],
           ),
           actions: [
             TextButton(
-              child: Text("Done"),
+              child: Text(_installed ? "Next" : "Done"),
               onPressed: () => Navigator.pop(context),
             ),
           ],

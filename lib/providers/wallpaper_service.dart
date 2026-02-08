@@ -105,6 +105,11 @@ class WallpaperService extends ChangeNotifier {
     return _unsplashService!.searchPhotos(query);
   }
 
+  void onSettingsChanged() {
+    notifyListeners();
+  }
+}
+
   Future<void> setFromUnsplash(Photo photo) async {
     if (_unsplashService == null) {
       debugPrint("WallpaperService: UnsplashService not available");
