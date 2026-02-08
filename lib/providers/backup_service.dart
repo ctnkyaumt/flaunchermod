@@ -125,6 +125,31 @@ class BackupService {
       throw Exception("Unsupported backup version: ${data["version"]}");
     }
 
+    final appsList = data["apps"];
+    final installedByPackage = <String, bool>{};
+    final missingApps = <AppSpec>[];
+
+    if (appsList is List) {
+      for (final a in appsList) {
+        if (a is! Map<String, dynamic>) continue;
+        final packageName = a["packageName"]?.toString();
+        if (packageName == null || packageName.isEmpty) continue;
+
+        final exists = await _channel.applicationExists(packageName);
+        installedByPackage[packageName] = exists;
+
+        if (!exists) {
+          final known = AppInstallService.knownApps.firstWhere(
+            (spec) => spec.packageName == packageName,
+            orElse: () => AppSpec(name: a["name"]?.toString() ?? "Unknown", packageName: packageName, sources: []),
+          );
+          if (known.sources.isNotEmpty) {
+            missingApps.add(known);
+          }
+        }
+      }
+    }
+
     if (data.containsKey("settings") && data["settings"] != null) {
       await _settingsService.restoreSettings(data["settings"] as Map<String, dynamic>);
     }
@@ -137,19 +162,21 @@ class BackupService {
       await _database.delete(_database.categories).go();
       
       // 2. Insert/Update Apps first (so apps_categories can reference them)
-      final appsList = data["apps"];
       if (appsList is List) {
         for (var a in appsList) {
           if (a is! Map<String, dynamic>) continue;
           final packageName = a["packageName"]?.toString();
           if (packageName == null || packageName.isEmpty) continue;
+          final installed = installedByPackage[packageName] ?? false;
+          final restoredHidden = (a["hidden"] as bool?) ?? false;
+          final hidden = restoredHidden || !installed;
 
           final existing = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).getSingleOrNull();
           
           if (existing != null) {
              await (_database.update(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).write(
                AppsCompanion(
-                 hidden: drift.Value((a["hidden"] as bool?) ?? false),
+                 hidden: drift.Value(hidden),
                  sideloaded: drift.Value((a["sideloaded"] as bool?) ?? false),
                  isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
                )
@@ -160,7 +187,7 @@ class BackupService {
                 packageName: drift.Value(packageName),
                 name: drift.Value(a["name"]?.toString() ?? ""),
                 version: drift.Value(""),
-                hidden: drift.Value((a["hidden"] as bool?) ?? false),
+                hidden: drift.Value(hidden),
                 sideloaded: drift.Value((a["sideloaded"] as bool?) ?? false),
                 isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
               )
@@ -218,28 +245,6 @@ class BackupService {
         }
       }
     });
-
-    final appsList = data["apps"];
-    final missingApps = <AppSpec>[];
-    
-    if (appsList is List) {
-      for (var a in appsList) {
-        if (a is! Map<String, dynamic>) continue;
-        final packageName = a["packageName"]?.toString();
-        if (packageName == null || packageName.isEmpty) continue;
-
-        final exists = await _channel.applicationExists(packageName);
-        if (!exists) {
-          final known = AppInstallService.knownApps.firstWhere(
-            (spec) => spec.packageName == packageName,
-            orElse: () => AppSpec(name: a["name"]?.toString() ?? "Unknown", packageName: packageName, sources: [])
-          );
-          if (known.sources.isNotEmpty) {
-             missingApps.add(known);
-          }
-        }
-      }
-    }
     
     return missingApps;
   }

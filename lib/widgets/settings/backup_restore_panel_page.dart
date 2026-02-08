@@ -33,11 +33,12 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   Future<void> _requestPermissions() async {
     try {
       final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
-      await channel.requestStoragePermission();
       final hasAllFiles = await channel.hasAllFilesAccess();
       if (!hasAllFiles) {
         await channel.requestAllFilesAccess();
+        return;
       }
+      await channel.requestStoragePermission();
     } catch (e) {
       debugPrint("Failed to request storage permission: $e");
     }

@@ -71,6 +71,10 @@ class AppsService extends ChangeNotifier {
           
           // Auto-add to category if not hidden
           if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+            final pkg = appInfo["packageName"]?.toString();
+            if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
+              break;
+            }
             _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
             final isSideloaded = appInfo["sideloaded"] == true;
             final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
@@ -106,6 +110,10 @@ class AppsService extends ChangeNotifier {
           
           for (final appInfo in appsInfo) {
              if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+                final pkg = appInfo["packageName"]?.toString();
+                if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
+                  continue;
+                }
                 final isSideloaded = appInfo["sideloaded"] == true;
                 final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
                 

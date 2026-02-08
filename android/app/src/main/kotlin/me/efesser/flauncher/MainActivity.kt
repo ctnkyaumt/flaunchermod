@@ -88,7 +88,9 @@ class MainActivity : FlutterActivity() {
                     "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
                     "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
                     "requestStoragePermission" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            result.success(true)
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                             requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
                             result.success(true)
                         } else {
@@ -381,14 +383,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun applicationExists(packageName: String) = try {
-        val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            PackageManager.MATCH_UNINSTALLED_PACKAGES
-        } else {
-            @Suppress("DEPRECATION")
-            PackageManager.GET_UNINSTALLED_PACKAGES
-        }
-        packageManager.getApplicationInfo(packageName, flag)
-        true
+        val info = packageManager.getApplicationInfo(packageName, 0)
+        info.enabled
     } catch (e: PackageManager.NameNotFoundException) {
         false
     }
