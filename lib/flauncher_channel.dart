@@ -77,6 +77,9 @@ class FLauncherChannel {
   Future<bool> requestPackageInstallsPermission() async =>
       (await _methodChannel.invokeMethod('requestPackageInstallsPermission')) ?? false;
 
+  Future<bool> requestStoragePermission() async =>
+      (await _methodChannel.invokeMethod('requestStoragePermission')) ?? false;
+
   Future<bool> shareFile(String path) async =>
       (await _methodChannel.invokeMethod('shareFile', path)) ?? false;
 }

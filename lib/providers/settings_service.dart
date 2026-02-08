@@ -229,27 +229,61 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> restoreSettings(Map<String, dynamic> data) async {
-    if (data.containsKey("use24HourTimeFormat")) {
-      await _sharedPreferences.setBool(_use24HourTimeFormatKey, data["use24HourTimeFormat"]);
+    try {
+      if (data.containsKey("use24HourTimeFormat")) {
+        final val = data["use24HourTimeFormat"];
+        if (val is bool) await _sharedPreferences.setBool(_use24HourTimeFormatKey, val);
+      }
+      if (data.containsKey("appHighlightAnimationEnabled")) {
+        final val = data["appHighlightAnimationEnabled"];
+        if (val is bool) await _sharedPreferences.setBool(_appHighlightAnimationEnabledKey, val);
+      }
+      if (data.containsKey("gradientUuid")) {
+        final val = data["gradientUuid"];
+        if (val is String) await _sharedPreferences.setString(_gradientUuidKey, val);
+      }
+      
+      if (data.containsKey("weather")) {
+        final w = data["weather"];
+        if (w is Map<String, dynamic>) {
+          if (w.containsKey("enabled")) {
+             final val = w["enabled"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherEnabledKey, val);
+          }
+          if (w.containsKey("lat")) {
+             final val = w["lat"];
+             if (val is double) await _sharedPreferences.setDouble(_weatherLatitudeKey, val);
+          }
+          if (w.containsKey("lon")) {
+             final val = w["lon"];
+             if (val is double) await _sharedPreferences.setDouble(_weatherLongitudeKey, val);
+          }
+          if (w.containsKey("locationName")) {
+             final val = w["locationName"];
+             if (val is String) await _sharedPreferences.setString(_weatherLocationNameKey, val);
+          }
+          if (w.containsKey("showDetails")) {
+             final val = w["showDetails"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherShowDetailsKey, val);
+          }
+          if (w.containsKey("showCity")) {
+             final val = w["showCity"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherShowCityKey, val);
+          }
+          if (w.containsKey("units")) {
+             final val = w["units"];
+             if (val is String) await _sharedPreferences.setString(_weatherUnitsKey, val);
+          }
+          if (w.containsKey("refreshInterval")) {
+             final val = w["refreshInterval"];
+             if (val is int) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, val);
+          }
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error restoring settings: $e");
+      // Don't rethrow, just log and continue, as partial settings restore is better than none
     }
-    if (data.containsKey("appHighlightAnimationEnabled")) {
-      await _sharedPreferences.setBool(_appHighlightAnimationEnabledKey, data["appHighlightAnimationEnabled"]);
-    }
-    if (data.containsKey("gradientUuid")) {
-      await _sharedPreferences.setString(_gradientUuidKey, data["gradientUuid"]);
-    }
-    
-    if (data.containsKey("weather")) {
-      final w = data["weather"] as Map<String, dynamic>;
-      if (w.containsKey("enabled")) await _sharedPreferences.setBool(_weatherEnabledKey, w["enabled"]);
-      if (w.containsKey("lat")) await _sharedPreferences.setDouble(_weatherLatitudeKey, w["lat"]);
-      if (w.containsKey("lon")) await _sharedPreferences.setDouble(_weatherLongitudeKey, w["lon"]);
-      if (w.containsKey("locationName")) await _sharedPreferences.setString(_weatherLocationNameKey, w["locationName"]);
-      if (w.containsKey("showDetails")) await _sharedPreferences.setBool(_weatherShowDetailsKey, w["showDetails"]);
-      if (w.containsKey("showCity")) await _sharedPreferences.setBool(_weatherShowCityKey, w["showCity"]);
-      if (w.containsKey("units")) await _sharedPreferences.setString(_weatherUnitsKey, w["units"]);
-      if (w.containsKey("refreshInterval")) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, w["refreshInterval"]);
-    }
-    notifyListeners();
   }
 }

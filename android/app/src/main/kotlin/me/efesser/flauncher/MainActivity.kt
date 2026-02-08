@@ -81,6 +81,14 @@ class MainActivity : FlutterActivity() {
                     "installApk" -> result.success(installApk(call.arguments as String))
                     "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
                     "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
+                    "requestStoragePermission" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
+                            result.success(true)
+                        } else {
+                            result.success(true)
+                        }
+                    }
                     "shareFile" -> {
                         val path = call.arguments as String
                         val file = File(path)

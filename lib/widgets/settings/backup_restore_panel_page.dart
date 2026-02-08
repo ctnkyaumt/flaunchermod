@@ -103,6 +103,16 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 
   Future<void> _pickBackupFile() async {
+    // Request storage permission first to ensure we can see files from previous installs
+    try {
+      final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
+      await channel.requestStoragePermission();
+      // Wait a moment for permission result if needed (basic implementation)
+      await Future.delayed(Duration(milliseconds: 500));
+    } catch (e) {
+      debugPrint("Failed to request storage permission: $e");
+    }
+
     // List files
     List<File> files = [];
     
