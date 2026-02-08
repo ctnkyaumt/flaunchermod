@@ -123,18 +123,8 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 
   Future<void> _pickBackupFile() async {
-    if (Platform.isAndroid) {
-      try {
-        final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
-        final content = await channel.pickBackupJson();
-        if (content != null && content.isNotEmpty) {
-          await _restoreBackupContent(content);
-          return;
-        }
-      } catch (e) {
-        debugPrint("Error picking backup file: $e");
-      }
-    }
+    await _requestPermissions();
+    await Future.delayed(Duration(milliseconds: 500));
 
     // List files
     List<File> files = [];
@@ -143,6 +133,11 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
     final locations = <Directory?>[];
     if (Platform.isAndroid) {
       locations.add(Directory("/storage/emulated/0/Download"));
+      locations.add(Directory("/storage/emulated/0/Downloads"));
+      locations.add(Directory("/storage/self/primary/Download"));
+      locations.add(Directory("/storage/self/primary/Downloads"));
+      locations.add(Directory("/sdcard/Download"));
+      locations.add(Directory("/sdcard/Downloads"));
       locations.add(await getExternalStorageDirectory());
     }
     locations.add(await getApplicationDocumentsDirectory());
