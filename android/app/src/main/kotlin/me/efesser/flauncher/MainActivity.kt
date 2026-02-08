@@ -27,10 +27,12 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.app.Activity
+import android.content.ContentUris
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
+import android.provider.MediaStore
 import android.provider.Settings
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
@@ -92,6 +94,8 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         }
                     }
+                    "listBackupJsonInDownloads" -> result.success(listBackupJsonInDownloads())
+                    "readContentUri" -> result.success(readContentUri(call.arguments as String))
                     "pickBackupJson" -> {
                         if (pickBackupJsonResult != null) {
                             result.error("busy", "A document picker is already active", null)
@@ -251,6 +255,64 @@ class MainActivity : FlutterActivity() {
         }
 
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun listBackupJsonInDownloads(): List<Map<String, Any?>> {
+        val results = mutableListOf<Map<String, Any?>>()
+        return try {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            }
+
+            val projection = arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+            )
+
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("flauncher_backup_%", "%.json")
+            val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+
+            contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                val modifiedCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val name = cursor.getString(nameCol)
+                    val modifiedSeconds = cursor.getLong(modifiedCol)
+                    val uri = ContentUris.withAppendedId(collection, id)
+                    results.add(
+                        mapOf(
+                            "uri" to uri.toString(),
+                            "name" to name,
+                            "modified" to (modifiedSeconds * 1000L),
+                        )
+                    )
+                }
+            }
+
+            results
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun readContentUri(uriString: String): String? {
+        return try {
+            val uri = Uri.parse(uriString)
+            contentResolver.openInputStream(uri).use { input ->
+                if (input == null) return null
+                val bytes = input.readBytes()
+                bytes.toString(Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     override fun onDestroy() {

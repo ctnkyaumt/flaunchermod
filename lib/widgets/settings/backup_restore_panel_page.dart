@@ -126,8 +126,57 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
     await _requestPermissions();
     await Future.delayed(Duration(milliseconds: 500));
 
+    if (Platform.isAndroid) {
+      try {
+        final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
+        final items = await channel.listBackupJsonInDownloads();
+        if (items.isNotEmpty) {
+          final picked = await showDialog<Map<dynamic, dynamic>>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text("Select Backup"),
+              content: Container(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: items.length,
+                  itemBuilder: (c, i) {
+                    final item = items[i] as Map<dynamic, dynamic>;
+                    final name = item["name"]?.toString() ?? "backup.json";
+                    final modified = item["modified"];
+                    final subtitle = modified is int
+                        ? DateTime.fromMillisecondsSinceEpoch(modified).toString()
+                        : "";
+                    return ListTile(
+                      title: Text(name),
+                      subtitle: Text(subtitle),
+                      onTap: () => Navigator.pop(ctx, item),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+
+          if (picked != null) {
+            final uri = picked["uri"]?.toString();
+            if (uri != null && uri.isNotEmpty) {
+              final content = await channel.readContentUri(uri);
+              if (content != null && content.isNotEmpty) {
+                await _restoreBackupContent(content);
+                return;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("Error listing backups: $e");
+      }
+    }
+
     // List files
     List<File> files = [];
+    final seenPaths = <String>{};
     
     // Check multiple possible locations
     final locations = <Directory?>[];
@@ -149,7 +198,12 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
             .whereType<File>()
             .where((f) => f.path.contains("flauncher_backup_") && f.path.endsWith(".json"))
             .toList();
-          files.addAll(dirFiles);
+          for (final f in dirFiles) {
+            final key = f.absolute.path;
+            if (seenPaths.add(key)) {
+              files.add(f);
+            }
+          }
         } catch (e) {
           debugPrint("Error listing files in ${dir.path}: $e");
         }
