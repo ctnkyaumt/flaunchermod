@@ -28,7 +28,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     _focusNodes.addAll(List.generate(_apps.length, (_) => FocusNode()));
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppInstallService>().checkAndRequestPermission();
       _requestFocus();
     });
     _refreshInstalledPackages();

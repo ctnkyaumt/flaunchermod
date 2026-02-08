@@ -24,6 +24,7 @@ import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
@@ -46,6 +47,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   FocusNode? _lastFocusedAppNode;
+  bool _startupPermissionsFlowActive = false;
 
   @override
   void initState() {
@@ -53,6 +55,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInstallFlow();
+      _runStartupPermissionsFlow();
     });
   }
 
@@ -67,6 +70,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkInstallFlow();
+      _runStartupPermissionsFlow();
     }
   }
 
@@ -78,6 +82,55 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
         context: context,
         builder: (_) => SettingsPanel(initialRoute: InstallAppsPanelPage.routeName),
       );
+    }
+  }
+
+  Future<void> _runStartupPermissionsFlow() async {
+    if (_startupPermissionsFlowActive) return;
+    _startupPermissionsFlowActive = true;
+
+    try {
+      final settings = context.read<SettingsService>();
+      if (settings.startupPermissionsCompleted) return;
+
+      final channel = context.read<AppsService>().fLauncherChannel;
+
+      final canInstall = await channel.canRequestPackageInstalls();
+      if (!canInstall) {
+        await channel.requestPackageInstallsPermission();
+        return;
+      }
+
+      final hasAllFiles = await channel.hasAllFilesAccess();
+      if (!hasAllFiles) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Text("Storage permission required"),
+            content: Text(
+              "This app requires full storage access to restore from a backup.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await channel.requestAllFilesAccess();
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: Text("Open"),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      await settings.setStartupPermissionsCompleted(true);
+    } finally {
+      _startupPermissionsFlowActive = false;
     }
   }
 

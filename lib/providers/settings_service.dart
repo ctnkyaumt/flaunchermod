@@ -39,6 +39,7 @@ const _weatherShowDetailsKey = "weather_show_details";
 const _weatherShowCityKey = "weather_show_city";
 const _weatherUnitsKey = "weather_units";
 const _weatherRefreshIntervalMinutesKey = "weather_refresh_interval_minutes";
+const _startupPermissionsCompletedKey = "startup_permissions_completed";
 
 enum WeatherUnits {
   si,
@@ -104,6 +105,8 @@ class SettingsService extends ChangeNotifier {
     final normalized = ((clamped / 15).round() * 15);
     return normalized < 15 ? 15 : (normalized > 120 ? 120 : normalized);
   }
+
+  bool get startupPermissionsCompleted => _sharedPreferences.getBool(_startupPermissionsCompletedKey) ?? false;
 
   SettingsService(
     this._sharedPreferences,
@@ -213,6 +216,11 @@ class SettingsService extends ChangeNotifier {
     final normalized = ((clamped / 15).round() * 15);
     final saved = normalized < 15 ? 15 : (normalized > 120 ? 120 : normalized);
     await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, saved);
+    notifyListeners();
+  }
+
+  Future<void> setStartupPermissionsCompleted(bool value) async {
+    await _sharedPreferences.setBool(_startupPermissionsCompletedKey, value);
     notifyListeners();
   }
 

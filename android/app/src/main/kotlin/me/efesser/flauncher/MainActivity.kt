@@ -383,8 +383,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun applicationExists(packageName: String) = try {
-        val info = packageManager.getApplicationInfo(packageName, 0)
-        info.enabled
+        packageManager.getApplicationInfo(packageName, 0)
+        val intent = packageManager.getLeanbackLaunchIntentForPackage(packageName)
+            ?: packageManager.getLaunchIntentForPackage(packageName)
+        intent != null
     } catch (e: PackageManager.NameNotFoundException) {
         false
     }

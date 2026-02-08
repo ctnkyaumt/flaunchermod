@@ -24,10 +24,6 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   @override
   void initState() {
     super.initState();
-    // Request storage permission immediately when opening the panel
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestPermissions();
-    });
   }
 
   Future<void> _requestPermissions() async {
@@ -35,7 +31,26 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
       final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
       final hasAllFiles = await channel.hasAllFilesAccess();
       if (!hasAllFiles) {
-        await channel.requestAllFilesAccess();
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Text("Storage permission required"),
+            content: Text("This app requires full storage access to restore from a backup."),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await channel.requestAllFilesAccess();
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: Text("Open"),
+              ),
+            ],
+          ),
+        );
         return;
       }
       await channel.requestStoragePermission();
