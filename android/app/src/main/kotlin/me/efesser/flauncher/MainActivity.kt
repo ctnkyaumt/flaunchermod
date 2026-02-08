@@ -29,6 +29,7 @@ import android.net.Uri
 import android.app.Activity
 import android.content.ContentUris
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
@@ -94,6 +95,8 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         }
                     }
+                    "hasAllFilesAccess" -> result.success(hasAllFilesAccess())
+                    "requestAllFilesAccess" -> result.success(requestAllFilesAccess())
                     "listBackupJsonInDownloads" -> result.success(listBackupJsonInDownloads())
                     "readContentUri" -> result.success(readContentUri(call.arguments as String))
                     "pickBackupJson" -> {
@@ -255,6 +258,42 @@ class MainActivity : FlutterActivity() {
         }
 
         super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun hasAllFilesAccess(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun requestAllFilesAccess(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val uri = Uri.parse("package:$packageName")
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+                startActivity(intent)
+                true
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    true
+                } else {
+                    true
+                }
+            } catch (_: Exception) {
+                false
+            }
+        }
     }
 
     private fun listBackupJsonInDownloads(): List<Map<String, Any?>> {
