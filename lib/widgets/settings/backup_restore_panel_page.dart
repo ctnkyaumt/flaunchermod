@@ -123,6 +123,19 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 
   Future<void> _pickBackupFile() async {
+    if (Platform.isAndroid) {
+      try {
+        final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
+        final content = await channel.pickBackupJson();
+        if (content != null && content.isNotEmpty) {
+          await _restoreBackupContent(content);
+          return;
+        }
+      } catch (e) {
+        debugPrint("Error picking backup file: $e");
+      }
+    }
+
     // List files
     List<File> files = [];
     
@@ -181,6 +194,35 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
 
     if (file != null) {
       _restoreBackup(file);
+    }
+  }
+
+  Future<void> _restoreBackupContent(String content) async {
+    setState(() {
+      _loading = true;
+      _status = "Restoring backup...";
+    });
+
+    try {
+      final db = Provider.of<FLauncherDatabase>(context, listen: false);
+      final settings = Provider.of<SettingsService>(context, listen: false);
+      final service = BackupService(db, settings);
+      final missingApps = await service.restoreBackupFromContent(content);
+
+      setState(() {
+        _loading = false;
+      });
+      
+      if (missingApps.isNotEmpty) {
+        _installMissingApps(missingApps);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Restore completed successfully")));
+      }
+    } catch (e) {
+      setState(() {
+        _loading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 

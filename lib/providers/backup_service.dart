@@ -105,13 +105,11 @@ class BackupService {
   }
 
   Future<List<AppSpec>> restoreBackup(File file) async {
-    final String content;
-    try {
-      content = await file.readAsString();
-    } catch (e) {
-      throw Exception("Failed to read backup file: $e");
-    }
+    final String content = await file.readAsString();
+    return restoreBackupFromContent(content);
+  }
 
+  Future<List<AppSpec>> restoreBackupFromContent(String content) async {
     final dynamic data;
     try {
       data = jsonDecode(content);

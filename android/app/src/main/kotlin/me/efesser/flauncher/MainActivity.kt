@@ -39,6 +39,7 @@ import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.media.tv.TvInputManager.TvInputCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -59,6 +60,32 @@ class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
     private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var pickBackupJsonResult: MethodChannel.Result? = null
+
+    private val pickBackupJsonLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val pending = pickBackupJsonResult
+        pickBackupJsonResult = null
+        if (pending == null) return@registerForActivityResult
+
+        if (uri == null) {
+            pending.success(null)
+            return@registerForActivityResult
+        }
+
+        try {
+            contentResolver.openInputStream(uri).use { input ->
+                if (input == null) {
+                    pending.success(null)
+                    return@registerForActivityResult
+                }
+                val bytes = input.readBytes()
+                val text = bytes.toString(Charsets.UTF_8)
+                pending.success(text)
+            }
+        } catch (e: Exception) {
+            pending.error("read_error", e.message, null)
+        }
+    }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -87,6 +114,14 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         } else {
                             result.success(true)
+                        }
+                    }
+                    "pickBackupJson" -> {
+                        if (pickBackupJsonResult != null) {
+                            result.error("busy", "A document picker is already active", null)
+                        } else {
+                            pickBackupJsonResult = result
+                            pickBackupJsonLauncher.launch(arrayOf("application/json", "text/*", "application/octet-stream"))
                         }
                     }
                     "shareFile" -> {
