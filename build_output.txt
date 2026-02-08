@@ -1,0 +1,69 @@
+lib/providers/wallpaper_service.dart:136:1: Error: Expected a declaration, but got '}'.
+}
+^
+lib/widgets/settings/backup_restore_panel_page.dart:279:3: Error: Type 'StreamSubscription' not found.
+  StreamSubscription? _subscription;
+  ^^^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:114:9: Error: Undefined name '_unsplashService'.
+    if (_unsplashService == null) {
+        ^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:119:25: Error: Undefined name '_unsplashService'.
+    final bytes = await _unsplashService!.downloadPhoto(photo);
+                        ^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:120:11: Error: Undefined name '_wallpaperFile'.
+    await _wallpaperFile.writeAsBytes(bytes);
+          ^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:121:5: Error: Setter not found: '_wallpaper'.
+    _wallpaper = bytes;
+    ^^^^^^^^^^
+lib/providers/wallpaper_service.dart:122:11: Error: Undefined name '_settingsService'.
+    await _settingsService
+          ^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:124:5: Error: Method not found: 'notifyListeners'.
+    notifyListeners();
+    ^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:128:15: Error: Undefined name '_wallpaperFile'.
+    if (await _wallpaperFile.exists()) {
+              ^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:129:13: Error: Undefined name '_wallpaperFile'.
+      await _wallpaperFile.delete();
+            ^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:131:5: Error: Setter not found: '_wallpaper'.
+    _wallpaper = null;
+    ^^^^^^^^^^
+lib/providers/wallpaper_service.dart:132:5: Error: Undefined name '_settingsService'.
+    _settingsService.setUnsplashAuthor(null);
+    ^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:133:5: Error: Undefined name '_settingsService'.
+    _settingsService.setGradientUuid(fLauncherGradient.uuid);
+    ^^^^^^^^^^^^^^^^
+lib/providers/wallpaper_service.dart:134:5: Error: Method not found: 'notifyListeners'.
+    notifyListeners();
+    ^^^^^^^^^^^^^^^
+lib/widgets/settings/gradient_panel_page.dart:60:67: Error: The method 'setGradient' isn't defined for the class 'WallpaperService'.
+ - 'WallpaperService' is from 'package:flauncher/providers/wallpaper_service.dart' ('lib/providers/wallpaper_service.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'setGradient'.
+                    onTap: () => context.read<WallpaperService>().setGradient(fLauncherGradient),
+                                                                  ^^^^^^^^^^^
+lib/widgets/settings/backup_restore_panel_page.dart:257:36: Error: A value of type 'String?' can't be assigned to a variable of type 'String' because 'String?' is nullable and 'String' isn't.
+          await db.deleteApps([app.packageName]);
+                                   ^
+lib/widgets/settings/backup_restore_panel_page.dart:279:3: Error: 'StreamSubscription' isn't a type.
+  StreamSubscription? _subscription;
+  ^^^^^^^^^^^^^^^^^^
+lib/widgets/settings/unsplash_panel_page.dart:212:70: Error: The method 'setFromUnsplash' isn't defined for the class 'WallpaperService'.
+ - 'WallpaperService' is from 'package:flauncher/providers/wallpaper_service.dart' ('lib/providers/wallpaper_service.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'setFromUnsplash'.
+                              await context.read<WallpaperService>().setFromUnsplash(photo);
+                                                                     ^^^^^^^^^^^^^^^
+Target kernel_snapshot failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* Where:
+Script '/opt/hostedtoolcache/flutter/stable-3.7.5-x64/packages/flutter_tools/gradle/flutter.gradle' line: 1151
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command '/opt/hostedtoolcache/flutter/stable-3.7.5-x64/bin/flutter'' finished with non-zero exit value 1

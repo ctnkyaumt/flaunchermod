@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flauncher/database.dart';
@@ -252,12 +253,14 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
         );
       } else {
         // User skipped installation, remove from database so it doesn't show up
-        try {
-          final db = Provider.of<FLauncherDatabase>(context, listen: false);
-          await db.deleteApps([app.packageName]);
-        } catch (e) {
-          debugPrint("Error removing skipped app ${app.packageName}: $e");
-        }
+         try {
+           final db = Provider.of<FLauncherDatabase>(context, listen: false);
+           if (app.packageName != null) {
+             await db.deleteApps([app.packageName!]);
+           }
+         } catch (e) {
+           debugPrint("Error removing skipped app ${app.packageName}: $e");
+         }
       }
     }
     

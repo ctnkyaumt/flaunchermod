@@ -108,7 +108,6 @@ class WallpaperService extends ChangeNotifier {
   void onSettingsChanged() {
     notifyListeners();
   }
-}
 
   Future<void> setFromUnsplash(Photo photo) async {
     if (_unsplashService == null) {
