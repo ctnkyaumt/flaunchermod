@@ -104,23 +104,35 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
 
   Future<void> _pickBackupFile() async {
     // List files
-    Directory? directory;
+    List<File> files = [];
+    
+    // Check multiple possible locations
+    final locations = <Directory?>[];
     if (Platform.isAndroid) {
-      final externalDir = Directory("/storage/emulated/0/Download");
-      if (await externalDir.exists()) {
-         directory = externalDir;
+      locations.add(Directory("/storage/emulated/0/Download"));
+      locations.add(await getExternalStorageDirectory());
+    }
+    locations.add(await getApplicationDocumentsDirectory());
+
+    for (var dir in locations) {
+      if (dir != null && await dir.exists()) {
+        try {
+          final dirFiles = dir.listSync()
+            .whereType<File>()
+            .where((f) => f.path.contains("flauncher_backup_") && f.path.endsWith(".json"))
+            .toList();
+          files.addAll(dirFiles);
+        } catch (e) {
+          debugPrint("Error listing files in ${dir.path}: $e");
+        }
       }
     }
-    if (directory == null) {
-      directory = await getApplicationDocumentsDirectory();
-    }
 
-    final files = directory.listSync().where((f) => f.path.contains("flauncher_backup_") && f.path.endsWith(".json")).toList();
     // Sort by date desc
     files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
 
     if (files.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No backups found in ${directory.path}")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No backups found")));
       return;
     }
 
