@@ -104,27 +104,38 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
       final hasAllFiles = await channel.hasAllFilesAccess();
       if (!hasAllFiles) {
         if (!mounted) return;
+        final openButtonFocus = FocusNode();
         await showDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Text("Storage permission required"),
-            content: Text(
-              "This app requires full storage access to restore from a backup.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  await channel.requestAllFilesAccess();
-                  if (context.mounted) {
-                    Navigator.of(context).pop();
-                  }
-                },
-                child: Text("Open"),
+          builder: (context) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (openButtonFocus.canRequestFocus) {
+                openButtonFocus.requestFocus();
+              }
+            });
+            return AlertDialog(
+              title: Text("Storage permission required"),
+              content: Text(
+                "This app requires full storage access to restore from a backup.",
               ),
-            ],
-          ),
+              actions: [
+                TextButton(
+                  focusNode: openButtonFocus,
+                  autofocus: true,
+                  onPressed: () async {
+                    await channel.requestAllFilesAccess();
+                    if (context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  child: Text("Open"),
+                ),
+              ],
+            );
+          },
         );
+        openButtonFocus.dispose();
         return;
       }
 

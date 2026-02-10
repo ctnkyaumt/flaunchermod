@@ -128,6 +128,54 @@ class BackupService {
     final appsList = data["apps"];
     final installedByPackage = <String, bool>{};
     final missingApps = <AppSpec>[];
+    String normalize(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+
+    AppSpec? findKnownAppByPackage(String packageName) {
+      for (final spec in AppInstallService.knownApps) {
+        if (spec.packageName == packageName) {
+          return spec;
+        }
+      }
+      return null;
+    }
+
+    AppSpec? findKnownAppByName(String restoredName) {
+      final normalizedRestoredName = normalize(restoredName);
+      if (normalizedRestoredName.isEmpty) return null;
+
+      AppSpec? best;
+      var bestScore = 0;
+      var bestNameLength = 0;
+
+      for (final spec in AppInstallService.knownApps) {
+        final normalizedSpecName = normalize(spec.name);
+        if (normalizedSpecName.isEmpty) continue;
+
+        var score = 0;
+        if (normalizedSpecName == normalizedRestoredName) {
+          score = 1000;
+        } else {
+          final contains =
+              normalizedSpecName.contains(normalizedRestoredName) || normalizedRestoredName.contains(normalizedSpecName);
+          if (contains) {
+            final minLen = normalizedSpecName.length < normalizedRestoredName.length
+                ? normalizedSpecName.length
+                : normalizedRestoredName.length;
+            if (minLen >= 5) {
+              score = minLen;
+            }
+          }
+        }
+
+        if (score > bestScore || (score == bestScore && normalizedSpecName.length > bestNameLength)) {
+          best = spec;
+          bestScore = score;
+          bestNameLength = normalizedSpecName.length;
+        }
+      }
+
+      return bestScore > 0 ? best : null;
+    }
 
     if (appsList is List) {
       for (final a in appsList) {
@@ -139,10 +187,14 @@ class BackupService {
         installedByPackage[packageName] = exists;
 
         if (!exists) {
-          final known = AppInstallService.knownApps.firstWhere(
-            (spec) => spec.packageName == packageName,
-            orElse: () => AppSpec(name: a["name"]?.toString() ?? "Unknown", packageName: packageName, sources: []),
-          );
+          final restoredName = a["name"]?.toString() ?? "";
+          final known = findKnownAppByPackage(packageName) ??
+              findKnownAppByName(restoredName) ??
+              AppSpec(
+                name: restoredName.isEmpty ? "Unknown" : restoredName,
+                packageName: packageName,
+                sources: [],
+              );
           if (known.sources.isNotEmpty) {
             missingApps.add(known);
           }
