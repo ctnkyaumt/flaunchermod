@@ -109,29 +109,38 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
           context: context,
           barrierDismissible: false,
           builder: (context) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (openButtonFocus.canRequestFocus) {
-                openButtonFocus.requestFocus();
-              }
-            });
-            return AlertDialog(
-              title: Text("Storage permission required"),
-              content: Text(
-                "This app requires full storage access to restore from a backup.",
-              ),
-              actions: [
-                TextButton(
-                  focusNode: openButtonFocus,
-                  autofocus: true,
-                  onPressed: () async {
-                    await channel.requestAllFilesAccess();
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                    }
+            return FocusTraversalGroup(
+              child: FocusScope(
+                autofocus: true,
+                child: Builder(
+                  builder: (dialogContext) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) async {
+                      await Future.delayed(Duration(milliseconds: 100));
+                      if (!openButtonFocus.canRequestFocus) return;
+                      FocusScope.of(dialogContext).requestFocus(openButtonFocus);
+                    });
+                    return AlertDialog(
+                      title: Text("Storage permission required"),
+                      content: Text(
+                        "This app requires full storage access to restore from a backup.",
+                      ),
+                      actions: [
+                        OutlinedButton(
+                          focusNode: openButtonFocus,
+                          autofocus: true,
+                          onPressed: () async {
+                            await channel.requestAllFilesAccess();
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          child: Text("Open"),
+                        ),
+                      ],
+                    );
                   },
-                  child: Text("Open"),
                 ),
-              ],
+              ),
             );
           },
         );
