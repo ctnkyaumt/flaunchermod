@@ -76,4 +76,21 @@ class FLauncherChannel {
 
   Future<bool> requestPackageInstallsPermission() async =>
       (await _methodChannel.invokeMethod('requestPackageInstallsPermission')) ?? false;
+
+  Future<bool> requestStoragePermission() async =>
+      (await _methodChannel.invokeMethod('requestStoragePermission')) ?? false;
+
+  Future<bool> hasAllFilesAccess() async => (await _methodChannel.invokeMethod('hasAllFilesAccess')) ?? false;
+
+  Future<bool> requestAllFilesAccess() async => (await _methodChannel.invokeMethod('requestAllFilesAccess')) ?? false;
+
+  Future<List<dynamic>> listBackupJsonInDownloads() async =>
+      (await _methodChannel.invokeListMethod('listBackupJsonInDownloads')) ?? <dynamic>[];
+
+  Future<String?> readContentUri(String uri) async => await _methodChannel.invokeMethod<String>('readContentUri', uri);
+
+  Future<String?> pickBackupJson() async => await _methodChannel.invokeMethod<String>('pickBackupJson');
+
+  Future<bool> shareFile(String path) async =>
+      (await _methodChannel.invokeMethod('shareFile', path)) ?? false;
 }

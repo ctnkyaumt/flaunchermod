@@ -77,11 +77,14 @@ class FLauncherApp extends StatelessWidget {
               create: (_) =>
                   SettingsService(_sharedPreferences, _firebaseCrashlytics, _firebaseAnalytics, _firebaseRemoteConfig ?? FirebaseRemoteConfig.instance),
               lazy: false),
+          Provider<FLauncherDatabase>.value(value: _fLauncherDatabase),
           ChangeNotifierProvider(create: (_) => AppsService(_fLauncherChannel, _fLauncherDatabase)),
           ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences)),
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(
               create: (_) => WallpaperService(_imagePicker, _fLauncherChannel, _unsplashService),
-              update: (_, settingsService, wallpaperService) => wallpaperService!..settingsService = settingsService),
+              update: (_, settingsService, wallpaperService) => wallpaperService!
+                ..settingsService = settingsService
+                ..onSettingsChanged()),
           ChangeNotifierProxyProvider<SettingsService, WeatherService>(
               create: (_) => WeatherService(),
               update: (_, settingsService, weatherService) => weatherService!..settingsService = settingsService),

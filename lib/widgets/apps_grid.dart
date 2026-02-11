@@ -89,9 +89,6 @@ class AppsGrid extends StatelessWidget {
         ],
       );
 
-  int _findChildIndex(Key key) =>
-      applications.indexWhere((app) => "${category.id}-${app.packageName}" == (key as ValueKey<String>).value);
-
   void _onMove(BuildContext context, AxisDirection direction, int index) {
     final currentRow = (index / category.columnsCount).floor();
     final totalRows = ((applications.length - 1) / category.columnsCount).floor();

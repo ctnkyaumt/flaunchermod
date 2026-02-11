@@ -21,12 +21,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:async';
-import 'package:flutter/services.dart';
 import '../flauncher_channel.dart';
 import 'package:flauncher/providers/settings_service.dart';
-import 'package:flauncher/providers/ticker_model.dart';
 import 'package:flauncher/widgets/color_helpers.dart';
-import 'package:flauncher/widgets/focus_keyboard_listener.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 
 class HdmiInput {

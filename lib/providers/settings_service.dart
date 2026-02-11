@@ -23,8 +23,6 @@ import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _crashReportsEnabledKey = "crash_reports_enabled";
-const _analyticsEnabledKey = "analytics_enabled";
 const _use24HourTimeFormatKey = "use_24_hour_time_format";
 const _appHighlightAnimationEnabledKey = "app_highlight_animation_enabled";
 const _gradientUuidKey = "gradient_uuid";
@@ -39,6 +37,7 @@ const _weatherShowDetailsKey = "weather_show_details";
 const _weatherShowCityKey = "weather_show_city";
 const _weatherUnitsKey = "weather_units";
 const _weatherRefreshIntervalMinutesKey = "weather_refresh_interval_minutes";
+const _startupPermissionsCompletedKey = "startup_permissions_completed";
 
 enum WeatherUnits {
   si,
@@ -47,8 +46,6 @@ enum WeatherUnits {
 
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
-  final FirebaseCrashlytics? _firebaseCrashlytics;
-  final FirebaseAnalytics? _firebaseAnalytics;
   final FirebaseRemoteConfig _firebaseRemoteConfig;
   Timer? _remoteConfigRefreshTimer;
 
@@ -105,19 +102,18 @@ class SettingsService extends ChangeNotifier {
     return normalized < 15 ? 15 : (normalized > 120 ? 120 : normalized);
   }
 
+  bool get startupPermissionsCompleted => _sharedPreferences.getBool(_startupPermissionsCompletedKey) ?? false;
+
   SettingsService(
     this._sharedPreferences,
-    this._firebaseCrashlytics,
-    this._firebaseAnalytics,
+    FirebaseCrashlytics? firebaseCrashlytics,
+    FirebaseAnalytics? firebaseAnalytics,
     this._firebaseRemoteConfig,
   ) {
     // Initialize Firebase services if available
     // Removed Firebase initialization
     
-    // Only set up remote config timer if Firebase is available
-    if (_firebaseRemoteConfig != null) {
-      _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
-    }
+    _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
     
     debugPrint("SettingsService initialized");
   }
@@ -216,6 +212,11 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setStartupPermissionsCompleted(bool value) async {
+    await _sharedPreferences.setBool(_startupPermissionsCompletedKey, value);
+    notifyListeners();
+  }
+
   Future<void> _refreshFirebaseRemoteConfig() async {
     bool updated = false;
     try {
@@ -225,6 +226,65 @@ class SettingsService extends ChangeNotifier {
     }
     if (updated) {
       notifyListeners();
+    }
+  }
+
+  Future<void> restoreSettings(Map<String, dynamic> data) async {
+    try {
+      if (data.containsKey("use24HourTimeFormat")) {
+        final val = data["use24HourTimeFormat"];
+        if (val is bool) await _sharedPreferences.setBool(_use24HourTimeFormatKey, val);
+      }
+      if (data.containsKey("appHighlightAnimationEnabled")) {
+        final val = data["appHighlightAnimationEnabled"];
+        if (val is bool) await _sharedPreferences.setBool(_appHighlightAnimationEnabledKey, val);
+      }
+      if (data.containsKey("gradientUuid")) {
+        final val = data["gradientUuid"];
+        if (val is String) await _sharedPreferences.setString(_gradientUuidKey, val);
+      }
+      
+      if (data.containsKey("weather")) {
+        final w = data["weather"];
+        if (w is Map<String, dynamic>) {
+          if (w.containsKey("enabled")) {
+             final val = w["enabled"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherEnabledKey, val);
+          }
+          if (w.containsKey("lat")) {
+             final val = w["lat"];
+             if (val is double) await _sharedPreferences.setDouble(_weatherLatitudeKey, val);
+          }
+          if (w.containsKey("lon")) {
+             final val = w["lon"];
+             if (val is double) await _sharedPreferences.setDouble(_weatherLongitudeKey, val);
+          }
+          if (w.containsKey("locationName")) {
+             final val = w["locationName"];
+             if (val is String) await _sharedPreferences.setString(_weatherLocationNameKey, val);
+          }
+          if (w.containsKey("showDetails")) {
+             final val = w["showDetails"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherShowDetailsKey, val);
+          }
+          if (w.containsKey("showCity")) {
+             final val = w["showCity"];
+             if (val is bool) await _sharedPreferences.setBool(_weatherShowCityKey, val);
+          }
+          if (w.containsKey("units")) {
+             final val = w["units"];
+             if (val is String) await _sharedPreferences.setString(_weatherUnitsKey, val);
+          }
+          if (w.containsKey("refreshInterval")) {
+             final val = w["refreshInterval"];
+             if (val is int) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, val);
+          }
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error restoring settings: $e");
+      // Don't rethrow, just log and continue, as partial settings restore is better than none
     }
   }
 }

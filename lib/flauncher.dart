@@ -17,17 +17,17 @@
  */
 
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
-import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
+import 'package:flauncher/widgets/focus_keyboard_listener.dart';
 import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flauncher/widgets/weather_widget.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
@@ -45,7 +45,9 @@ class FLauncher extends StatefulWidget {
 class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  FocusNode? _lastFocusedAppNode;
+  bool _startupPermissionsFlowActive = false;
+  bool _startupInstallPermissionPrompted = false;
+  bool _startupAllFilesPrompted = false;
 
   @override
   void initState() {
@@ -53,6 +55,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInstallFlow();
+      _runStartupPermissionsFlow();
     });
   }
 
@@ -67,6 +70,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkInstallFlow();
+      _runStartupPermissionsFlow();
     }
   }
 
@@ -78,6 +82,98 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
         context: context,
         builder: (_) => SettingsPanel(initialRoute: InstallAppsPanelPage.routeName),
       );
+    }
+  }
+
+  Future<void> _runStartupPermissionsFlow() async {
+    if (_startupPermissionsFlowActive) return;
+    _startupPermissionsFlowActive = true;
+
+    try {
+      final settings = context.read<SettingsService>();
+      if (settings.startupPermissionsCompleted) return;
+
+      final channel = context.read<AppsService>().fLauncherChannel;
+
+      final canInstall = await channel.canRequestPackageInstalls();
+      if (!canInstall) {
+        if (!_startupInstallPermissionPrompted) {
+          _startupInstallPermissionPrompted = true;
+          await channel.requestPackageInstallsPermission();
+        }
+        return;
+      }
+
+      final hasAllFiles = await channel.hasAllFilesAccess();
+      if (!hasAllFiles) {
+        if (_startupAllFilesPrompted) return;
+        _startupAllFilesPrompted = true;
+        if (!mounted) return;
+        final openButtonFocus = FocusNode();
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            Future<void> openAllFilesSettings() async {
+              final opened = await channel.requestAllFilesAccess();
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text("Unable to open storage permission settings")),
+                );
+              }
+            }
+
+            return FocusTraversalGroup(
+              child: FocusScope(
+                autofocus: true,
+                child: FocusKeyboardListener(
+                  onPressed: (key) {
+                    if (key == LogicalKeyboardKey.select ||
+                        key == LogicalKeyboardKey.enter ||
+                        key == LogicalKeyboardKey.gameButtonA) {
+                      openAllFilesSettings();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  builder: (context) => Builder(
+                    builder: (dialogContext) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        await Future.delayed(Duration(milliseconds: 100));
+                        if (!openButtonFocus.canRequestFocus) return;
+                        FocusScope.of(dialogContext).requestFocus(openButtonFocus);
+                      });
+                      return AlertDialog(
+                        title: Text("Storage permission required"),
+                        content: Text(
+                          "This app requires full storage access to restore from a backup.",
+                        ),
+                        actions: [
+                          OutlinedButton(
+                            focusNode: openButtonFocus,
+                            autofocus: true,
+                            onPressed: openAllFilesSettings,
+                            child: Text("Open"),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+        openButtonFocus.dispose();
+        return;
+      }
+
+      await settings.setStartupPermissionsCompleted(true);
+    } finally {
+      _startupPermissionsFlowActive = false;
     }
   }
 
@@ -184,7 +280,6 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
 
   bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
     if (direction == TraversalDirection.down && _currentPage == 0) {
-      _lastFocusedAppNode = currentNode;
       _navigateToPage(1);
       return true;
     } else if (direction == TraversalDirection.up && _currentPage == 1) {

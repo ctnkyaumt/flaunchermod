@@ -36,12 +36,10 @@ void main() {
     final firebaseRemoteConfig = MockFirebaseRemoteConfig();
     final settingsService =
         SettingsService(sharedPreferences, firebaseCrashlytics, firebaseAnalytics, firebaseRemoteConfig);
-    await untilCalled(firebaseCrashlytics.setCrashlyticsCollectionEnabled(any));
 
     await settingsService.setCrashReportsEnabled(true);
 
-    verify(firebaseCrashlytics.setCrashlyticsCollectionEnabled(false)).called(2);
-    expect(sharedPreferences.getBool("crash_reports_enabled"), isTrue);
+    expect(settingsService.crashReportsEnabled, isFalse);
   });
 
   test("setAnalyticsEnabled", () async {
@@ -51,12 +49,10 @@ void main() {
     final firebaseRemoteConfig = MockFirebaseRemoteConfig();
     final settingsService =
         SettingsService(sharedPreferences, firebaseCrashlytics, firebaseAnalytics, firebaseRemoteConfig);
-    await untilCalled(firebaseCrashlytics.setCrashlyticsCollectionEnabled(any));
 
     await settingsService.setAnalyticsEnabled(true);
 
-    verify(firebaseAnalytics.setAnalyticsCollectionEnabled(false)).called(2);
-    expect(sharedPreferences.getBool("analytics_enabled"), isTrue);
+    expect(settingsService.analyticsEnabled, isFalse);
   });
 
   test("setUse24HourTimeFormat", () async {
@@ -185,7 +181,7 @@ void main() {
 
       final crashReportsEnabled = settingsService.crashReportsEnabled;
 
-      expect(crashReportsEnabled, isTrue);
+      expect(crashReportsEnabled, isFalse);
     });
 
     test("with value from shared preferences", () async {

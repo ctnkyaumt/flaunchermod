@@ -1,11 +1,7 @@
-import 'dart:convert';
-import 'dart:ffi';
-import 'dart:io';
 import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 class InstallAppsPanelPage extends StatefulWidget {
@@ -16,65 +12,7 @@ class InstallAppsPanelPage extends StatefulWidget {
 }
 
 class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
-  final List<AppSpec> _apps = [
-    AppSpec(
-      name: "SmartTube",
-      packageName: "com.teamsmart.videomanager.tv",
-      sources: ["https://github.com/yuliskov/SmartTube/releases/download/latest/smarttube_stable.apk"],
-    ),
-    AppSpec(
-      name: "Stremio",
-      packageName: "com.stremio.one",
-      sources: [
-        "STREMIO",
-      ],
-    ),
-    AppSpec(
-      name: "FX File Manager",
-      packageName: "nextapp.fx",
-      sources: [
-        "APKPURE:nextapp.fx",
-        "APKCOMBO:nextapp.fx",
-        "APKPREMIER:nextapp.fx",
-        "APKSUPPORT:nextapp.fx",
-      ],
-    ),
-    AppSpec(
-      name: "Total Commander",
-      packageName: "com.ghisler.android.TotalCommander",
-      sources: [
-        "APKPURE:com.ghisler.android.TotalCommander",
-        "APKCOMBO:com.ghisler.android.TotalCommander",
-        "APKPREMIER:com.ghisler.android.TotalCommander",
-        "APKSUPPORT:com.ghisler.android.TotalCommander",
-      ],
-    ),
-    AppSpec(
-      name: "Kodi",
-      packageName: "org.xbmc.kodi",
-      sources: ["KODI"],
-    ),
-    AppSpec(
-      name: "Cloudstream",
-      packageName: "com.lagradost.cloudstream3",
-      sources: ["GITHUB:recloudstream/cloudstream"],
-    ),
-    AppSpec(
-      name: "Blackbulb",
-      packageName: "info.papdt.blackblub",
-      sources: ["GITHUB:ctnkyaumt/Blackbulb"],
-    ),
-    AppSpec(
-      name: "Sparkle",
-      packageName: "se.hedekonsult.sparkle",
-      sources: ["https://github.com/ctnkyaumt/test/blob/main/sitv/sitv.apk"],
-    ),
-    AppSpec(
-      name: "AnExplorer",
-      packageName: "dev.dworks.apps.anexplorer.pro",
-      sources: ["https://github.com/ctnkyaumt/test/blob/main/anexp/anexp.apk"],
-    ),
-  ];
+  final List<AppSpec> _apps = AppInstallService.knownApps;
 
   final Set<String> _installedPackages = {};
   final Set<String> _installedAppNames = {};
@@ -86,7 +24,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     _focusNodes.addAll(List.generate(_apps.length, (_) => FocusNode()));
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppInstallService>().checkAndRequestPermission();
       _requestFocus();
     });
     _refreshInstalledPackages();

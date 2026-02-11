@@ -35,7 +35,6 @@ class WallpaperService extends ChangeNotifier {
 
   late final File _wallpaperFile;
   Uint8List? _wallpaper;
-  bool _initialized = false;
 
   Uint8List? get wallpaperBytes => _wallpaper;
 
@@ -61,7 +60,6 @@ class WallpaperService extends ChangeNotifier {
       } else {
         debugPrint("WallpaperService: No existing wallpaper");
       }
-      _initialized = true;
       notifyListeners();
     } catch (e) {
       debugPrint("WallpaperService: Error initializing - $e");
@@ -103,6 +101,10 @@ class WallpaperService extends ChangeNotifier {
       return Future.value([]);
     }
     return _unsplashService!.searchPhotos(query);
+  }
+
+  void onSettingsChanged() {
+    notifyListeners();
   }
 
   Future<void> setFromUnsplash(Photo photo) async {

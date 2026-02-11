@@ -17,7 +17,6 @@
  */
 
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:collection/collection.dart';
 import 'package:drift/drift.dart';
@@ -31,9 +30,11 @@ class AppsService extends ChangeNotifier {
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _database;
   bool _initialized = false;
+  final StreamController<String> _packageAddedController = StreamController<String>.broadcast();
   
   /// Expose the FLauncherChannel to allow access to platform-specific functionality
   FLauncherChannel get fLauncherChannel => _fLauncherChannel;
+  Stream<String> get packageAddedStream => _packageAddedController.stream;
 
   List<App> _applications = [];
   List<CategoryWithApps> _categoriesWithApps = [];
@@ -61,10 +62,18 @@ class AppsService extends ChangeNotifier {
         case "PACKAGE_ADDED":
         case "PACKAGE_CHANGED":
           final appInfo = event["activitiyInfo"];
+          final packageName = appInfo["packageName"] as String?;
+          if (packageName != null) {
+             _packageAddedController.add(packageName);
+          }
           await _database.persistApps([_buildAppCompanion(appInfo)]);
           
           // Auto-add to category if not hidden
           if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+            final pkg = appInfo["packageName"]?.toString();
+            if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
+              break;
+            }
             _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
             final isSideloaded = appInfo["sideloaded"] == true;
             final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
@@ -100,6 +109,10 @@ class AppsService extends ChangeNotifier {
           
           for (final appInfo in appsInfo) {
              if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
+                final pkg = appInfo["packageName"]?.toString();
+                if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
+                  continue;
+                }
                 final isSideloaded = appInfo["sideloaded"] == true;
                 final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
                 

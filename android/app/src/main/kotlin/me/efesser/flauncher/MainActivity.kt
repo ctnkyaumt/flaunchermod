@@ -26,10 +26,14 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.app.Activity
+import android.content.ContentUris
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.UserHandle
+import android.provider.MediaStore
 import android.provider.Settings
 import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
@@ -54,11 +58,13 @@ import java.io.Serializable
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
+private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
 
 class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
     private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var pickBackupJsonResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -81,6 +87,49 @@ class MainActivity : FlutterActivity() {
                     "installApk" -> result.success(installApk(call.arguments as String))
                     "canRequestPackageInstalls" -> result.success(canRequestPackageInstalls())
                     "requestPackageInstallsPermission" -> result.success(requestPackageInstallsPermission())
+                    "requestStoragePermission" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            result.success(true)
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
+                            result.success(true)
+                        } else {
+                            result.success(true)
+                        }
+                    }
+                    "hasAllFilesAccess" -> result.success(hasAllFilesAccess())
+                    "requestAllFilesAccess" -> result.success(requestAllFilesAccess())
+                    "listBackupJsonInDownloads" -> result.success(listBackupJsonInDownloads())
+                    "readContentUri" -> result.success(readContentUri(call.arguments as String))
+                    "pickBackupJson" -> {
+                        if (pickBackupJsonResult != null) {
+                            result.error("busy", "A document picker is already active", null)
+                        } else {
+                            pickBackupJsonResult = result
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/*"))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivityForResult(intent, PICK_BACKUP_JSON_REQUEST_CODE)
+                        }
+                    }
+                    "shareFile" -> {
+                        val path = call.arguments as String
+                        val file = File(path)
+                        if (file.exists()) {
+                            val uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.fileprovider", file)
+                            val intent = Intent(Intent.ACTION_SEND)
+                            intent.type = "application/json"
+                            intent.putExtra(Intent.EXTRA_STREAM, uri)
+                            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            startActivity(Intent.createChooser(intent, "Share Backup"))
+                            result.success(true)
+                        } else {
+                            result.error("file_not_found", "File does not exist", null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
@@ -170,6 +219,148 @@ class MainActivity : FlutterActivity() {
         })
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == PICK_BACKUP_JSON_REQUEST_CODE) {
+            val pending = pickBackupJsonResult
+            pickBackupJsonResult = null
+
+            if (pending != null) {
+                if (resultCode != Activity.RESULT_OK) {
+                    pending.success(null)
+                    return
+                }
+
+                val uri = data?.data
+                if (uri == null) {
+                    pending.success(null)
+                    return
+                }
+
+                try {
+                    try {
+                        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (_: Exception) {
+                        // Ignore if persistable permission isn't granted by the picker/provider
+                    }
+
+                    contentResolver.openInputStream(uri).use { input ->
+                        if (input == null) {
+                            pending.success(null)
+                            return
+                        }
+                        val bytes = input.readBytes()
+                        val text = bytes.toString(Charsets.UTF_8)
+                        pending.success(text)
+                    }
+                } catch (e: Exception) {
+                    pending.error("read_error", e.message, null)
+                }
+            }
+            return
+        }
+
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    private fun hasAllFilesAccess(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun requestAllFilesAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return true
+        }
+
+        val uri = Uri.parse("package:$packageName")
+        try {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+            startActivity(intent)
+            return true
+        } catch (_: Exception) {
+        }
+
+        try {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.fromParts("package", packageName, null))
+                .let(::startActivity)
+            return true
+        } catch (_: Exception) {
+        }
+
+        return try {
+            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun listBackupJsonInDownloads(): List<Map<String, Any?>> {
+        val results = mutableListOf<Map<String, Any?>>()
+        return try {
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            }
+
+            val projection = arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+            )
+
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("flauncher_backup_%", "%.json")
+            val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+
+            contentResolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                val modifiedCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idCol)
+                    val name = cursor.getString(nameCol)
+                    val modifiedSeconds = cursor.getLong(modifiedCol)
+                    val uri = ContentUris.withAppendedId(collection, id)
+                    results.add(
+                        mapOf(
+                            "uri" to uri.toString(),
+                            "name" to name,
+                            "modified" to (modifiedSeconds * 1000L),
+                        )
+                    )
+                }
+            }
+
+            results
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun readContentUri(uriString: String): String? {
+        return try {
+            val uri = Uri.parse(uriString)
+            contentResolver.openInputStream(uri).use { input ->
+                if (input == null) return null
+                val bytes = input.readBytes()
+                bytes.toString(Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     override fun onDestroy() {
         val launcherApps = getSystemService(LAUNCHER_APPS_SERVICE) as LauncherApps
         launcherAppsCallbacks.forEach(launcherApps::unregisterCallback)
@@ -197,14 +388,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun applicationExists(packageName: String) = try {
-        val flag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            PackageManager.MATCH_UNINSTALLED_PACKAGES
-        } else {
-            @Suppress("DEPRECATION")
-            PackageManager.GET_UNINSTALLED_PACKAGES
-        }
-        packageManager.getApplicationInfo(packageName, flag)
-        true
+        packageManager.getApplicationInfo(packageName, 0)
+        val intent = packageManager.getLeanbackLaunchIntentForPackage(packageName)
+            ?: packageManager.getLaunchIntentForPackage(packageName)
+        intent != null
     } catch (e: PackageManager.NameNotFoundException) {
         false
     }

@@ -17,9 +17,7 @@
  */
 
 import 'dart:typed_data';
-import 'dart:ui';
 
-import 'package:http/http.dart';
 import 'package:flauncher/stubs/unsplash_stubs.dart' as unsplash;
 
 class UnsplashService {
@@ -54,15 +52,6 @@ class UnsplashService {
 
   Future<Uint8List> downloadPhoto(Photo photo) {
     return Future.value(Uint8List.fromList([0, 0, 0, 0]));
-  }
-
-  Future<Uint8List> _downloadResized(Photo photo) async {
-    try {
-      final size = window.physicalSize;
-      return Uint8List.fromList([0, 0, 0, 0]);
-    } catch (e) {
-      return Uint8List.fromList([0, 0, 0, 0]);
-    }
   }
 
   Photo _buildPhoto(unsplash.Photo photo) => Photo(

@@ -29,20 +29,11 @@ class RowByRowTraversalPolicy extends FocusTraversalPolicy with DirectionalFocus
         
         int currentIndex = sameRowNodes.indexWhere((node) => node == currentNode);
         if (currentIndex != -1) {
-          FocusNode? nextNode;
-          
-          if (direction == TraversalDirection.right) {
-            // Move to next item, or wrap to first if at the end
-            nextNode = sameRowNodes[(currentIndex + 1) % sameRowNodes.length];
-          } else {
-            // Move to previous item, or wrap to last if at the beginning
-            nextNode = sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
-          }
-          
-          if (nextNode != null) {
-            nextNode.requestFocus();
-            return true;
-          }
+          final nextNode = direction == TraversalDirection.right
+              ? sameRowNodes[(currentIndex + 1) % sameRowNodes.length]
+              : sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
+          nextNode.requestFocus();
+          return true;
         }
       }
       
@@ -194,18 +185,11 @@ class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocu
         
         int currentIndex = sameRowNodes.indexWhere((node) => node == currentNode);
         if (currentIndex != -1) {
-          FocusNode? nextNode;
-          
-          if (direction == TraversalDirection.right) {
-            nextNode = sameRowNodes[(currentIndex + 1) % sameRowNodes.length];
-          } else {
-            nextNode = sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
-          }
-          
-          if (nextNode != null) {
-            nextNode.requestFocus();
-            return true;
-          }
+          final nextNode = direction == TraversalDirection.right
+              ? sameRowNodes[(currentIndex + 1) % sameRowNodes.length]
+              : sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
+          nextNode.requestFocus();
+          return true;
         }
       }
       

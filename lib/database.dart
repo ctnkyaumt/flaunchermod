@@ -182,6 +182,14 @@ class FLauncherDatabase extends _$FLauncherDatabase {
   Future<void> replaceAppsCategories(List<AppsCategoriesCompanion> value) =>
       batch((batch) => batch.replaceAll(appsCategories, value));
 
+  Future<bool> isAppInAnyCategory(String packageName) async {
+    final rows = await (select(appsCategories)
+          ..where((tbl) => tbl.appPackageName.equals(packageName))
+          ..limit(1))
+        .get();
+    return rows.isNotEmpty;
+  }
+
   Future<List<CategoryWithApps>> listCategoriesWithVisibleApps() async {
     final query = select(categories).join([
       leftOuterJoin(appsCategories, appsCategories.categoryId.equalsExp(categories.id)),

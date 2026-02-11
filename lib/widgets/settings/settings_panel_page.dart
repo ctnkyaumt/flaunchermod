@@ -22,6 +22,7 @@ import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
+import 'package:flauncher/widgets/settings/backup_restore_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
 import 'package:flauncher/widgets/settings/weather_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
@@ -91,6 +92,16 @@ class SettingsPanelPage extends StatelessWidget {
                   ],
                 ),
                 onPressed: () => Navigator.of(context).pushNamed(WeatherPanelPage.routeName),
+              ),
+              TextButton(
+                child: Row(
+                  children: [
+                    Icon(Icons.save_alt),
+                    Container(width: 8),
+                    Text("Backup & Restore", style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+                onPressed: () => Navigator.of(context).pushNamed(BackupRestorePanelPage.routeName),
               ),
               Divider(),
               TextButton(

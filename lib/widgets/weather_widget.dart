@@ -1,7 +1,5 @@
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
-import 'package:flauncher/providers/ticker_model.dart';
-import 'package:flauncher/widgets/color_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -126,7 +124,6 @@ class _WeatherContent extends StatefulWidget {
 }
 
 class _WeatherContentState extends State<_WeatherContent> {
-  Color _lastBorderColor = Colors.white;
   bool _pressed = false;
 
   void _flashPressed() {

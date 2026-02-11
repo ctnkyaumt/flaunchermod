@@ -19,14 +19,12 @@
 import 'dart:math';
 
 import 'package:drift/drift.dart';
-import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flauncher/database.dart';
 import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
+import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flauncher/unsplash_service.dart';
 import 'package:mockito/annotations.dart';
 
@@ -52,6 +50,7 @@ App fakeApp({
   Uint8List? icon,
   bool hidden = false,
   bool sideloaded = false,
+  bool isSystemApp = false,
 }) =>
     App(
       packageName: packageName,
@@ -61,6 +60,7 @@ App fakeApp({
       icon: icon,
       hidden: hidden,
       sideloaded: sideloaded,
+      isSystemApp: isSystemApp,
     );
 
 Category fakeCategory({
