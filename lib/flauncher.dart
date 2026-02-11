@@ -18,7 +18,6 @@
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
@@ -36,6 +35,7 @@ import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -350,6 +350,9 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
       return;
     }
     final renderObject = boundaryContext.findRenderObject();
+    if (renderObject == null) {
+      return;
+    }
     if (renderObject is! RenderRepaintBoundary) {
       return;
     }
