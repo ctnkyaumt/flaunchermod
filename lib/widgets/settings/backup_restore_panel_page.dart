@@ -5,11 +5,13 @@ import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/backup_service.dart';
+import 'package:flauncher/providers/gdrive_backup_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class BackupRestorePanelPage extends StatefulWidget {
   static const String routeName = "backup_restore_panel";
@@ -130,6 +132,12 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
                   subtitle: Text("Restore from a previously saved file"),
                   onTap: _pickBackupFile,
                 ),
+                ListTile(
+                  leading: Icon(Icons.cloud),
+                  title: Text("Restore from Cloud (GDrive)"),
+                  subtitle: Text("Restore latest backup from Google Drive"),
+                  onTap: _restoreFromCloud,
+                ),
               ],
             ),
     );
@@ -171,13 +179,237 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
       );
 
       if (result == true) {
-        await service.shareBackup(file);
+        await _backupToCloud(file);
       }
     } catch (e) {
       setState(() {
         _loading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    }
+  }
+
+  Future<void> _backupToCloud(File file) async {
+    setState(() {
+      _loading = true;
+      _status = "Backing up to cloud...";
+    });
+
+    try {
+      final settings = Provider.of<SettingsService>(context, listen: false);
+      final gdrive = GDriveBackupService(settings);
+
+      await _ensureGDriveClientConfigured(gdrive);
+      await _ensureGDriveSignedIn(gdrive);
+
+      final content = await file.readAsString();
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final name = "flauncher_backup_$ts.json";
+
+      await gdrive.uploadBackupJson(fileName: name, content: content);
+
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cloud backup uploaded")));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cloud backup failed: $e")));
+    }
+  }
+
+  Future<void> _restoreFromCloud() async {
+    setState(() {
+      _loading = true;
+      _status = "Connecting to cloud...";
+    });
+
+    try {
+      final settings = Provider.of<SettingsService>(context, listen: false);
+      final gdrive = GDriveBackupService(settings);
+
+      await _ensureGDriveClientConfigured(gdrive);
+      await _ensureGDriveSignedIn(gdrive);
+
+      final backups = await gdrive.listBackups(maxResults: 50);
+      if (!mounted) return;
+
+      if (backups.isEmpty) {
+        setState(() {
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No cloud backups found")));
+        return;
+      }
+
+      setState(() {
+        _loading = false;
+      });
+
+      final picked = await showDialog<GDriveFileInfo>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Select Cloud Backup"),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: backups.length,
+              itemBuilder: (c, i) {
+                final b = backups[i];
+                final subtitle = b.modifiedTime?.toString() ?? "";
+                return ListTile(
+                  title: Text(b.name),
+                  subtitle: Text(subtitle),
+                  onTap: () => Navigator.pop(ctx, b),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+
+      if (picked == null) return;
+
+      setState(() {
+        _loading = true;
+        _status = "Downloading cloud backup...";
+      });
+
+      final content = await gdrive.downloadBackupContent(picked.id);
+      if (!mounted) return;
+
+      await _restoreBackupContent(content);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Cloud restore failed: $e")));
+    }
+  }
+
+  Future<void> _ensureGDriveClientConfigured(GDriveBackupService gdrive) async {
+    final current = gdrive.clientId;
+    if (current != null && current.trim().isNotEmpty) return;
+    if (!mounted) return;
+
+    final controller = TextEditingController(text: current ?? "");
+    final value = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text("Google Drive Setup"),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: "OAuth Client ID",
+            hintText: "xxxxxx.apps.googleusercontent.com",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, null),
+            child: Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text("Save"),
+          ),
+        ],
+      ),
+    );
+
+    if (value == null || value.trim().isEmpty) {
+      throw Exception("Google OAuth client id not set");
+    }
+
+    await gdrive.setClientId(value);
+  }
+
+  Future<void> _ensureGDriveSignedIn(GDriveBackupService gdrive) async {
+    if (gdrive.isSignedIn) return;
+    if (!mounted) return;
+
+    final deviceCode = await gdrive.startDeviceCodeFlow();
+    var cancelled = false;
+    String status = "Waiting for approval...";
+
+    Future<void> poll() async {
+      try {
+        await gdrive.pollAndSaveTokens(deviceCode: deviceCode, isCancelled: () => cancelled);
+      } catch (e) {
+        if (cancelled) return;
+        rethrow;
+      }
+    }
+
+    final pollFuture = poll();
+    var hooked = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          if (!hooked) {
+            hooked = true;
+            pollFuture.then((_) {
+              if (context.mounted) Navigator.of(context).pop();
+            }).catchError((e) {
+              if (context.mounted) {
+                setState(() {
+                  status = e.toString();
+                });
+              }
+            });
+          }
+
+          final url = deviceCode.verificationUrlComplete ??
+              "${deviceCode.verificationUrl}?user_code=${Uri.encodeComponent(deviceCode.userCode)}";
+
+          return AlertDialog(
+            title: Text("Sign in to Google Drive"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(deviceCode.userCode, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                SizedBox(height: 12),
+                SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: QrImageView(
+                    data: url,
+                    version: QrVersions.auto,
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text(deviceCode.verificationUrl),
+                SizedBox(height: 12),
+                Text(status),
+              ],
+            ),
+            actions: [
+              TextButton(
+                autofocus: true,
+                onPressed: () {
+                  cancelled = true;
+                  Navigator.of(ctx).pop();
+                },
+                child: Text("Cancel"),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (!gdrive.isSignedIn) {
+      throw Exception("Not signed in");
     }
   }
 

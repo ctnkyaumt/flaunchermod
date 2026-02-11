@@ -40,6 +40,10 @@ const _weatherShowCityKey = "weather_show_city";
 const _weatherUnitsKey = "weather_units";
 const _weatherRefreshIntervalMinutesKey = "weather_refresh_interval_minutes";
 const _startupPermissionsCompletedKey = "startup_permissions_completed";
+const _gDriveClientIdKey = "gdrive_client_id";
+const _gDriveRefreshTokenKey = "gdrive_refresh_token";
+const _gDriveAccessTokenKey = "gdrive_access_token";
+const _gDriveAccessTokenExpiryKey = "gdrive_access_token_expiry_ms";
 
 enum WeatherUnits {
   si,
@@ -107,6 +111,18 @@ class SettingsService extends ChangeNotifier {
   }
 
   bool get startupPermissionsCompleted => _sharedPreferences.getBool(_startupPermissionsCompletedKey) ?? false;
+
+  String? get gDriveClientId => _sharedPreferences.getString(_gDriveClientIdKey);
+
+  String? get gDriveRefreshToken => _sharedPreferences.getString(_gDriveRefreshTokenKey);
+
+  String? get gDriveAccessToken => _sharedPreferences.getString(_gDriveAccessTokenKey);
+
+  DateTime? get gDriveAccessTokenExpiry {
+    final ms = _sharedPreferences.getInt(_gDriveAccessTokenExpiryKey);
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
 
   SettingsService(
     this._sharedPreferences,
@@ -221,6 +237,45 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setStartupPermissionsCompleted(bool value) async {
     await _sharedPreferences.setBool(_startupPermissionsCompletedKey, value);
+    notifyListeners();
+  }
+
+  Future<void> setGDriveClientId(String value) async {
+    final v = value.trim();
+    if (v.isEmpty) {
+      await _sharedPreferences.remove(_gDriveClientIdKey);
+    } else {
+      await _sharedPreferences.setString(_gDriveClientIdKey, v);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setGDriveRefreshToken(String value) async {
+    final v = value.trim();
+    if (v.isEmpty) {
+      await _sharedPreferences.remove(_gDriveRefreshTokenKey);
+    } else {
+      await _sharedPreferences.setString(_gDriveRefreshTokenKey, v);
+    }
+    notifyListeners();
+  }
+
+  Future<void> setGDriveAccessToken(String token, DateTime expiry) async {
+    final t = token.trim();
+    if (t.isEmpty) {
+      await _sharedPreferences.remove(_gDriveAccessTokenKey);
+      await _sharedPreferences.remove(_gDriveAccessTokenExpiryKey);
+    } else {
+      await _sharedPreferences.setString(_gDriveAccessTokenKey, t);
+      await _sharedPreferences.setInt(_gDriveAccessTokenExpiryKey, expiry.millisecondsSinceEpoch);
+    }
+    notifyListeners();
+  }
+
+  Future<void> clearGDriveAuth() async {
+    await _sharedPreferences.remove(_gDriveRefreshTokenKey);
+    await _sharedPreferences.remove(_gDriveAccessTokenKey);
+    await _sharedPreferences.remove(_gDriveAccessTokenExpiryKey);
     notifyListeners();
   }
 

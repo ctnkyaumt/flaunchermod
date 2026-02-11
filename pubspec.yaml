@@ -26,6 +26,7 @@ dependencies:
   sqlite3_flutter_libs: ^0.5.13
   # unsplash_client: ^2.1.0+3  # This depends on Firebase
   webview_flutter: ^4.0.5
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:
