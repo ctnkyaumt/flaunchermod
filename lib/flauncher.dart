@@ -49,6 +49,8 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   int _currentPage = 0;
   FocusNode? _lastFocusedAppNode;
   bool _startupPermissionsFlowActive = false;
+  bool _startupInstallPermissionPrompted = false;
+  bool _startupAllFilesPrompted = false;
 
   @override
   void initState() {
@@ -98,12 +100,17 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
 
       final canInstall = await channel.canRequestPackageInstalls();
       if (!canInstall) {
-        await channel.requestPackageInstallsPermission();
+        if (!_startupInstallPermissionPrompted) {
+          _startupInstallPermissionPrompted = true;
+          await channel.requestPackageInstallsPermission();
+        }
         return;
       }
 
       final hasAllFiles = await channel.hasAllFilesAccess();
       if (!hasAllFiles) {
+        if (_startupAllFilesPrompted) return;
+        _startupAllFilesPrompted = true;
         if (!mounted) return;
         final openButtonFocus = FocusNode();
         await showDialog<void>(
