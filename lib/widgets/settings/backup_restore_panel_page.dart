@@ -221,7 +221,7 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
                   shrinkWrap: true,
                   itemCount: items.length,
                   itemBuilder: (c, i) {
-                    final item = items[i] as Map<dynamic, dynamic>;
+                    final item = items[i];
                     final name = item["name"]?.toString() ?? "backup.json";
                     final modified = item["modified"];
                     final subtitle = modified is int
