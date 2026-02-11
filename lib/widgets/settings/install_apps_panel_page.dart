@@ -1,11 +1,7 @@
-import 'dart:convert';
-import 'dart:ffi';
-import 'dart:io';
 import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 class InstallAppsPanelPage extends StatefulWidget {

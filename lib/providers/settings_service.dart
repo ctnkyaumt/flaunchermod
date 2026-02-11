@@ -23,8 +23,6 @@ import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-const _crashReportsEnabledKey = "crash_reports_enabled";
-const _analyticsEnabledKey = "analytics_enabled";
 const _use24HourTimeFormatKey = "use_24_hour_time_format";
 const _appHighlightAnimationEnabledKey = "app_highlight_animation_enabled";
 const _gradientUuidKey = "gradient_uuid";
@@ -52,8 +50,6 @@ enum WeatherUnits {
 
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
-  final FirebaseCrashlytics? _firebaseCrashlytics;
-  final FirebaseAnalytics? _firebaseAnalytics;
   final FirebaseRemoteConfig _firebaseRemoteConfig;
   Timer? _remoteConfigRefreshTimer;
 
@@ -126,17 +122,14 @@ class SettingsService extends ChangeNotifier {
 
   SettingsService(
     this._sharedPreferences,
-    this._firebaseCrashlytics,
-    this._firebaseAnalytics,
+    FirebaseCrashlytics? firebaseCrashlytics,
+    FirebaseAnalytics? firebaseAnalytics,
     this._firebaseRemoteConfig,
   ) {
     // Initialize Firebase services if available
     // Removed Firebase initialization
     
-    // Only set up remote config timer if Firebase is available
-    if (_firebaseRemoteConfig != null) {
-      _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
-    }
+    _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
     
     debugPrint("SettingsService initialized");
   }

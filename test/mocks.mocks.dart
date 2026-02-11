@@ -8,10 +8,10 @@ import 'dart:typed_data' as _i17;
 
 import 'package:drift/drift.dart' as _i6;
 import 'package:drift/src/runtime/executor/stream_queries.dart' as _i8;
-import 'package:firebase_analytics/firebase_analytics.dart' as _i16;
-import 'package:firebase_core/firebase_core.dart' as _i3;
-import 'package:firebase_crashlytics/firebase_crashlytics.dart' as _i14;
-import 'package:firebase_remote_config/firebase_remote_config.dart' as _i4;
+import 'package:flauncher/stubs/firebase_stubs.dart' as _i16;
+import 'package:flauncher/stubs/firebase_stubs.dart' as _i3;
+import 'package:flauncher/stubs/firebase_stubs.dart' as _i14;
+import 'package:flauncher/stubs/firebase_stubs.dart' as _i4;
 import 'package:flauncher/database.dart' as _i7;
 import 'package:flauncher/flauncher_channel.dart' as _i9;
 import 'package:flauncher/gradients.dart' as _i2;

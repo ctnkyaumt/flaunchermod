@@ -65,3 +65,9 @@ class FirebaseRemoteConfig {
     return false;
   }
 }
+
+class FirebaseApp {}
+
+class RemoteConfigSettings {}
+
+class RemoteConfigValue {}

@@ -526,7 +526,7 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
               return ListTile(
                 title: Text(name),
                 subtitle: Text(f.statSync().modified.toString()),
-                onTap: () => Navigator.pop(ctx, f as File),
+                onTap: () => Navigator.pop(ctx, f),
               );
             },
           ),

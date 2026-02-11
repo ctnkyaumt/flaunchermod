@@ -17,7 +17,6 @@
  */
 
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
@@ -26,7 +25,6 @@ import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
-import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
@@ -47,7 +45,6 @@ class FLauncher extends StatefulWidget {
 class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  FocusNode? _lastFocusedAppNode;
   bool _startupPermissionsFlowActive = false;
   bool _startupInstallPermissionPrompted = false;
   bool _startupAllFilesPrompted = false;
@@ -283,7 +280,6 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
 
   bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
     if (direction == TraversalDirection.down && _currentPage == 0) {
-      _lastFocusedAppNode = currentNode;
       _navigateToPage(1);
       return true;
     } else if (direction == TraversalDirection.up && _currentPage == 1) {
