@@ -17,10 +17,12 @@
  */
 
 import 'dart:async';
+import 'dart:convert';
 
 // Import stub implementation instead of Firebase packages
 import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _use24HourTimeFormatKey = "use_24_hour_time_format";
@@ -38,16 +40,210 @@ const _weatherShowCityKey = "weather_show_city";
 const _weatherUnitsKey = "weather_units";
 const _weatherRefreshIntervalMinutesKey = "weather_refresh_interval_minutes";
 const _startupPermissionsCompletedKey = "startup_permissions_completed";
+const _remoteKeyMapKey = "remote_key_map_v1";
+const _remoteBindingsKey = "remote_bindings_v1";
+const _remoteBindingsDefaultsKey = "remote_bindings_defaults_v1";
+const _remoteKeyMapDefaultsKey = "remote_key_map_defaults_v1";
 
 enum WeatherUnits {
   si,
   us,
 }
 
+enum RemoteKeyAction {
+  up,
+  down,
+  left,
+  right,
+  select,
+  back,
+  openSettings,
+}
+
+extension RemoteKeyActionX on RemoteKeyAction {
+  String get id {
+    switch (this) {
+      case RemoteKeyAction.up:
+        return 'up';
+      case RemoteKeyAction.down:
+        return 'down';
+      case RemoteKeyAction.left:
+        return 'left';
+      case RemoteKeyAction.right:
+        return 'right';
+      case RemoteKeyAction.select:
+        return 'select';
+      case RemoteKeyAction.back:
+        return 'back';
+      case RemoteKeyAction.openSettings:
+        return 'openSettings';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case RemoteKeyAction.up:
+        return 'Up';
+      case RemoteKeyAction.down:
+        return 'Down';
+      case RemoteKeyAction.left:
+        return 'Left';
+      case RemoteKeyAction.right:
+        return 'Right';
+      case RemoteKeyAction.select:
+        return 'Select / OK';
+      case RemoteKeyAction.back:
+        return 'Back';
+      case RemoteKeyAction.openSettings:
+        return 'Open settings';
+    }
+  }
+}
+
+enum RemoteBindingType {
+  navigateUp,
+  navigateDown,
+  navigateLeft,
+  navigateRight,
+  select,
+  back,
+  openSettings,
+  openWifiSettings,
+  takeScreenshot,
+  launchApp,
+}
+
+extension RemoteBindingTypeX on RemoteBindingType {
+  String get id {
+    switch (this) {
+      case RemoteBindingType.navigateUp:
+        return 'navigateUp';
+      case RemoteBindingType.navigateDown:
+        return 'navigateDown';
+      case RemoteBindingType.navigateLeft:
+        return 'navigateLeft';
+      case RemoteBindingType.navigateRight:
+        return 'navigateRight';
+      case RemoteBindingType.select:
+        return 'select';
+      case RemoteBindingType.back:
+        return 'back';
+      case RemoteBindingType.openSettings:
+        return 'openSettings';
+      case RemoteBindingType.openWifiSettings:
+        return 'openWifiSettings';
+      case RemoteBindingType.takeScreenshot:
+        return 'takeScreenshot';
+      case RemoteBindingType.launchApp:
+        return 'launchApp';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case RemoteBindingType.navigateUp:
+        return 'Navigate up';
+      case RemoteBindingType.navigateDown:
+        return 'Navigate down';
+      case RemoteBindingType.navigateLeft:
+        return 'Navigate left';
+      case RemoteBindingType.navigateRight:
+        return 'Navigate right';
+      case RemoteBindingType.select:
+        return 'Select / OK';
+      case RemoteBindingType.back:
+        return 'Back';
+      case RemoteBindingType.openSettings:
+        return 'Open settings';
+      case RemoteBindingType.openWifiSettings:
+        return 'Open Wi‑Fi settings';
+      case RemoteBindingType.takeScreenshot:
+        return 'Take screenshot';
+      case RemoteBindingType.launchApp:
+        return 'Launch app';
+    }
+  }
+
+  static RemoteBindingType? tryParse(String id) {
+    for (final t in RemoteBindingType.values) {
+      if (t.id == id) {
+        return t;
+      }
+    }
+    return null;
+  }
+}
+
+class RemoteBinding {
+  final int keyCode;
+  final RemoteBindingType type;
+  final String? packageName;
+
+  const RemoteBinding({
+    required this.keyCode,
+    required this.type,
+    this.packageName,
+  });
+
+  RemoteBinding copyWith({
+    int? keyCode,
+    RemoteBindingType? type,
+    String? packageName,
+    bool clearPackageName = false,
+  }) {
+    return RemoteBinding(
+      keyCode: keyCode ?? this.keyCode,
+      type: type ?? this.type,
+      packageName: clearPackageName ? null : (packageName ?? this.packageName),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'keyCode': keyCode,
+        'type': type.id,
+        if (packageName != null) 'packageName': packageName,
+      };
+
+  static RemoteBinding? fromJson(dynamic json) {
+    if (json is! Map) {
+      return null;
+    }
+    final rawKeyCode = json['keyCode'];
+    final rawType = json['type'];
+    if (rawKeyCode is! int || rawType is! String) {
+      return null;
+    }
+    final type = RemoteBindingTypeX.tryParse(rawType);
+    if (type == null) {
+      return null;
+    }
+    final packageName = json['packageName'];
+    return RemoteBinding(
+      keyCode: rawKeyCode,
+      type: type,
+      packageName: packageName is String ? packageName : null,
+    );
+  }
+}
+
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
   final FirebaseRemoteConfig _firebaseRemoteConfig;
   Timer? _remoteConfigRefreshTimer;
+
+  List<RemoteBinding> get shippedRemoteBindings => const [
+        RemoteBinding(keyCode: 19, type: RemoteBindingType.navigateUp), // KEYCODE_DPAD_UP
+        RemoteBinding(keyCode: 20, type: RemoteBindingType.navigateDown), // KEYCODE_DPAD_DOWN
+        RemoteBinding(keyCode: 21, type: RemoteBindingType.navigateLeft), // KEYCODE_DPAD_LEFT
+        RemoteBinding(keyCode: 22, type: RemoteBindingType.navigateRight), // KEYCODE_DPAD_RIGHT
+        RemoteBinding(keyCode: 23, type: RemoteBindingType.select), // KEYCODE_DPAD_CENTER
+        RemoteBinding(keyCode: 66, type: RemoteBindingType.select), // KEYCODE_ENTER
+        RemoteBinding(keyCode: 4, type: RemoteBindingType.back), // KEYCODE_BACK
+        RemoteBinding(keyCode: 176, type: RemoteBindingType.openSettings), // KEYCODE_SETTINGS
+        RemoteBinding(keyCode: 82, type: RemoteBindingType.openSettings), // KEYCODE_MENU
+      ];
+
+  Map<String, int> get shippedRemoteKeyMap => const {};
 
   bool get crashReportsEnabled => false; // Always disabled
 
@@ -104,6 +300,119 @@ class SettingsService extends ChangeNotifier {
 
   bool get startupPermissionsCompleted => _sharedPreferences.getBool(_startupPermissionsCompletedKey) ?? false;
 
+  Map<String, int> get remoteKeyMap {
+    final raw = _sharedPreferences.getString(_remoteKeyMapKey);
+    if (raw == null || raw.isEmpty) {
+      return const {};
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        return const {};
+      }
+      final out = <String, int>{};
+      for (final entry in decoded.entries) {
+        final k = entry.key;
+        final v = entry.value;
+        if (k is String && v is int) {
+          out[k] = v;
+        }
+      }
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  int? remoteKeyCode(RemoteKeyAction action) => remoteKeyMap[action.id];
+
+  List<RemoteBinding> get remoteBindings {
+    final raw = _sharedPreferences.getString(_remoteBindingsKey);
+    if (raw == null || raw.isEmpty) {
+      return const [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) {
+        return const [];
+      }
+      final out = <RemoteBinding>[];
+      for (final item in decoded) {
+        final binding = RemoteBinding.fromJson(item);
+        if (binding != null) {
+          out.add(binding);
+        }
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  RemoteBinding? remoteBindingForKeyCode(int keyCode) {
+    for (final binding in remoteBindings) {
+      if (binding.keyCode == keyCode) {
+        return binding;
+      }
+    }
+    return null;
+  }
+
+  Future<void> upsertRemoteBinding(RemoteBinding binding) async {
+    final next = <RemoteBinding>[];
+    bool replaced = false;
+    for (final existing in remoteBindings) {
+      if (existing.keyCode == binding.keyCode) {
+        next.add(binding);
+        replaced = true;
+      } else {
+        next.add(existing);
+      }
+    }
+    if (!replaced) {
+      next.add(binding);
+    }
+    await _sharedPreferences.setString(_remoteBindingsKey, jsonEncode(next.map((b) => b.toJson()).toList()));
+    notifyListeners();
+  }
+
+  Future<void> removeRemoteBinding(int keyCode) async {
+    final next = remoteBindings.where((b) => b.keyCode != keyCode).toList(growable: false);
+    await _sharedPreferences.setString(_remoteBindingsKey, jsonEncode(next.map((b) => b.toJson()).toList()));
+    notifyListeners();
+  }
+
+  Future<void> _ensureRemoteDefaultsSaved() async {
+    final existingBindingsDefaults = _sharedPreferences.getString(_remoteBindingsDefaultsKey);
+    if (existingBindingsDefaults == null || existingBindingsDefaults.isEmpty) {
+      await _sharedPreferences.setString(
+        _remoteBindingsDefaultsKey,
+        jsonEncode(shippedRemoteBindings.map((b) => b.toJson()).toList()),
+      );
+    }
+
+    final existingKeyMapDefaults = _sharedPreferences.getString(_remoteKeyMapDefaultsKey);
+    if (existingKeyMapDefaults == null || existingKeyMapDefaults.isEmpty) {
+      await _sharedPreferences.setString(_remoteKeyMapDefaultsKey, jsonEncode(shippedRemoteKeyMap));
+    }
+  }
+
+  Future<void> resetRemoteControlsToDefaults() async {
+    final bindingsDefaultsRaw = _sharedPreferences.getString(_remoteBindingsDefaultsKey);
+    final keyMapDefaultsRaw = _sharedPreferences.getString(_remoteKeyMapDefaultsKey);
+
+    final bindingsToRestore = (bindingsDefaultsRaw == null || bindingsDefaultsRaw.isEmpty)
+        ? jsonEncode(shippedRemoteBindings.map((b) => b.toJson()).toList())
+        : bindingsDefaultsRaw;
+    final keyMapToRestore = (keyMapDefaultsRaw == null || keyMapDefaultsRaw.isEmpty)
+        ? jsonEncode(shippedRemoteKeyMap)
+        : keyMapDefaultsRaw;
+
+    await _sharedPreferences.setString(_remoteBindingsKey, bindingsToRestore);
+    await _sharedPreferences.setString(_remoteKeyMapKey, keyMapToRestore);
+    notifyListeners();
+  }
+
   SettingsService(
     this._sharedPreferences,
     FirebaseCrashlytics? firebaseCrashlytics,
@@ -115,6 +424,10 @@ class SettingsService extends ChangeNotifier {
     
     _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
     
+    () async {
+      await _ensureRemoteDefaultsSaved();
+    }();
+
     debugPrint("SettingsService initialized");
   }
 
@@ -217,6 +530,78 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setRemoteKeyCode(RemoteKeyAction action, int? keyCode) async {
+    final next = Map<String, int>.from(remoteKeyMap);
+    if (keyCode == null) {
+      next.remove(action.id);
+    } else {
+      next[action.id] = keyCode;
+    }
+    await _sharedPreferences.setString(_remoteKeyMapKey, jsonEncode(next));
+    notifyListeners();
+  }
+
+  Future<void> setRemoteKeyMap(Map<String, int> keyMap) async {
+    await _sharedPreferences.setString(_remoteKeyMapKey, jsonEncode(keyMap));
+    notifyListeners();
+  }
+
+  LogicalKeyboardKey? mapAndroidKeyCode(int keyCode) {
+    final bound = remoteBindingForKeyCode(keyCode);
+    if (bound != null) {
+      switch (bound.type) {
+        case RemoteBindingType.navigateUp:
+          return LogicalKeyboardKey.arrowUp;
+        case RemoteBindingType.navigateDown:
+          return LogicalKeyboardKey.arrowDown;
+        case RemoteBindingType.navigateLeft:
+          return LogicalKeyboardKey.arrowLeft;
+        case RemoteBindingType.navigateRight:
+          return LogicalKeyboardKey.arrowRight;
+        case RemoteBindingType.select:
+          return LogicalKeyboardKey.select;
+        case RemoteBindingType.back:
+          return LogicalKeyboardKey.gameButtonB;
+        case RemoteBindingType.openSettings:
+          return LogicalKeyboardKey.f1;
+        case RemoteBindingType.openWifiSettings:
+        case RemoteBindingType.takeScreenshot:
+        case RemoteBindingType.launchApp:
+          return null;
+      }
+    }
+
+    if (remoteKeyCode(RemoteKeyAction.up) == keyCode) return LogicalKeyboardKey.arrowUp;
+    if (remoteKeyCode(RemoteKeyAction.down) == keyCode) return LogicalKeyboardKey.arrowDown;
+    if (remoteKeyCode(RemoteKeyAction.left) == keyCode) return LogicalKeyboardKey.arrowLeft;
+    if (remoteKeyCode(RemoteKeyAction.right) == keyCode) return LogicalKeyboardKey.arrowRight;
+    if (remoteKeyCode(RemoteKeyAction.select) == keyCode) return LogicalKeyboardKey.select;
+    if (remoteKeyCode(RemoteKeyAction.back) == keyCode) return LogicalKeyboardKey.gameButtonB;
+    if (remoteKeyCode(RemoteKeyAction.openSettings) == keyCode) return LogicalKeyboardKey.f1;
+    return null;
+  }
+
+  bool isSelectEvent(RawKeyEvent event) {
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.select || key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.gameButtonA) {
+      return true;
+    }
+
+    final data = event.data;
+    if (data is RawKeyEventDataAndroid) {
+      final binding = remoteBindingForKeyCode(data.keyCode);
+      if (binding != null && binding.type == RemoteBindingType.select) {
+        return true;
+      }
+      final mapped = remoteKeyCode(RemoteKeyAction.select);
+      if (mapped != null && data.keyCode == mapped) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   Future<void> _refreshFirebaseRemoteConfig() async {
     bool updated = false;
     try {
@@ -279,6 +664,35 @@ class SettingsService extends ChangeNotifier {
              final val = w["refreshInterval"];
              if (val is int) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, val);
           }
+        }
+      }
+
+      if (data.containsKey("remoteKeys")) {
+        final raw = data["remoteKeys"];
+        if (raw is Map) {
+          final next = <String, int>{};
+          for (final entry in raw.entries) {
+            final k = entry.key;
+            final v = entry.value;
+            if (k is String && v is int) {
+              next[k] = v;
+            }
+          }
+          await setRemoteKeyMap(next);
+        }
+      }
+
+      if (data.containsKey("remoteBindings")) {
+        final raw = data["remoteBindings"];
+        if (raw is List) {
+          final next = <RemoteBinding>[];
+          for (final item in raw) {
+            final binding = RemoteBinding.fromJson(item);
+            if (binding != null) {
+              next.add(binding);
+            }
+          }
+          await _sharedPreferences.setString(_remoteBindingsKey, jsonEncode(next.map((b) => b.toJson()).toList()));
         }
       }
       notifyListeners();

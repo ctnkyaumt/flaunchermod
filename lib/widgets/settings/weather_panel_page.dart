@@ -205,10 +205,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
       canRequestFocus: true,
       onKey: (_, event) {
         if (event is RawKeyUpEvent) {
-          final key = event.logicalKey;
-          if (key == LogicalKeyboardKey.select ||
-              key == LogicalKeyboardKey.enter ||
-              key == LogicalKeyboardKey.gameButtonA) {
+          if (context.read<SettingsService>().isSelectEvent(event)) {
             if (DateTime.now().isBefore(_ignoreSelectUntil)) {
               return KeyEventResult.ignored;
             }
@@ -266,10 +263,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
       canRequestFocus: true,
       onKey: (_, event) {
         if (event is RawKeyUpEvent) {
-          final key = event.logicalKey;
-          if (key == LogicalKeyboardKey.select ||
-              key == LogicalKeyboardKey.enter ||
-              key == LogicalKeyboardKey.gameButtonA) {
+          if (context.read<SettingsService>().isSelectEvent(event)) {
             onSelected();
             return KeyEventResult.handled;
           }

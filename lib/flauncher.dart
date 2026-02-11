@@ -17,6 +17,8 @@
  */
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
@@ -35,6 +37,7 @@ import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/time_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 class FLauncher extends StatefulWidget {
@@ -48,6 +51,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   bool _startupPermissionsFlowActive = false;
   bool _startupInstallPermissionPrompted = false;
   bool _startupAllFilesPrompted = false;
+  final GlobalKey _screenshotBoundaryKey = GlobalKey();
 
   @override
   void initState() {
@@ -233,48 +237,140 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     debugPrint("FLauncher: Building main UI widget");
-    return FocusTraversalGroup(
-      policy: PageAwareTraversalPolicy(this),
-      child: Stack(
-        children: [
-          Consumer<WallpaperService>(
-            builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
-          ),
-          Scaffold(
-            backgroundColor: Colors.transparent,
-            appBar: _appBar(context),
-            body: Stack(
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Consumer<AppsService>(
-                    builder: (context, appsService, _) => appsService.initialized
-                        ? PageView(
-                            controller: _pageController,
-                            scrollDirection: Axis.vertical,
-                            physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
-                            onPageChanged: (page) {
-                              setState(() {
-                                _currentPage = page;
-                              });
-                            },
-                            children: [
-                              // Apps Page
-                              _buildAppsPage(appsService.categoriesWithApps),
-                              // Inputs Page
-                              _buildInputsPage(),
-                            ],
-                          )
-                        : _emptyState(context),
-                  ),
+    return FocusKeyboardListener(
+      onRawKey: (event) => _handleGlobalRemoteBinding(context, event),
+      onPressed: (key) {
+        if (key == LogicalKeyboardKey.f1) {
+          showDialog(context: context, builder: (_) => SettingsPanel());
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      builder: (context) => RepaintBoundary(
+        key: _screenshotBoundaryKey,
+        child: FocusTraversalGroup(
+          policy: PageAwareTraversalPolicy(this),
+          child: Stack(
+            children: [
+              Consumer<WallpaperService>(
+                builder: (_, wallpaper, __) =>
+                    _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+              ),
+              Scaffold(
+                backgroundColor: Colors.transparent,
+                appBar: _appBar(context),
+                body: Stack(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: Consumer<AppsService>(
+                        builder: (context, appsService, _) => appsService.initialized
+                            ? PageView(
+                                controller: _pageController,
+                                scrollDirection: Axis.vertical,
+                                physics: NeverScrollableScrollPhysics(), // Disable swipe, use keyboard only
+                                onPageChanged: (page) {
+                                  setState(() {
+                                    _currentPage = page;
+                                  });
+                                },
+                                children: [
+                                  // Apps Page
+                                  _buildAppsPage(appsService.categoriesWithApps),
+                                  // Inputs Page
+                                  _buildInputsPage(),
+                                ],
+                              )
+                            : _emptyState(context),
+                      ),
+                    ),
+                    // Page indicator dots
+                    _buildPageIndicator(),
+                  ],
                 ),
-                // Page indicator dots
-                _buildPageIndicator(),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+
+  KeyEventResult _handleGlobalRemoteBinding(BuildContext context, RawKeyEvent event) {
+    if (event is! RawKeyUpEvent) {
+      return KeyEventResult.ignored;
+    }
+    final data = event.data;
+    if (data is! RawKeyEventDataAndroid) {
+      return KeyEventResult.ignored;
+    }
+
+    final settings = context.read<SettingsService>();
+    final binding = settings.remoteBindingForKeyCode(data.keyCode);
+    if (binding == null) {
+      return KeyEventResult.ignored;
+    }
+
+    switch (binding.type) {
+      case RemoteBindingType.openSettings:
+        showDialog(context: context, builder: (_) => SettingsPanel());
+        return KeyEventResult.handled;
+      case RemoteBindingType.openWifiSettings:
+        () async {
+          await context.read<AppsService>().openWifiSettings();
+        }();
+        return KeyEventResult.handled;
+      case RemoteBindingType.takeScreenshot:
+        () async {
+          await _takeScreenshot(context);
+        }();
+        return KeyEventResult.handled;
+      case RemoteBindingType.launchApp:
+        final packageName = binding.packageName;
+        if (packageName == null || packageName.isEmpty) {
+          return KeyEventResult.handled;
+        }
+        () async {
+          await context.read<AppsService>().fLauncherChannel.launchApp(packageName);
+        }();
+        return KeyEventResult.handled;
+      case RemoteBindingType.navigateUp:
+      case RemoteBindingType.navigateDown:
+      case RemoteBindingType.navigateLeft:
+      case RemoteBindingType.navigateRight:
+      case RemoteBindingType.select:
+      case RemoteBindingType.back:
+        return KeyEventResult.ignored;
+    }
+  }
+
+  Future<void> _takeScreenshot(BuildContext context) async {
+    final boundaryContext = _screenshotBoundaryKey.currentContext;
+    if (boundaryContext == null) {
+      return;
+    }
+    final renderObject = boundaryContext.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary) {
+      return;
+    }
+
+    final image = await renderObject.toImage(pixelRatio: 1.0);
+    final byteData = await image.toByteData(format: ImageByteFormat.png);
+    if (byteData == null) {
+      return;
+    }
+    final bytes = byteData.buffer.asUint8List();
+
+    final dir = await getExternalStorageDirectory();
+    if (dir == null) {
+      return;
+    }
+    final fileName = 'flauncher_screenshot_${DateTime.now().millisecondsSinceEpoch}.png';
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsBytes(bytes, flush: true);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Saved screenshot to ${file.path}')),
     );
   }
 

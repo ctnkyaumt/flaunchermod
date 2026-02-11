@@ -78,11 +78,8 @@ class _WeatherContentPlaceholder extends StatelessWidget {
 
   KeyEventResult _handleKey(BuildContext context, RawKeyEvent event) {
     if (event is RawKeyUpEvent) {
-      final key = event.logicalKey;
-      if (key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.gameButtonA) {
-        final settings = context.read<SettingsService>();
+      final settings = context.read<SettingsService>();
+      if (settings.isSelectEvent(event)) {
         settings.setWeatherShowDetails(!settings.weatherShowDetails);
         return KeyEventResult.handled;
       }
@@ -191,10 +188,8 @@ class _WeatherContentState extends State<_WeatherContent> {
 
   KeyEventResult _handleKey(BuildContext context, RawKeyEvent event) {
     if (event is RawKeyUpEvent) {
-      final key = event.logicalKey;
-      if (key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.gameButtonA) {
+      final settings = context.read<SettingsService>();
+      if (settings.isSelectEvent(event)) {
         _flashPressed();
         _toggleDetails(context);
         return KeyEventResult.handled;

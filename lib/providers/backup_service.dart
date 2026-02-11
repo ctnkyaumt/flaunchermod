@@ -27,6 +27,8 @@ class BackupService {
         "use24HourTimeFormat": _settingsService.use24HourTimeFormat,
         "appHighlightAnimationEnabled": _settingsService.appHighlightAnimationEnabled,
         "gradientUuid": _settingsService.gradientUuid,
+        "remoteKeys": _settingsService.remoteKeyMap,
+        "remoteBindings": _settingsService.remoteBindings.map((b) => b.toJson()).toList(),
         "weather": {
           "enabled": _settingsService.weatherEnabled,
           "lat": _settingsService.weatherLatitude,

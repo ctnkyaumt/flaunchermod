@@ -18,17 +18,22 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import 'package:flauncher/providers/settings_service.dart';
 
 const longPressableKeys = [LogicalKeyboardKey.select, LogicalKeyboardKey.enter, LogicalKeyboardKey.gameButtonA];
 
 class FocusKeyboardListener extends StatefulWidget {
   final WidgetBuilder builder;
+  final KeyEventResult Function(RawKeyEvent)? onRawKey;
   final KeyEventResult Function(LogicalKeyboardKey)? onPressed;
   final KeyEventResult Function(LogicalKeyboardKey)? onLongPress;
 
   FocusKeyboardListener({
     Key? key,
     required this.builder,
+    this.onRawKey,
     this.onPressed,
     this.onLongPress,
   }) : super(key: key);
@@ -48,13 +53,33 @@ class _FocusKeyboardListenerState extends State<FocusKeyboardListener> {
       );
 
   KeyEventResult _handleKey(BuildContext context, RawKeyEvent rawKeyEvent) {
+    final rawResult = widget.onRawKey?.call(rawKeyEvent);
+    if (rawResult == KeyEventResult.handled || rawResult == KeyEventResult.skipRemainingHandlers) {
+      return rawResult!;
+    }
+    final mappedKey = _mapKey(context, rawKeyEvent);
     switch (rawKeyEvent.runtimeType) {
       case RawKeyDownEvent:
-        return _keyDownEvent(context, rawKeyEvent.logicalKey, (rawKeyEvent.data as RawKeyEventDataAndroid));
+        final data = rawKeyEvent.data;
+        if (data is RawKeyEventDataAndroid) {
+          return _keyDownEvent(context, mappedKey, data);
+        }
+        return KeyEventResult.ignored;
       case RawKeyUpEvent:
-        return _keyUpEvent(context, rawKeyEvent.logicalKey);
+        return _keyUpEvent(context, mappedKey);
     }
     return KeyEventResult.handled;
+  }
+
+  LogicalKeyboardKey _mapKey(BuildContext context, RawKeyEvent event) {
+    final data = event.data;
+    if (data is RawKeyEventDataAndroid) {
+      final mapped = context.read<SettingsService>().mapAndroidKeyCode(data.keyCode);
+      if (mapped != null) {
+        return mapped;
+      }
+    }
+    return event.logicalKey;
   }
 
   KeyEventResult _keyDownEvent(BuildContext context, LogicalKeyboardKey key, RawKeyEventDataAndroid data) {
