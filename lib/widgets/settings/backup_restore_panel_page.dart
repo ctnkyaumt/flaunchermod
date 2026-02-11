@@ -382,9 +382,10 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
                 SizedBox(
                   width: 160,
                   height: 160,
-                  child: QrImageView(
+                  child: QrImage(
                     data: url,
                     version: QrVersions.auto,
+                    size: 160,
                   ),
                 ),
                 SizedBox(height: 12),
