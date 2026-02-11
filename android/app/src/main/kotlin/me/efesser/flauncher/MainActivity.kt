@@ -275,26 +275,31 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun requestAllFilesAccess(): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val uri = Uri.parse("package:$packageName")
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
-                startActivity(intent)
-                true
-            } else {
-                true
-            }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return true
+        }
+
+        val uri = Uri.parse("package:$packageName")
+        try {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, uri)
+            startActivity(intent)
+            return true
         } catch (_: Exception) {
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                    true
-                } else {
-                    true
-                }
-            } catch (_: Exception) {
-                false
-            }
+        }
+
+        try {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                .setData(Uri.fromParts("package", packageName, null))
+                .let(::startActivity)
+            return true
+        } catch (_: Exception) {
+        }
+
+        return try {
+            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
