@@ -29,6 +29,7 @@ import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/widgets/app_card.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
+import 'package:flauncher/widgets/focus_keyboard_listener.dart';
 import 'package:flauncher/widgets/hdmi_inputs_section.dart';
 import 'package:flauncher/widgets/weather_widget.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
@@ -109,36 +110,54 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
           context: context,
           barrierDismissible: false,
           builder: (context) {
+            Future<void> openAllFilesSettings() async {
+              final opened = await channel.requestAllFilesAccess();
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text("Unable to open storage permission settings")),
+                );
+              }
+            }
+
             return FocusTraversalGroup(
               child: FocusScope(
                 autofocus: true,
-                child: Builder(
-                  builder: (dialogContext) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) async {
-                      await Future.delayed(Duration(milliseconds: 100));
-                      if (!openButtonFocus.canRequestFocus) return;
-                      FocusScope.of(dialogContext).requestFocus(openButtonFocus);
-                    });
-                    return AlertDialog(
-                      title: Text("Storage permission required"),
-                      content: Text(
-                        "This app requires full storage access to restore from a backup.",
-                      ),
-                      actions: [
-                        OutlinedButton(
-                          focusNode: openButtonFocus,
-                          autofocus: true,
-                          onPressed: () async {
-                            await channel.requestAllFilesAccess();
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                          child: Text("Open"),
-                        ),
-                      ],
-                    );
+                child: FocusKeyboardListener(
+                  onPressed: (key) {
+                    if (key == LogicalKeyboardKey.select ||
+                        key == LogicalKeyboardKey.enter ||
+                        key == LogicalKeyboardKey.gameButtonA) {
+                      openAllFilesSettings();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
                   },
+                  builder: (context) => Builder(
+                    builder: (dialogContext) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        await Future.delayed(Duration(milliseconds: 100));
+                        if (!openButtonFocus.canRequestFocus) return;
+                        FocusScope.of(dialogContext).requestFocus(openButtonFocus);
+                      });
+                      return AlertDialog(
+                        title: Text("Storage permission required"),
+                        content: Text(
+                          "This app requires full storage access to restore from a backup.",
+                        ),
+                        actions: [
+                          OutlinedButton(
+                            focusNode: openButtonFocus,
+                            autofocus: true,
+                            onPressed: openAllFilesSettings,
+                            child: Text("Open"),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             );

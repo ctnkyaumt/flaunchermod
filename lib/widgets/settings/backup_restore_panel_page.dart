@@ -6,6 +6,7 @@ import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/backup_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
+import 'package:flauncher/widgets/focus_keyboard_listener.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -37,34 +38,52 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
           context: context,
           barrierDismissible: false,
           builder: (context) {
+            Future<void> openAllFilesSettings() async {
+              final opened = await channel.requestAllFilesAccess();
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+              if (!opened && mounted) {
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  SnackBar(content: Text("Unable to open storage permission settings")),
+                );
+              }
+            }
+
             return FocusTraversalGroup(
               child: FocusScope(
                 autofocus: true,
-                child: Builder(
-                  builder: (dialogContext) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) async {
-                      await Future.delayed(Duration(milliseconds: 100));
-                      if (!openButtonFocus.canRequestFocus) return;
-                      FocusScope.of(dialogContext).requestFocus(openButtonFocus);
-                    });
-                    return AlertDialog(
-                      title: Text("Storage permission required"),
-                      content: Text("This app requires full storage access to restore from a backup."),
-                      actions: [
-                        OutlinedButton(
-                          focusNode: openButtonFocus,
-                          autofocus: true,
-                          onPressed: () async {
-                            await channel.requestAllFilesAccess();
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                          child: Text("Open"),
-                        ),
-                      ],
-                    );
+                child: FocusKeyboardListener(
+                  onPressed: (key) {
+                    if (key == LogicalKeyboardKey.select ||
+                        key == LogicalKeyboardKey.enter ||
+                        key == LogicalKeyboardKey.gameButtonA) {
+                      openAllFilesSettings();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
                   },
+                  builder: (context) => Builder(
+                    builder: (dialogContext) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        await Future.delayed(Duration(milliseconds: 100));
+                        if (!openButtonFocus.canRequestFocus) return;
+                        FocusScope.of(dialogContext).requestFocus(openButtonFocus);
+                      });
+                      return AlertDialog(
+                        title: Text("Storage permission required"),
+                        content: Text("This app requires full storage access to restore from a backup."),
+                        actions: [
+                          OutlinedButton(
+                            focusNode: openButtonFocus,
+                            autofocus: true,
+                            onPressed: openAllFilesSettings,
+                            child: Text("Open"),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
             );
