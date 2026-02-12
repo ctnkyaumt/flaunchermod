@@ -223,6 +223,7 @@ class RemoteKeysPanelPage extends StatelessWidget {
   }
 
   Future<int?> _captureAndroidKeyCode(BuildContext context, {required String title}) async {
+    final ignoreUntilMs = DateTime.now().millisecondsSinceEpoch + 350;
     return showDialog<int>(
       context: context,
       barrierDismissible: false,
@@ -237,6 +238,9 @@ class RemoteKeysPanelPage extends StatelessWidget {
                 canRequestFocus: true,
                 onKey: (_, event) {
                   if (event is! RawKeyUpEvent) {
+                    return KeyEventResult.handled;
+                  }
+                  if (DateTime.now().millisecondsSinceEpoch < ignoreUntilMs) {
                     return KeyEventResult.handled;
                   }
                   final data = event.data;

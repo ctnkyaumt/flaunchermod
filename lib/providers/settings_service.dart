@@ -44,6 +44,8 @@ const _remoteKeyMapKey = "remote_key_map_v1";
 const _remoteBindingsKey = "remote_bindings_v1";
 const _remoteBindingsDefaultsKey = "remote_bindings_defaults_v1";
 const _remoteKeyMapDefaultsKey = "remote_key_map_defaults_v1";
+const _remoteDefaultsVersionKey = "remote_defaults_version_v1";
+const _remoteDefaultsVersion = 2;
 
 enum WeatherUnits {
   si,
@@ -108,6 +110,7 @@ enum RemoteBindingType {
   select,
   back,
   openSettings,
+  openAndroidSettings,
   openWifiSettings,
   takeScreenshot,
   launchApp,
@@ -130,6 +133,8 @@ extension RemoteBindingTypeX on RemoteBindingType {
         return 'back';
       case RemoteBindingType.openSettings:
         return 'openSettings';
+      case RemoteBindingType.openAndroidSettings:
+        return 'openAndroidSettings';
       case RemoteBindingType.openWifiSettings:
         return 'openWifiSettings';
       case RemoteBindingType.takeScreenshot:
@@ -155,6 +160,8 @@ extension RemoteBindingTypeX on RemoteBindingType {
         return 'Back';
       case RemoteBindingType.openSettings:
         return 'Open settings';
+      case RemoteBindingType.openAndroidSettings:
+        return 'Android settings';
       case RemoteBindingType.openWifiSettings:
         return 'Open Wi‑Fi settings';
       case RemoteBindingType.takeScreenshot:
@@ -232,15 +239,15 @@ class SettingsService extends ChangeNotifier {
   Timer? _remoteConfigRefreshTimer;
 
   List<RemoteBinding> get shippedRemoteBindings => const [
-        RemoteBinding(keyCode: 19, type: RemoteBindingType.navigateUp), // KEYCODE_DPAD_UP
-        RemoteBinding(keyCode: 20, type: RemoteBindingType.navigateDown), // KEYCODE_DPAD_DOWN
-        RemoteBinding(keyCode: 21, type: RemoteBindingType.navigateLeft), // KEYCODE_DPAD_LEFT
-        RemoteBinding(keyCode: 22, type: RemoteBindingType.navigateRight), // KEYCODE_DPAD_RIGHT
-        RemoteBinding(keyCode: 23, type: RemoteBindingType.select), // KEYCODE_DPAD_CENTER
-        RemoteBinding(keyCode: 66, type: RemoteBindingType.select), // KEYCODE_ENTER
-        RemoteBinding(keyCode: 4, type: RemoteBindingType.back), // KEYCODE_BACK
-        RemoteBinding(keyCode: 176, type: RemoteBindingType.openSettings), // KEYCODE_SETTINGS
-        RemoteBinding(keyCode: 82, type: RemoteBindingType.openSettings), // KEYCODE_MENU
+        RemoteBinding(keyCode: 19, type: RemoteBindingType.navigateUp),
+        RemoteBinding(keyCode: 20, type: RemoteBindingType.navigateDown),
+        RemoteBinding(keyCode: 21, type: RemoteBindingType.navigateLeft),
+        RemoteBinding(keyCode: 22, type: RemoteBindingType.navigateRight),
+        RemoteBinding(keyCode: 23, type: RemoteBindingType.select),
+        RemoteBinding(keyCode: 66, type: RemoteBindingType.select),
+        RemoteBinding(keyCode: 4, type: RemoteBindingType.back),
+        RemoteBinding(keyCode: 176, type: RemoteBindingType.openAndroidSettings),
+        RemoteBinding(keyCode: 82, type: RemoteBindingType.openAndroidSettings),
       ];
 
   Map<String, int> get shippedRemoteKeyMap => const {};
@@ -383,8 +390,11 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> _ensureRemoteDefaultsSaved() async {
+    final existingVersion = _sharedPreferences.getInt(_remoteDefaultsVersionKey);
+    final shouldOverwrite = existingVersion == null || existingVersion != _remoteDefaultsVersion;
+
     final existingBindingsDefaults = _sharedPreferences.getString(_remoteBindingsDefaultsKey);
-    if (existingBindingsDefaults == null || existingBindingsDefaults.isEmpty) {
+    if (shouldOverwrite || existingBindingsDefaults == null || existingBindingsDefaults.isEmpty) {
       await _sharedPreferences.setString(
         _remoteBindingsDefaultsKey,
         jsonEncode(shippedRemoteBindings.map((b) => b.toJson()).toList()),
@@ -392,8 +402,12 @@ class SettingsService extends ChangeNotifier {
     }
 
     final existingKeyMapDefaults = _sharedPreferences.getString(_remoteKeyMapDefaultsKey);
-    if (existingKeyMapDefaults == null || existingKeyMapDefaults.isEmpty) {
+    if (shouldOverwrite || existingKeyMapDefaults == null || existingKeyMapDefaults.isEmpty) {
       await _sharedPreferences.setString(_remoteKeyMapDefaultsKey, jsonEncode(shippedRemoteKeyMap));
+    }
+
+    if (shouldOverwrite) {
+      await _sharedPreferences.setInt(_remoteDefaultsVersionKey, _remoteDefaultsVersion);
     }
   }
 
@@ -564,6 +578,7 @@ class SettingsService extends ChangeNotifier {
           return LogicalKeyboardKey.gameButtonB;
         case RemoteBindingType.openSettings:
           return LogicalKeyboardKey.f1;
+        case RemoteBindingType.openAndroidSettings:
         case RemoteBindingType.openWifiSettings:
         case RemoteBindingType.takeScreenshot:
         case RemoteBindingType.launchApp:

@@ -315,6 +315,11 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
       case RemoteBindingType.openSettings:
         showDialog(context: context, builder: (_) => SettingsPanel());
         return KeyEventResult.handled;
+      case RemoteBindingType.openAndroidSettings:
+        () async {
+          await context.read<AppsService>().openSettings();
+        }();
+        return KeyEventResult.handled;
       case RemoteBindingType.openWifiSettings:
         () async {
           await context.read<AppsService>().openWifiSettings();
