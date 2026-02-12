@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 class RemoteKeysPanelPage extends StatelessWidget {
   static const String routeName = "remote_keys_panel";
+  static const _ignoreInitialSelectKeyCodes = {23, 66};
 
   @override
   Widget build(BuildContext context) {
@@ -192,16 +193,37 @@ class RemoteKeysPanelPage extends StatelessWidget {
     return showDialog<RemoteBindingType>(
       context: context,
       builder: (context) {
-        return SimpleDialog(
+        final firstFocus = FocusNode();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!firstFocus.canRequestFocus) return;
+          FocusScope.of(context).requestFocus(firstFocus);
+        });
+
+        return AlertDialog(
           title: const Text('Choose action'),
-          children: RemoteBindingType.values
-              .map(
-                (t) => SimpleDialogOption(
-                  onPressed: () => Navigator.of(context).pop(t),
-                  child: Text(t.label),
-                ),
-              )
-              .toList(),
+          content: SizedBox(
+            width: 420,
+            height: 420,
+            child: FocusTraversalGroup(
+              child: ListView.builder(
+                itemCount: RemoteBindingType.values.length,
+                itemBuilder: (context, index) {
+                  final t = RemoteBindingType.values[index];
+                  return ListTile(
+                    focusNode: index == 0 ? firstFocus : null,
+                    title: Text(t.label),
+                    onTap: () => Navigator.of(context).pop(t),
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('CANCEL'),
+            ),
+          ],
         );
       },
     );
@@ -255,6 +277,7 @@ class RemoteKeysPanelPage extends StatelessWidget {
           title: title,
           ignoreUntilMs: ignoreUntilMs,
           appsService: appsService,
+          ignoreInitialKeyCodes: _ignoreInitialSelectKeyCodes,
         );
       },
     );
@@ -294,11 +317,13 @@ class _AndroidKeyCaptureDialog extends StatefulWidget {
   final String title;
   final int ignoreUntilMs;
   final AppsService appsService;
+  final Set<int> ignoreInitialKeyCodes;
 
   const _AndroidKeyCaptureDialog({
     required this.title,
     required this.ignoreUntilMs,
     required this.appsService,
+    required this.ignoreInitialKeyCodes,
   });
 
   @override
@@ -307,20 +332,39 @@ class _AndroidKeyCaptureDialog extends StatefulWidget {
 
 class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
   StreamSubscription<dynamic>? _sub;
+  bool _completed = false;
+
+  bool _shouldIgnoreKey(int keyCode) {
+    if (DateTime.now().millisecondsSinceEpoch >= widget.ignoreUntilMs) {
+      return false;
+    }
+    return widget.ignoreInitialKeyCodes.contains(keyCode);
+  }
+
+  void _complete(_CapturedAndroidKey key) {
+    if (_completed) return;
+    _completed = true;
+    _sub?.cancel();
+    _sub = null;
+    if (!mounted) return;
+    Navigator.of(context).pop(key);
+  }
 
   @override
   void initState() {
     super.initState();
     _sub = widget.appsService.fLauncherChannel.keyEventStream.listen((event) {
       if (!mounted) return;
-      if (DateTime.now().millisecondsSinceEpoch < widget.ignoreUntilMs) return;
       if (event is! Map) return;
       final action = event['action'];
-      if (action != 'up') return;
+      if (action != 'up' && action != 'down') return;
       final keyCode = event['keyCode'];
       final scanCode = event['scanCode'];
+      final repeatCount = event['repeatCount'];
       if (keyCode is! int || scanCode is! int) return;
-      Navigator.of(context).pop(_CapturedAndroidKey(keyCode: keyCode, scanCode: scanCode));
+      if (_shouldIgnoreKey(keyCode)) return;
+      if (action == 'down' && repeatCount is int && repeatCount != 0) return;
+      _complete(_CapturedAndroidKey(keyCode: keyCode, scanCode: scanCode));
     });
   }
 
@@ -344,12 +388,12 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
               if (event is! RawKeyUpEvent) {
                 return KeyEventResult.handled;
               }
-              if (DateTime.now().millisecondsSinceEpoch < widget.ignoreUntilMs) {
+              final data = event.data;
+              if (data is RawKeyEventDataAndroid && _shouldIgnoreKey(data.keyCode)) {
                 return KeyEventResult.handled;
               }
-              final data = event.data;
               if (data is RawKeyEventDataAndroid) {
-                Navigator.of(context).pop(_CapturedAndroidKey(keyCode: data.keyCode, scanCode: data.scanCode));
+                _complete(_CapturedAndroidKey(keyCode: data.keyCode, scanCode: data.scanCode));
                 return KeyEventResult.handled;
               }
               return KeyEventResult.ignored;

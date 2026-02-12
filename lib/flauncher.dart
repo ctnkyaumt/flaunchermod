@@ -53,6 +53,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   bool _startupAllFilesPrompted = false;
   final GlobalKey _screenshotBoundaryKey = GlobalKey();
   StreamSubscription<dynamic>? _nativeKeyEventsSub;
+  final Map<String, int> _nativeKeyHandledAtMs = {};
 
   @override
   void initState() {
@@ -80,15 +81,28 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
       if (!mounted) return;
       if (event is! Map) return;
       final action = event['action'];
-      if (action != 'up') return;
+      if (action != 'up' && action != 'down') return;
       final keyCode = event['keyCode'];
       final scanCode = event['scanCode'];
+      final repeatCount = event['repeatCount'];
       if (keyCode is! int || scanCode is! int) return;
+      if (action == 'down' && repeatCount is int && repeatCount != 0) {
+        return;
+      }
       const handledByFlutter = {19, 20, 21, 22, 23, 66, 4};
       if (keyCode != 0 && handledByFlutter.contains(keyCode)) {
         return;
       }
-      _handleGlobalRemoteBindingKeyData(context, keyCode: keyCode, scanCode: scanCode);
+      final keyId = keyCode != 0 ? 'kc:$keyCode' : 'sc:$scanCode';
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final lastHandled = _nativeKeyHandledAtMs[keyId];
+      if (lastHandled != null && now - lastHandled < 500) {
+        return;
+      }
+      final result = _handleGlobalRemoteBindingKeyData(context, keyCode: keyCode, scanCode: scanCode);
+      if (result == KeyEventResult.handled || result == KeyEventResult.skipRemainingHandlers) {
+        _nativeKeyHandledAtMs[keyId] = now;
+      }
     });
   }
 
