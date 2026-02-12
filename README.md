@@ -18,9 +18,9 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [ ] Force stop app
 
 ## Screenshots
-|  |  |  |
-|--|--|--|
-| ![](screenshots/Screenshot_1624378896.png) | ![](screenshots/Screenshot_1624378921.png) | ![](screenshots/Screenshot_1624378938.png) |
+|  |  |  |  |
+|--|--|--|--|
+| ![](screenshots/flauncher_screenshot_1770919020951.png) | ![](screenshots/flauncher_screenshot_1770919029766.png) | ![](screenshots/flauncher_screenshot_1770919074287.png) | ![](screenshots/flauncher_screenshot_1770919082051.png) |
 
 ## Set FLauncher as default launcher
 
