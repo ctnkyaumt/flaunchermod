@@ -183,23 +183,35 @@ extension RemoteBindingTypeX on RemoteBindingType {
 
 class RemoteBinding {
   final int keyCode;
+  final int? scanCode;
   final RemoteBindingType type;
   final String? packageName;
 
   const RemoteBinding({
     required this.keyCode,
+    this.scanCode,
     required this.type,
     this.packageName,
   });
 
+  String get keyId {
+    if (keyCode != 0) {
+      return 'kc:$keyCode';
+    }
+    final sc = scanCode ?? 0;
+    return 'sc:$sc';
+  }
+
   RemoteBinding copyWith({
     int? keyCode,
+    int? scanCode,
     RemoteBindingType? type,
     String? packageName,
     bool clearPackageName = false,
   }) {
     return RemoteBinding(
       keyCode: keyCode ?? this.keyCode,
+      scanCode: scanCode ?? this.scanCode,
       type: type ?? this.type,
       packageName: clearPackageName ? null : (packageName ?? this.packageName),
     );
@@ -207,6 +219,7 @@ class RemoteBinding {
 
   Map<String, dynamic> toJson() => {
         'keyCode': keyCode,
+        if (scanCode != null) 'scanCode': scanCode,
         'type': type.id,
         if (packageName != null) 'packageName': packageName,
       };
@@ -216,6 +229,7 @@ class RemoteBinding {
       return null;
     }
     final rawKeyCode = json['keyCode'];
+    final rawScanCode = json['scanCode'];
     final rawType = json['type'];
     if (rawKeyCode is! int || rawType is! String) {
       return null;
@@ -227,6 +241,7 @@ class RemoteBinding {
     final packageName = json['packageName'];
     return RemoteBinding(
       keyCode: rawKeyCode,
+      scanCode: rawScanCode is int ? rawScanCode : null,
       type: type,
       packageName: packageName is String ? packageName : null,
     );
@@ -356,9 +371,15 @@ class SettingsService extends ChangeNotifier {
     }
   }
 
-  RemoteBinding? remoteBindingForKeyCode(int keyCode) {
+  RemoteBinding? remoteBindingForAndroidKeyEvent({required int keyCode, required int scanCode}) {
     for (final binding in remoteBindings) {
-      if (binding.keyCode == keyCode) {
+      if (keyCode != 0) {
+        if (binding.keyCode == keyCode) {
+          return binding;
+        }
+        continue;
+      }
+      if (binding.keyCode == 0 && binding.scanCode != null && binding.scanCode == scanCode) {
         return binding;
       }
     }
@@ -369,7 +390,7 @@ class SettingsService extends ChangeNotifier {
     final next = <RemoteBinding>[];
     bool replaced = false;
     for (final existing in remoteBindings) {
-      if (existing.keyCode == binding.keyCode) {
+      if (existing.keyId == binding.keyId) {
         next.add(binding);
         replaced = true;
       } else {
@@ -383,8 +404,8 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> removeRemoteBinding(int keyCode) async {
-    final next = remoteBindings.where((b) => b.keyCode != keyCode).toList(growable: false);
+  Future<void> removeRemoteBinding(RemoteBinding binding) async {
+    final next = remoteBindings.where((b) => b.keyId != binding.keyId).toList(growable: false);
     await _sharedPreferences.setString(_remoteBindingsKey, jsonEncode(next.map((b) => b.toJson()).toList()));
     notifyListeners();
   }
@@ -560,8 +581,8 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  LogicalKeyboardKey? mapAndroidKeyCode(int keyCode) {
-    final bound = remoteBindingForKeyCode(keyCode);
+  LogicalKeyboardKey? mapAndroidKeyEvent(int keyCode, int scanCode) {
+    final bound = remoteBindingForAndroidKeyEvent(keyCode: keyCode, scanCode: scanCode);
     if (bound != null) {
       switch (bound.type) {
         case RemoteBindingType.navigateUp:
@@ -604,7 +625,7 @@ class SettingsService extends ChangeNotifier {
 
     final data = event.data;
     if (data is RawKeyEventDataAndroid) {
-      final binding = remoteBindingForKeyCode(data.keyCode);
+      final binding = remoteBindingForAndroidKeyEvent(keyCode: data.keyCode, scanCode: data.scanCode);
       if (binding != null && binding.type == RemoteBindingType.select) {
         return true;
       }

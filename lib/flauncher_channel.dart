@@ -24,6 +24,7 @@ class FLauncherChannel {
   static const _methodChannel = MethodChannel('me.efesser.flauncher/method');
   static const _eventChannel = EventChannel('me.efesser.flauncher/event');
   static const _hdmiEventChannel = EventChannel('me.efesser.flauncher/hdmi_event');
+  static const _keyEventChannel = EventChannel('me.efesser.flauncher/key_event');
 
   Future<List<dynamic>> getApplications() async => (await _methodChannel.invokeListMethod('getApplications'))!;
 
@@ -58,6 +59,7 @@ class FLauncherChannel {
 
   Stream<dynamic> get appStream => _eventChannel.receiveBroadcastStream();
   Stream<dynamic> get hdmiInputStream => _hdmiEventChannel.receiveBroadcastStream();
+  Stream<dynamic> get keyEventStream => _keyEventChannel.receiveBroadcastStream();
 
   Future<List<dynamic>> getHdmiInputs() async {
     final result = await _methodChannel.invokeMethod('getHdmiInputs');

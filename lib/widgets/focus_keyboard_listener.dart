@@ -74,7 +74,7 @@ class _FocusKeyboardListenerState extends State<FocusKeyboardListener> {
   LogicalKeyboardKey _mapKey(BuildContext context, RawKeyEvent event) {
     final data = event.data;
     if (data is RawKeyEventDataAndroid) {
-      final mapped = context.read<SettingsService>().mapAndroidKeyCode(data.keyCode);
+      final mapped = context.read<SettingsService>().mapAndroidKeyEvent(data.keyCode, data.scanCode);
       if (mapped != null) {
         return mapped;
       }

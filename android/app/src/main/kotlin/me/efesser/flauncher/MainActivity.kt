@@ -43,6 +43,7 @@ import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.media.tv.TvInputManager.TvInputCallback
+import android.view.KeyEvent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -58,6 +59,7 @@ import java.io.Serializable
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
+private const val KEY_EVENT_CHANNEL = "me.efesser.flauncher/key_event"
 private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
 
 class MainActivity : FlutterActivity() {
@@ -65,6 +67,7 @@ class MainActivity : FlutterActivity() {
     private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pickBackupJsonResult: MethodChannel.Result? = null
+    private var keyEventSink: EventSink? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -217,6 +220,37 @@ class MainActivity : FlutterActivity() {
                 }
             }
         })
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, KEY_EVENT_CHANNEL).setStreamHandler(object : StreamHandler {
+            override fun onListen(arguments: Any?, events: EventSink) {
+                keyEventSink = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                keyEventSink = null
+            }
+        })
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        keyEventSink?.success(
+            mapOf(
+                "action" to when (event.action) {
+                    KeyEvent.ACTION_DOWN -> "down"
+                    KeyEvent.ACTION_UP -> "up"
+                    else -> "other"
+                },
+                "keyCode" to event.keyCode,
+                "scanCode" to event.scanCode,
+                "repeatCount" to event.repeatCount,
+                "deviceId" to event.deviceId,
+                "source" to event.source,
+                "flags" to event.flags,
+                "metaState" to event.metaState,
+                "eventTime" to event.eventTime
+            )
+        )
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

@@ -52,6 +52,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
   bool _startupInstallPermissionPrompted = false;
   bool _startupAllFilesPrompted = false;
   final GlobalKey _screenshotBoundaryKey = GlobalKey();
+  StreamSubscription<dynamic>? _nativeKeyEventsSub;
 
   @override
   void initState() {
@@ -60,14 +61,35 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInstallFlow();
       _runStartupPermissionsFlow();
+      _startNativeKeyEventsListener();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _nativeKeyEventsSub?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _startNativeKeyEventsListener() {
+    _nativeKeyEventsSub?.cancel();
+    final channel = context.read<AppsService>().fLauncherChannel;
+    _nativeKeyEventsSub = channel.keyEventStream.listen((event) {
+      if (!mounted) return;
+      if (event is! Map) return;
+      final action = event['action'];
+      if (action != 'up') return;
+      final keyCode = event['keyCode'];
+      final scanCode = event['scanCode'];
+      if (keyCode is! int || scanCode is! int) return;
+      const handledByFlutter = {19, 20, 21, 22, 23, 66, 4};
+      if (keyCode != 0 && handledByFlutter.contains(keyCode)) {
+        return;
+      }
+      _handleGlobalRemoteBindingKeyData(context, keyCode: keyCode, scanCode: scanCode);
+    });
   }
 
   @override
@@ -304,9 +326,16 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
     if (data is! RawKeyEventDataAndroid) {
       return KeyEventResult.ignored;
     }
+    return _handleGlobalRemoteBindingKeyData(context, keyCode: data.keyCode, scanCode: data.scanCode);
+  }
 
+  KeyEventResult _handleGlobalRemoteBindingKeyData(
+    BuildContext context, {
+    required int keyCode,
+    required int scanCode,
+  }) {
     final settings = context.read<SettingsService>();
-    final binding = settings.remoteBindingForKeyCode(data.keyCode);
+    final binding = settings.remoteBindingForAndroidKeyEvent(keyCode: keyCode, scanCode: scanCode);
     if (binding == null) {
       return KeyEventResult.ignored;
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
@@ -16,6 +18,8 @@ class RemoteKeysPanelPage extends StatelessWidget {
       ..sort((a, b) {
         final k = a.keyCode.compareTo(b.keyCode);
         if (k != 0) return k;
+        final s = (a.scanCode ?? 0).compareTo(b.scanCode ?? 0);
+        if (s != 0) return s;
         return a.type.index.compareTo(b.type.index);
       });
 
@@ -81,7 +85,7 @@ class RemoteKeysPanelPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('KeyCode ${binding.keyCode}', style: Theme.of(context).textTheme.bodyMedium),
+                  Text(_bindingKeyLabel(binding), style: Theme.of(context).textTheme.bodyMedium),
                   const SizedBox(height: 4),
                   Text(actionLabel, style: Theme.of(context).textTheme.bodySmall),
                 ],
@@ -98,13 +102,21 @@ class RemoteKeysPanelPage extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             TextButton(
-              onPressed: () => settings.removeRemoteBinding(binding.keyCode),
+              onPressed: () => settings.removeRemoteBinding(binding),
               child: const Text('REMOVE'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _bindingKeyLabel(RemoteBinding binding) {
+    final sc = binding.scanCode;
+    if (sc != null && sc != 0) {
+      return 'KeyCode ${binding.keyCode} (ScanCode $sc)';
+    }
+    return 'KeyCode ${binding.keyCode}';
   }
 
   String _bindingLabel(AppsService appsService, RemoteBinding binding) {
@@ -131,8 +143,8 @@ class RemoteKeysPanelPage extends StatelessWidget {
   }
 
   Future<void> _addBinding(BuildContext context, SettingsService settings, AppsService appsService) async {
-    final keyCode = await _captureAndroidKeyCode(context, title: 'Press a remote button');
-    if (keyCode == null) {
+    final keyEvent = await _captureAndroidKeyEvent(context, appsService, title: 'Press a remote button');
+    if (keyEvent == null) {
       return;
     }
 
@@ -149,7 +161,14 @@ class RemoteKeysPanelPage extends StatelessWidget {
       }
     }
 
-    await settings.upsertRemoteBinding(RemoteBinding(keyCode: keyCode, type: type, packageName: packageName));
+    await settings.upsertRemoteBinding(
+      RemoteBinding(
+        keyCode: keyEvent.keyCode,
+        scanCode: keyEvent.scanCode,
+        type: type,
+        packageName: packageName,
+      ),
+    );
   }
 
   Future<RemoteBinding?> _editBinding(BuildContext context, AppsService appsService, RemoteBinding current) async {
@@ -222,44 +241,20 @@ class RemoteKeysPanelPage extends StatelessWidget {
     );
   }
 
-  Future<int?> _captureAndroidKeyCode(BuildContext context, {required String title}) async {
+  Future<_CapturedAndroidKey?> _captureAndroidKeyEvent(
+    BuildContext context,
+    AppsService appsService, {
+    required String title,
+  }) async {
     final ignoreUntilMs = DateTime.now().millisecondsSinceEpoch + 350;
-    return showDialog<int>(
+    return showDialog<_CapturedAndroidKey>(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: FocusTraversalGroup(
-            child: FocusScope(
-              autofocus: true,
-              child: Focus(
-                autofocus: true,
-                canRequestFocus: true,
-                onKey: (_, event) {
-                  if (event is! RawKeyUpEvent) {
-                    return KeyEventResult.handled;
-                  }
-                  if (DateTime.now().millisecondsSinceEpoch < ignoreUntilMs) {
-                    return KeyEventResult.handled;
-                  }
-                  final data = event.data;
-                  if (data is RawKeyEventDataAndroid) {
-                    Navigator.of(context).pop(data.keyCode);
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: const Text('Press a button on your TV remote to assign it.'),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('CANCEL'),
-            ),
-          ],
+        return _AndroidKeyCaptureDialog(
+          title: title,
+          ignoreUntilMs: ignoreUntilMs,
+          appsService: appsService,
         );
       },
     );
@@ -284,6 +279,91 @@ class RemoteKeysPanelPage extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _CapturedAndroidKey {
+  final int keyCode;
+  final int scanCode;
+
+  const _CapturedAndroidKey({required this.keyCode, required this.scanCode});
+}
+
+class _AndroidKeyCaptureDialog extends StatefulWidget {
+  final String title;
+  final int ignoreUntilMs;
+  final AppsService appsService;
+
+  const _AndroidKeyCaptureDialog({
+    required this.title,
+    required this.ignoreUntilMs,
+    required this.appsService,
+  });
+
+  @override
+  State<_AndroidKeyCaptureDialog> createState() => _AndroidKeyCaptureDialogState();
+}
+
+class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
+  StreamSubscription<dynamic>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.appsService.fLauncherChannel.keyEventStream.listen((event) {
+      if (!mounted) return;
+      if (DateTime.now().millisecondsSinceEpoch < widget.ignoreUntilMs) return;
+      if (event is! Map) return;
+      final action = event['action'];
+      if (action != 'up') return;
+      final keyCode = event['keyCode'];
+      final scanCode = event['scanCode'];
+      if (keyCode is! int || scanCode is! int) return;
+      Navigator.of(context).pop(_CapturedAndroidKey(keyCode: keyCode, scanCode: scanCode));
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: FocusTraversalGroup(
+        child: FocusScope(
+          autofocus: true,
+          child: Focus(
+            autofocus: true,
+            canRequestFocus: true,
+            onKey: (_, event) {
+              if (event is! RawKeyUpEvent) {
+                return KeyEventResult.handled;
+              }
+              if (DateTime.now().millisecondsSinceEpoch < widget.ignoreUntilMs) {
+                return KeyEventResult.handled;
+              }
+              final data = event.data;
+              if (data is RawKeyEventDataAndroid) {
+                Navigator.of(context).pop(_CapturedAndroidKey(keyCode: data.keyCode, scanCode: data.scanCode));
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: const Text('Press a button on your TV remote to assign it.'),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('CANCEL'),
+        ),
+      ],
     );
   }
 }
