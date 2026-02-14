@@ -79,6 +79,7 @@ class MainActivity : FlutterActivity() {
                     "launchApp" -> result.success(launchApp(call.arguments as String))
                     "openSettings" -> result.success(openSettings())
                     "openWifiSettings" -> result.success(openWifiSettings())
+                    "openAccessibilitySettings" -> result.success(openAccessibilitySettings())
                     "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
                     "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
@@ -224,32 +225,18 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, KEY_EVENT_CHANNEL).setStreamHandler(object : StreamHandler {
             override fun onListen(arguments: Any?, events: EventSink) {
                 keyEventSink = events
+                RemoteKeyEventRelay.sink = events
             }
 
             override fun onCancel(arguments: Any?) {
                 keyEventSink = null
+                RemoteKeyEventRelay.sink = null
             }
         })
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        keyEventSink?.success(
-            mapOf(
-                "action" to when (event.action) {
-                    KeyEvent.ACTION_DOWN -> "down"
-                    KeyEvent.ACTION_UP -> "up"
-                    else -> "other"
-                },
-                "keyCode" to event.keyCode,
-                "scanCode" to event.scanCode,
-                "repeatCount" to event.repeatCount,
-                "deviceId" to event.deviceId,
-                "source" to event.source,
-                "flags" to event.flags,
-                "metaState" to event.metaState,
-                "eventTime" to event.eventTime
-            )
-        )
+        RemoteKeyEventRelay.emit("activity", event)
         return super.dispatchKeyEvent(event)
     }
 
@@ -467,6 +454,13 @@ class MainActivity : FlutterActivity() {
 
     private fun openWifiSettings() = try {
         startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun openAccessibilitySettings() = try {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         true
     } catch (e: Exception) {
         false

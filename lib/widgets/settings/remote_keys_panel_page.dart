@@ -49,6 +49,12 @@ class RemoteKeysPanelPage extends StatelessWidget {
             ),
             TextButton(
               onPressed: () async {
+                await appsService.openAccessibilitySettings();
+              },
+              child: const Text('ACCESSIBILITY'),
+            ),
+            TextButton(
+              onPressed: () async {
                 await _addBinding(context, settings, appsService);
               },
               child: const Text('ADD'),
@@ -344,12 +350,27 @@ class _AndroidKeyCaptureDialog extends StatefulWidget {
 class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
   StreamSubscription<dynamic>? _sub;
   bool _completed = false;
+  bool _listening = false;
+  int _ignoreUntilMs = 0;
+
+  final FocusNode _captureFocus = FocusNode();
+  final FocusNode _captureButtonFocus = FocusNode();
 
   bool _shouldIgnoreKey(int keyCode) {
-    if (DateTime.now().millisecondsSinceEpoch >= widget.ignoreUntilMs) {
+    final deadlineMs = _ignoreUntilMs == 0 ? widget.ignoreUntilMs : _ignoreUntilMs;
+    if (DateTime.now().millisecondsSinceEpoch >= deadlineMs) {
       return false;
     }
     return widget.ignoreInitialKeyCodes.contains(keyCode);
+  }
+
+  void _cancel() {
+    if (_completed) return;
+    _completed = true;
+    _sub?.cancel();
+    _sub = null;
+    if (!mounted) return;
+    Navigator.of(context).pop(null);
   }
 
   void _complete(_CapturedAndroidKey key) {
@@ -361,11 +382,17 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
     Navigator.of(context).pop(key);
   }
 
-  @override
-  void initState() {
-    super.initState();
+  void _startListening() {
+    if (_completed) return;
+    if (_listening) return;
+    setState(() {
+      _listening = true;
+      _ignoreUntilMs = DateTime.now().millisecondsSinceEpoch + 350;
+    });
+
+    _sub?.cancel();
     _sub = widget.appsService.fLauncherChannel.keyEventStream.listen((event) {
-      if (!mounted) return;
+      if (!mounted || !_listening || _completed) return;
       if (event is! Map) return;
       final action = event['action'];
       if (action != 'up' && action != 'down') return;
@@ -375,13 +402,47 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
       if (keyCode is! int || scanCode is! int) return;
       if (_shouldIgnoreKey(keyCode)) return;
       if (action == 'down' && repeatCount is int && repeatCount != 0) return;
+      if (keyCode == 4) {
+        _cancel();
+        return;
+      }
       _complete(_CapturedAndroidKey(keyCode: keyCode, scanCode: scanCode));
+    });
+
+    if (mounted && _captureFocus.canRequestFocus) {
+      FocusScope.of(context).requestFocus(_captureFocus);
+    }
+  }
+
+  void _stopListening() {
+    if (!_listening) return;
+    _sub?.cancel();
+    _sub = null;
+    if (!mounted) return;
+    setState(() {
+      _listening = false;
+    });
+    if (_captureButtonFocus.canRequestFocus) {
+      FocusScope.of(context).requestFocus(_captureButtonFocus);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_captureButtonFocus.canRequestFocus) {
+        FocusScope.of(context).requestFocus(_captureButtonFocus);
+      }
     });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _captureFocus.dispose();
+    _captureButtonFocus.dispose();
     super.dispose();
   }
 
@@ -389,36 +450,83 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: FocusTraversalGroup(
-        child: FocusScope(
-          autofocus: true,
-          child: Focus(
+      content: SizedBox(
+        width: 420,
+        child: FocusTraversalGroup(
+          child: FocusScope(
             autofocus: true,
-            canRequestFocus: true,
-            onKey: (_, event) {
-              if (event is! RawKeyUpEvent) {
-                return KeyEventResult.handled;
-              }
-              final data = event.data;
-              if (data is RawKeyEventDataAndroid && _shouldIgnoreKey(data.keyCode)) {
-                return KeyEventResult.handled;
-              }
-              if (data is RawKeyEventDataAndroid) {
-                _complete(_CapturedAndroidKey(keyCode: data.keyCode, scanCode: data.scanCode));
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: const Text('Press a button on your TV remote to assign it.'),
+            child: Focus(
+              focusNode: _captureFocus,
+              canRequestFocus: _listening,
+              onKey: (_, event) {
+                if (!_listening) return KeyEventResult.ignored;
+                if (event is! RawKeyUpEvent) {
+                  return KeyEventResult.handled;
+                }
+                final data = event.data;
+                if (data is RawKeyEventDataAndroid && _shouldIgnoreKey(data.keyCode)) {
+                  return KeyEventResult.handled;
+                }
+                if (data is RawKeyEventDataAndroid) {
+                  if (data.keyCode == 4) {
+                    _cancel();
+                    return KeyEventResult.handled;
+                  }
+                  _complete(_CapturedAndroidKey(keyCode: data.keyCode, scanCode: data.scanCode));
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              },
+              child: Text(
+                _listening
+                    ? 'Listening… press the remote button now.'
+                    : 'Select CAPTURE, then press the remote button you want to bind.\n\nIf the TV steals the key (Netflix/YouTube/etc.), use PICK instead.',
+              ),
+            ),
           ),
         ),
       ),
       actions: [
         TextButton(
           onPressed: () async {
+            _stopListening();
             final picked = await showDialog<_CapturedAndroidKey>(
               context: context,
               builder: (context) {
+                Future<_CapturedAndroidKey?> pickCustom() async {
+                  final controller = TextEditingController();
+                  final result = await showDialog<int>(
+                    context: context,
+                    builder: (context) {
+                      return AlertDialog(
+                        title: const Text('Custom scanCode (hex)'),
+                        content: TextField(
+                          controller: controller,
+                          autofocus: true,
+                          decoration: const InputDecoration(hintText: 'e.g. 00f0 or 0x00f0'),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(null),
+                            child: const Text('CANCEL'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final raw = controller.text.trim().toLowerCase();
+                              final normalized = raw.startsWith('0x') ? raw.substring(2) : raw;
+                              final parsed = int.tryParse(normalized, radix: 16);
+                              Navigator.of(context).pop(parsed);
+                            },
+                            child: const Text('OK'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                  if (result == null) return null;
+                  return _CapturedAndroidKey(keyCode: 0, scanCode: result);
+                }
+
                 return SimpleDialog(
                   title: const Text('Pick a special key'),
                   children: widget.knownAdbKeys
@@ -428,7 +536,17 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
                           child: Text('${k.label} (scanCode 0x${k.scanCode.toRadixString(16)})'),
                         ),
                       )
-                      .toList(),
+                      .followedBy([
+                        SimpleDialogOption(
+                          onPressed: () async {
+                            final custom = await pickCustom();
+                            if (context.mounted) {
+                              Navigator.of(context).pop(custom);
+                            }
+                          },
+                          child: const Text('Custom…'),
+                        ),
+                      ]).toList(),
                 );
               },
             );
@@ -440,7 +558,18 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
           child: const Text('PICK'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
+          focusNode: _captureButtonFocus,
+          onPressed: () {
+            if (_listening) {
+              _stopListening();
+              return;
+            }
+            _startListening();
+          },
+          child: Text(_listening ? 'STOP' : 'CAPTURE'),
+        ),
+        TextButton(
+          onPressed: _cancel,
           child: const Text('CANCEL'),
         ),
       ],

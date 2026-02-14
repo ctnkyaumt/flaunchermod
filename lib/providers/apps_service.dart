@@ -284,6 +284,8 @@ class AppsService extends ChangeNotifier {
 
   Future<void> openWifiSettings() => _fLauncherChannel.openWifiSettings();
 
+  Future<void> openAccessibilitySettings() => _fLauncherChannel.openAccessibilitySettings();
+
   Future<bool> isDefaultLauncher() => _fLauncherChannel.isDefaultLauncher();
 
   Future<void> startAmbientMode() => _fLauncherChannel.startAmbientMode();

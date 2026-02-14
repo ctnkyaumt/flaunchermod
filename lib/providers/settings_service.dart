@@ -195,11 +195,11 @@ class RemoteBinding {
   });
 
   String get keyId {
-    if (keyCode != 0) {
-      return 'kc:$keyCode';
-    }
     final sc = scanCode ?? 0;
-    return 'sc:$sc';
+    if (sc != 0) {
+      return 'sc:$sc';
+    }
+    return 'kc:$keyCode';
   }
 
   RemoteBinding copyWith({
@@ -372,14 +372,16 @@ class SettingsService extends ChangeNotifier {
   }
 
   RemoteBinding? remoteBindingForAndroidKeyEvent({required int keyCode, required int scanCode}) {
-    for (final binding in remoteBindings) {
-      if (keyCode != 0) {
-        if (binding.keyCode == keyCode) {
+    if (scanCode != 0) {
+      for (final binding in remoteBindings) {
+        if (binding.scanCode != null && binding.scanCode == scanCode) {
           return binding;
         }
-        continue;
       }
-      if (binding.keyCode == 0 && binding.scanCode != null && binding.scanCode == scanCode) {
+    }
+
+    for (final binding in remoteBindings) {
+      if (binding.keyCode == keyCode) {
         return binding;
       }
     }
