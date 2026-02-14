@@ -3,6 +3,7 @@ package me.efesser.flauncher
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.view.KeyEvent
+import android.view.accessibility.AccessibilityEvent
 import io.flutter.plugin.common.EventChannel.EventSink
 
 object RemoteKeyEventRelay {
@@ -43,6 +44,8 @@ class RemoteKeyAccessibilityService : AccessibilityService() {
         RemoteKeyEventRelay.emit("accessibility", event)
         return false
     }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {}
 
     override fun onInterrupt() {}
 }
