@@ -10,6 +10,14 @@ import 'package:provider/provider.dart';
 class RemoteKeysPanelPage extends StatelessWidget {
   static const String routeName = "remote_keys_panel";
   static const _ignoreInitialSelectKeyCodes = {23, 66};
+  static const _knownAdbKeys = <_KnownAdbKey>[
+    _KnownAdbKey(label: 'Netflix', scanCode: 0x00000127),
+    _KnownAdbKey(label: 'YouTube', scanCode: 0x000c00a5),
+    _KnownAdbKey(label: 'Amazon Prime', scanCode: 0x000c00a1),
+    _KnownAdbKey(label: 'Google Play', scanCode: 0x000c0088),
+    _KnownAdbKey(label: 'Menu', scanCode: 0x00070086),
+    _KnownAdbKey(label: 'Voice assistant', scanCode: 0x000c0221),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -278,6 +286,7 @@ class RemoteKeysPanelPage extends StatelessWidget {
           ignoreUntilMs: ignoreUntilMs,
           appsService: appsService,
           ignoreInitialKeyCodes: _ignoreInitialSelectKeyCodes,
+          knownAdbKeys: _knownAdbKeys,
         );
       },
     );
@@ -318,12 +327,14 @@ class _AndroidKeyCaptureDialog extends StatefulWidget {
   final int ignoreUntilMs;
   final AppsService appsService;
   final Set<int> ignoreInitialKeyCodes;
+  final List<_KnownAdbKey> knownAdbKeys;
 
   const _AndroidKeyCaptureDialog({
     required this.title,
     required this.ignoreUntilMs,
     required this.appsService,
     required this.ignoreInitialKeyCodes,
+    required this.knownAdbKeys,
   });
 
   @override
@@ -404,10 +415,42 @@ class _AndroidKeyCaptureDialogState extends State<_AndroidKeyCaptureDialog> {
       ),
       actions: [
         TextButton(
+          onPressed: () async {
+            final picked = await showDialog<_CapturedAndroidKey>(
+              context: context,
+              builder: (context) {
+                return SimpleDialog(
+                  title: const Text('Pick a special key'),
+                  children: widget.knownAdbKeys
+                      .map(
+                        (k) => SimpleDialogOption(
+                          onPressed: () => Navigator.of(context).pop(_CapturedAndroidKey(keyCode: 0, scanCode: k.scanCode)),
+                          child: Text('${k.label} (scanCode 0x${k.scanCode.toRadixString(16)})'),
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            );
+            if (picked == null) {
+              return;
+            }
+            _complete(picked);
+          },
+          child: const Text('PICK'),
+        ),
+        TextButton(
           onPressed: () => Navigator.of(context).pop(null),
           child: const Text('CANCEL'),
         ),
       ],
     );
   }
+}
+
+class _KnownAdbKey {
+  final String label;
+  final int scanCode;
+
+  const _KnownAdbKey({required this.label, required this.scanCode});
 }
