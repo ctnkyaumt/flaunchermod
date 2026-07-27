@@ -78,7 +78,12 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       label: Text("Map a button"),
                       onPressed: () => _addKeyMapping(context, service),
                     ),
-                    _hint(context, "Select a mapped button to add a double press or long press action."),
+                    _hint(
+                      context,
+                      "Select a mapped button to add a double press or long press action. "
+                      "A mapped button stops doing what it normally did, including for the "
+                      "presses you leave unbound.",
+                    ),
                     Divider(),
                     _sectionTitle(context, "App shortcut buttons"),
                     _hint(
@@ -260,6 +265,14 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     }
     final rawScanCode = captured["scanCode"];
     final scanCode = rawScanCode is int && rawScanCode != 0 ? rawScanCode : null;
+    if (keyCode == 0 && scanCode == null) {
+      // KEYCODE_UNKNOWN with no scan code either: nothing identifies this
+      // button, so a binding on it would fire for every other such button.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("That button reports nothing this device can map")),
+      );
+      return;
+    }
 
     final action = await _pickAction(context);
     if (action != null && !identical(action, _clearAction)) {

@@ -239,6 +239,11 @@ class MainActivity : FlutterActivity() {
                                     "keyCode" to intent.getIntExtra(
                                         FLauncherAccessibilityService.EXTRA_KEY_CODE, -1
                                     ),
+                                    // Without this the buttons that report
+                                    // KEYCODE_UNKNOWN are indistinguishable.
+                                    "scanCode" to intent.getIntExtra(
+                                        FLauncherAccessibilityService.EXTRA_SCAN_CODE, 0
+                                    ),
                                     "keyLabel" to intent.getStringExtra(
                                         FLauncherAccessibilityService.EXTRA_KEY_LABEL
                                     ),

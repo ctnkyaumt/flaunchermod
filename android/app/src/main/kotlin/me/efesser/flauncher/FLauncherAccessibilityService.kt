@@ -19,6 +19,7 @@
 package me.efesser.flauncher
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -72,11 +73,22 @@ class FLauncherAccessibilityService : AccessibilityService() {
         const val EXTRA_SCAN_CODE = "scanCode"
         const val EXTRA_KEY_LABEL = "keyLabel"
 
-        /** Held at least this long counts as a long press. */
+        /**
+         * Held at least this long counts as a long press. The action fires as
+         * soon as the timeout elapses rather than on release, which is what a
+         * long press feels like everywhere else on the platform.
+         */
         private const val LONG_PRESS_MS = 500L
 
         /** A second press within this window counts as a double press. */
         private const val DOUBLE_PRESS_MS = 300L
+
+        /**
+         * Capture mode swallows every button, so a launcher that goes away
+         * without disarming it would leave the remote dead. Disarm on our own
+         * after this long as a backstop.
+         */
+        private const val CAPTURE_TIMEOUT_MS = 30_000L
 
         /**
          * Ignore a repeat of the same app-launch button within this window. The
@@ -116,10 +128,17 @@ class FLauncherAccessibilityService : AccessibilityService() {
     private var lastRedirectPackage: String? = null
     private var lastRedirectAt = 0L
 
-    // Press-classification state for the button currently held down.
-    private var downAt = 0L
+    // Press-classification state for the button currently held down. heldBinding
+    // is what makes an ACTION_UP trustworthy: without a matching ACTION_DOWN the
+    // press duration is meaningless, and a stray up would look like a long press.
+    private var heldBinding: ButtonMappingStore.Binding? = null
+    private var longPressFired = false
+    private var pendingLong: Runnable? = null
+
     private var pendingSingle: Runnable? = null
     private var awaitingSecondPressFor: ButtonMappingStore.Binding? = null
+
+    private val captureTimeout = Runnable { captureMode = false }
 
     private val preferenceListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -133,7 +152,9 @@ class FLauncherAccessibilityService : AccessibilityService() {
                 ACTION_SET_CAPTURE_MODE -> {
                     captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_ENABLED, false)
                     captureArmedAt = SystemClock.elapsedRealtime()
-                    cancelPendingSingle()
+                    cancelPressState()
+                    handler.removeCallbacks(captureTimeout)
+                    if (captureMode) handler.postDelayed(captureTimeout, CAPTURE_TIMEOUT_MS)
                 }
             }
         }
@@ -144,6 +165,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        ensureKeyFilteringRequested()
         reloadMappings()
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
         val filter = IntentFilter().apply {
@@ -159,8 +181,29 @@ class FLauncherAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Button mapper connected")
     }
 
+    /**
+     * Re-declares the key filtering flag at runtime.
+     *
+     * The manifest metadata is meant to be enough, but a fair number of TV
+     * firmwares drop the flag when the service reconnects, after which
+     * [onKeyEvent] is simply never called again. Setting it back on every
+     * connect costs nothing and is what other button mappers do.
+     */
+    private fun ensureKeyFilteringRequested() {
+        val info = serviceInfo ?: return
+        val wanted = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+        if (info.flags and wanted != 0) return
+        info.flags = info.flags or wanted
+        try {
+            serviceInfo = info
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not request key event filtering", e)
+        }
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
-        cancelPendingSingle()
+        cancelPressState()
+        handler.removeCallbacks(captureTimeout)
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         try {
             unregisterReceiver(commandReceiver)
@@ -182,32 +225,62 @@ class FLauncherAccessibilityService : AccessibilityService() {
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (captureMode) return handleCapture(event)
 
-        val binding = mappings.resolve(event.keyCode, event.scanCode) ?: return false
+        val binding = mappings.resolve(event.keyCode, event.scanCode)
+            ?: return super.onKeyEvent(event)
 
         when (event.action) {
-            KeyEvent.ACTION_DOWN -> {
-                // repeatCount > 0 is auto-repeat from holding the button; keep
-                // the timestamp of the original press.
-                if (event.repeatCount == 0) downAt = SystemClock.elapsedRealtime()
-            }
-            KeyEvent.ACTION_UP -> classifyAndFire(binding)
+            KeyEvent.ACTION_DOWN -> onBindingDown(binding, event)
+            KeyEvent.ACTION_UP -> onBindingUp(binding)
         }
         // Consume down and up alike, so the foreground app sees neither.
         return true
     }
 
-    private fun classifyAndFire(binding: ButtonMappingStore.Binding) {
-        val heldFor = SystemClock.elapsedRealtime() - downAt
+    private fun onBindingDown(binding: ButtonMappingStore.Binding, event: KeyEvent) {
+        // repeatCount > 0 is auto-repeat from holding the button, and the long
+        // press is already scheduled from the original press.
+        if (event.repeatCount > 0) return
+
+        // Pressing a different button settles the question of whether the
+        // previous one was a double press, so run its single action now instead
+        // of making the user wait out the rest of the window.
+        if (awaitingSecondPressFor != null && awaitingSecondPressFor != binding) flushPendingSingle()
+        cancelPendingLong()
+
+        heldBinding = binding
+        longPressFired = false
+        if (!binding.hasLong) return
+
+        val runnable = Runnable {
+            pendingLong = null
+            longPressFired = true
+            // The long press supersedes a single that was waiting for a double.
+            cancelPendingSingle()
+            perform(binding.actionFor(ButtonMappingStore.Trigger.LONG))
+        }
+        pendingLong = runnable
+        handler.postDelayed(runnable, LONG_PRESS_MS)
+    }
+
+    private fun onBindingUp(binding: ButtonMappingStore.Binding) {
+        cancelPendingLong()
+
+        // Already handled while the button was still held.
+        if (longPressFired) {
+            longPressFired = false
+            heldBinding = null
+            return
+        }
+
+        // No matching down means the press started before this binding existed,
+        // or the down went elsewhere; there is nothing to classify.
+        if (heldBinding != binding) return
+        heldBinding = null
 
         // A second press landing inside the double-press window wins outright.
         if (awaitingSecondPressFor == binding) {
             cancelPendingSingle()
             perform(binding.actionFor(ButtonMappingStore.Trigger.DOUBLE))
-            return
-        }
-
-        if (binding.hasLong && heldFor >= LONG_PRESS_MS) {
-            perform(binding.actionFor(ButtonMappingStore.Trigger.LONG))
             return
         }
 
@@ -231,6 +304,26 @@ class FLauncherAccessibilityService : AccessibilityService() {
         pendingSingle?.let { handler.removeCallbacks(it) }
         pendingSingle = null
         awaitingSecondPressFor = null
+    }
+
+    /** Runs a single-press action that is still waiting out the double window. */
+    private fun flushPendingSingle() {
+        val runnable = pendingSingle ?: return
+        handler.removeCallbacks(runnable)
+        // The runnable clears pendingSingle and awaitingSecondPressFor itself.
+        runnable.run()
+    }
+
+    private fun cancelPendingLong() {
+        pendingLong?.let { handler.removeCallbacks(it) }
+        pendingLong = null
+    }
+
+    private fun cancelPressState() {
+        cancelPendingSingle()
+        cancelPendingLong()
+        heldBinding = null
+        longPressFired = false
     }
 
     /**

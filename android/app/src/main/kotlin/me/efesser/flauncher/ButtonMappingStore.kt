@@ -19,6 +19,7 @@
 package me.efesser.flauncher
 
 import android.content.Context
+import android.view.KeyEvent
 import org.json.JSONObject
 
 /**
@@ -70,10 +71,8 @@ object ButtonMappingStore {
     /**
      * One physical remote button and what it should do.
      *
-     * Buttons are matched on scan code first when the event carries one. Many TV
-     * remote extras (Netflix, YouTube, Prime, ...) all report `KEYCODE_UNKNOWN`
-     * so keying on the key code alone would collapse them onto each other, but
-     * their scan codes are distinct.
+     * [scanCode] identifies the button only when [keyCode] is `KEYCODE_UNKNOWN`;
+     * see [Mappings.resolve].
      */
     data class Binding(
         val keyCode: Int,
@@ -119,17 +118,21 @@ object ButtonMappingStore {
         val appRedirects: Map<String, Action> = emptyMap(),
     ) {
         /**
-         * Finds the binding for an incoming event. A non-zero scan code is the
-         * more specific signal, so it wins; key code is the fallback for the
-         * ordinary buttons that report one properly.
+         * Finds the binding for an incoming event.
+         *
+         * The key code identifies the button whenever the driver reports one,
+         * because it is the same across every remote that has that button —
+         * scan codes are per input device, so a binding keyed on one would stop
+         * working as soon as the user picked up a different remote. Scan codes
+         * are only consulted for `KEYCODE_UNKNOWN`, where they are the sole
+         * thing telling the extra buttons apart.
          */
-        fun resolve(keyCode: Int, scanCode: Int): Binding? {
-            if (scanCode != 0) {
+        fun resolve(keyCode: Int, scanCode: Int): Binding? =
+            if (keyCode != KeyEvent.KEYCODE_UNKNOWN) {
+                bindings.firstOrNull { it.keyCode == keyCode }
+            } else {
                 bindings.firstOrNull { it.scanCode != null && it.scanCode == scanCode }
-                    ?.let { return it }
             }
-            return bindings.firstOrNull { it.scanCode == null && it.keyCode == keyCode }
-        }
     }
 
     fun load(context: Context): Mappings {

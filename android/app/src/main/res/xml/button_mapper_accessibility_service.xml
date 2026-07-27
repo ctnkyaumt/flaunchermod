@@ -26,7 +26,7 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRequestFilterKeyEvents|flagIncludeNotImportantViews"
+    android:accessibilityFlags="flagDefault|flagRequestFilterKeyEvents|flagIncludeNotImportantViews"
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="false"
     android:description="@string/button_mapper_service_description"

@@ -117,9 +117,9 @@ const _knownScanCodes = <int, String>{
 class KeyMapping {
   final int keyCode;
 
-  /// Hardware scan code, when the event carried one. Matched before [keyCode]
-  /// because buttons that all report `KEYCODE_UNKNOWN` still have distinct
-  /// scan codes.
+  /// Hardware scan code, when the event carried one. Only used to tell apart
+  /// buttons that report `KEYCODE_UNKNOWN`; a scan code is specific to one
+  /// input device, so it is not what identifies a button that has a key code.
   final int? scanCode;
 
   /// Platform name for the key code, e.g. `KEYCODE_GUIDE`.
@@ -161,7 +161,11 @@ class KeyMapping {
       );
 
   /// Identity of the physical button, used to find an existing binding.
-  String get id => scanCode != null ? "sc:$scanCode" : "kc:$keyCode";
+  ///
+  /// Mirrors `ButtonMappingStore.Mappings.resolve`: the key code identifies the
+  /// button whenever there is one, and the scan code only stands in for the
+  /// extra buttons that report `KEYCODE_UNKNOWN`.
+  String get id => keyCode != 0 ? "kc:$keyCode" : "sc:$scanCode";
 
   Map<String, dynamic> toJson() => {
         "keyCode": keyCode,
@@ -196,7 +200,7 @@ class KeyMapping {
 
   /// Friendly name for the button, falling back to the raw codes.
   String get displayName {
-    final known = scanCode != null ? _knownScanCodes[scanCode] : null;
+    final known = keyCode == 0 && scanCode != null ? _knownScanCodes[scanCode] : null;
     if (known != null) {
       return known;
     }
