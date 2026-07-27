@@ -190,7 +190,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
         title: Text(mapping.displayName),
         children: [
           for (final value in PressTrigger.values)
-            SimpleDialogOption(
+            _DialogOption(
               autofocus: value == PressTrigger.single,
               onPressed: () => Navigator.of(dialogContext).pop(value),
               child: Text(
@@ -307,25 +307,25 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       builder: (dialogContext) => SimpleDialog(
         title: Text("Run what?"),
         children: [
-          SimpleDialogOption(
+          _DialogOption(
             autofocus: true,
             onPressed: () => Navigator.of(dialogContext).pop(ButtonActionType.launchApp),
             child: Text("Open an app"),
           ),
-          SimpleDialogOption(
+          _DialogOption(
             onPressed: () => Navigator.of(dialogContext).pop(ButtonActionType.openFlauncher),
             child: Text("Open FLauncher"),
           ),
-          SimpleDialogOption(
+          _DialogOption(
             onPressed: () => Navigator.of(dialogContext).pop(ButtonActionType.openSettings),
             child: Text("Open Android settings"),
           ),
-          SimpleDialogOption(
+          _DialogOption(
             onPressed: () => Navigator.of(dialogContext).pop(ButtonActionType.block),
             child: Text("Do nothing (block the button)"),
           ),
           if (allowClear)
-            SimpleDialogOption(
+            _DialogOption(
               onPressed: () => Navigator.of(dialogContext).pop(_clearSentinel),
               child: Text("Remove this binding"),
             ),
@@ -370,7 +370,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
             .map(
               (entry) => EnsureVisible(
                 alignment: 0.5,
-                child: SimpleDialogOption(
+                child: _DialogOption(
                   autofocus: entry.key == 0,
                   onPressed: () => Navigator.of(dialogContext).pop(entry.value),
                   child: Text(entry.value.name),
@@ -381,6 +381,34 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       ),
     );
   }
+}
+
+/// A [SimpleDialog] row that can take focus on its own.
+///
+/// [SimpleDialogOption] gained an `autofocus` parameter after the Flutter
+/// version this app builds against, and without it the first row of a dialog
+/// is unreachable with a remote until something else is focused first.
+class _DialogOption extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onPressed;
+  final bool autofocus;
+
+  const _DialogOption({
+    required this.child,
+    required this.onPressed,
+    this.autofocus = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+        autofocus: autofocus,
+        onTap: onPressed,
+        child: Padding(
+          // Matches SimpleDialogOption's own padding.
+          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+          child: SizedBox(width: double.infinity, child: child),
+        ),
+      );
 }
 
 /// Waits for the user to press a button while the service swallows it.
