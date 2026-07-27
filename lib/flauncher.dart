@@ -37,12 +37,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+/// Vertical slack within which two focus nodes count as being on the same row.
+const double _rowTolerance = 50;
+
 class FLauncher extends StatefulWidget {
   @override
   _FLauncherState createState() => _FLauncherState();
 }
 
-class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
+class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver implements PageNavigationHandler {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _startupPermissionsFlowActive = false;
@@ -213,32 +216,34 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
         return;
       }
       
-      // Sort by Y position to get top-to-bottom order, then by X position
+      // Sort top-to-bottom, then left-to-right within a row. Nodes less than
+      // _rowTolerance apart vertically count as the same row.
       allNodes.sort((a, b) {
-        final dyDiff = a.rect.center.dy.compareTo(b.rect.center.dy);
-        if (dyDiff.abs() > 50) return dyDiff; // Different rows
-        return a.rect.center.dx.compareTo(b.rect.center.dx); // Same row, sort by X
+        final dy = a.rect.center.dy - b.rect.center.dy;
+        if (dy.abs() > _rowTolerance) return dy < 0 ? -1 : 1;
+        return a.rect.center.dx.compareTo(b.rect.center.dx);
       });
-      
-      // Find the first node that's not in the app bar (Y > 100)
+
+      // Find the first node that isn't an app bar action.
       final contentNode = allNodes.firstWhere(
-        (node) => node.rect.center.dy > 100,
+        (node) => node.rect.center.dy > appBarBottom,
         orElse: () => allNodes.first,
       );
-      
+
       contentNode.requestFocus();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint("FLauncher: Building main UI widget");
     return FocusTraversalGroup(
       policy: PageAwareTraversalPolicy(this),
       child: Stack(
         children: [
-          Consumer<WallpaperService>(
-            builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+          Positioned.fill(
+            child: Consumer<WallpaperService>(
+              builder: (_, wallpaper, __) => _wallpaper(context, wallpaper.wallpaperBytes, wallpaper.gradient.gradient),
+            ),
           ),
           Scaffold(
             backgroundColor: Colors.transparent,
@@ -278,6 +283,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
     );
   }
 
+  @override
   bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode) {
     if (direction == TraversalDirection.down && _currentPage == 0) {
       _navigateToPage(1);
@@ -435,18 +441,17 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
         ],
       );
 
-  Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) {
-    debugPrint("FLauncher: Building wallpaper");
-    return wallpaperImage != null
-        ? Image.memory(
-            wallpaperImage,
-            key: Key("background"),
-            fit: BoxFit.cover,
-            height: window.physicalSize.height,
-            width: window.physicalSize.width,
-          )
-        : Container(key: Key("background"), decoration: BoxDecoration(gradient: gradient));
-  }
+  // Sizing to the *physical* pixel count used to blow the image up to
+  // devicePixelRatio times the screen size; filling the stack lets the engine
+  // pick the right raster size instead.
+  Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) => wallpaperImage != null
+      ? Image.memory(
+          wallpaperImage,
+          key: Key("background"),
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+        )
+      : Container(key: Key("background"), decoration: BoxDecoration(gradient: gradient));
 
   Widget _emptyState(BuildContext context) => Center(
         child: Column(
@@ -459,235 +464,189 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver {
         ),
       );
 
-  /// Shows a confirmation dialog before shutting down the device
-  void _showShutdownDialog(BuildContext context) {
-    showDialog(
+  /// Shows a confirmation dialog before shutting down the device.
+  Future<void> _showShutdownDialog(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Shutdown Device'),
-          content: Text('Are you sure you want to shutdown the device?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('CANCEL'),
-            ),
-            TextButton(
-              onPressed: () async {
-                // Close the confirmation dialog
-                Navigator.of(context).pop();
-                
-                // Show the shutdown progress dialog with a timeout
-                bool shutdownCompleted = false;
-                bool dialogDismissed = false;
-                
-                // Show a loading dialog with a forced shutdown option
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (BuildContext dialogContext) {
-                    // Start a timer to update the UI and eventually show force option
-                    int secondsElapsed = 0;
-                    Timer.periodic(Duration(seconds: 1), (timer) {
-                      if (shutdownCompleted || dialogDismissed) {
-                        timer.cancel();
-                        return;
-                      }
-                      
-                      secondsElapsed++;
-                      if (secondsElapsed >= 10 && dialogContext.mounted) {
-                        // After 10 seconds, if the dialog is still showing, dismiss it and show error
-                        timer.cancel();
-                        dialogDismissed = true;
-                        Navigator.of(dialogContext).pop();
-                        
-                        // Show the force shutdown option
-                        _showForceShutdownDialog(context);
-                      }
-                    });
-                    
-                    return AlertDialog(
-                      title: Text('Shutting Down'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('Attempting to shutdown the device...'),
-                          SizedBox(height: 8),
-                          Text('Please wait', style: TextStyle(fontStyle: FontStyle.italic)),
-                        ],
-                      ),
-                    );
-                  },
-                );
-                
-                try {
-                  // Attempt to shut down using all available methods
-                  final result = await context.read<AppsService>().fLauncherChannel.shutdownDevice();
-                  shutdownCompleted = true;
-                  
-                  // If we get here and the result is false, the shutdown failed
-                  if (!result && !dialogDismissed && context.mounted) {
-                    dialogDismissed = true;
-                    Navigator.of(context).pop(); // Close the loading dialog if it's still open
-                    
-                    // Show the force shutdown option
-                    _showForceShutdownDialog(context);
-                  }
-                  // If successful, the device should be shutting down now
-                } catch (e) {
-                  // Handle any exceptions
-                  if (!dialogDismissed && context.mounted) {
-                    dialogDismissed = true;
-                    Navigator.of(context).pop(); // Close the loading dialog
-                    
-                    // Show error with force shutdown option
-                    showDialog(
-                      context: context,
-                      builder: (BuildContext context) {
-                        return AlertDialog(
-                          title: Text('Error'),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Failed to shutdown: ${e.toString()}'),
-                              SizedBox(height: 16),
-                              Text('Would you like to try force shutdown?'),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: Text('CANCEL'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.of(context).pop();
-                                _attemptForceShutdown(context);
-                              },
-                              child: Text('FORCE SHUTDOWN'),
-                              style: TextButton.styleFrom(foregroundColor: Colors.red),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  }
-                }
-              },
-              child: Text('SHUTDOWN'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  /// Shows a dialog offering force shutdown options when normal shutdown fails
-  void _showForceShutdownDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Shutdown Failed'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('The device did not respond to normal shutdown commands.'),
-              SizedBox(height: 16),
-              Text('Would you like to try force shutdown? This may cause data loss but is more likely to work.'),
-            ],
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Shutdown Device'),
+        content: Text('Are you sure you want to shutdown the device?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('CANCEL'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('CANCEL'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _attemptForceShutdown(context);
-              },
-              child: Text('FORCE SHUTDOWN'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-            ),
-          ],
-        );
-      },
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('SHUTDOWN'),
+          ),
+        ],
+      ),
     );
-  }
-  
-  /// Attempts more aggressive force shutdown methods
-  void _attemptForceShutdown(BuildContext context) {
-    // Show a progress dialog
-    showDialog(
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final channel = context.read<AppsService>().fLauncherChannel;
+    final navigator = Navigator.of(context);
+    var progressDismissed = false;
+    void dismissProgress() {
+      if (progressDismissed) {
+        return;
+      }
+      progressDismissed = true;
+      navigator.pop();
+    }
+
+    // The platform call can hang on devices that ignore the shutdown intent, so
+    // give up after 10s and offer the force path instead of spinning forever.
+    final timeout = Timer(Duration(seconds: 10), () {
+      if (!mounted) {
+        return;
+      }
+      dismissProgress();
+      _showForceShutdownDialog(context);
+    });
+
+    unawaited(showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Attempting force shutdown...'),
-              SizedBox(height: 8),
-              Text('This may take a few moments', style: TextStyle(fontStyle: FontStyle.italic)),
-            ],
-          ),
-        );
-      },
-    );
-    
-    // Try to force shutdown using all available methods
-    // This will call the same method but the native code will try more aggressive approaches
-    context.read<AppsService>().fLauncherChannel.shutdownDevice().then((success) {
-      // If we get here, the shutdown failed
-      if (context.mounted) {
-        Navigator.of(context).pop(); // Close the progress dialog
-        
-        // Show final error message
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Force Shutdown Failed'),
-              content: Text('Unable to force shutdown the device. You may need to manually power off the device using the physical power button.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+      builder: (_) => _progressDialog(
+        title: 'Shutting Down',
+        message: 'Attempting to shutdown the device...',
+        hint: 'Please wait',
+      ),
+    ));
+
+    try {
+      final succeeded = await channel.shutdownDevice();
+      timeout.cancel();
+      // On success the device is on its way down; leave the dialog up.
+      if (succeeded || !mounted) {
+        return;
       }
-    }).catchError((error) {
-      // Handle any exceptions
-      if (context.mounted) {
-        Navigator.of(context).pop(); // Close the progress dialog
-        
-        // Show error message
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Error'),
-              content: Text('An error occurred during force shutdown: $error'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+      dismissProgress();
+      _showForceShutdownDialog(context);
+    } catch (e) {
+      timeout.cancel();
+      if (!mounted) {
+        return;
       }
-    });
+      dismissProgress();
+      _showShutdownErrorDialog(context, 'Failed to shutdown: ${e.toString()}');
+    }
   }
+
+  /// Shows a dialog offering force shutdown options when normal shutdown fails
+  void _showForceShutdownDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Shutdown Failed'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('The device did not respond to normal shutdown commands.'),
+            SizedBox(height: 16),
+            Text('Would you like to try force shutdown? This may cause data loss but is more likely to work.'),
+          ],
+        ),
+        actions: _forceShutdownActions(dialogContext),
+      ),
+    );
+  }
+
+  void _showShutdownErrorDialog(BuildContext context, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Error'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(message),
+            SizedBox(height: 16),
+            Text('Would you like to try force shutdown?'),
+          ],
+        ),
+        actions: _forceShutdownActions(dialogContext),
+      ),
+    );
+  }
+
+  List<Widget> _forceShutdownActions(BuildContext dialogContext) => [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: Text('CANCEL'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            _attemptForceShutdown(context);
+          },
+          child: Text('FORCE SHUTDOWN'),
+          style: TextButton.styleFrom(foregroundColor: Colors.red),
+        ),
+      ];
+
+  /// Attempts more aggressive force shutdown methods.
+  ///
+  /// This calls the same platform method; the native side escalates on retry.
+  Future<void> _attemptForceShutdown(BuildContext context) async {
+    final channel = context.read<AppsService>().fLauncherChannel;
+    final navigator = Navigator.of(context);
+
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _progressDialog(
+        message: 'Attempting force shutdown...',
+        hint: 'This may take a few moments',
+      ),
+    ));
+
+    String? error;
+    try {
+      await channel.shutdownDevice();
+    } catch (e) {
+      error = e.toString();
+    }
+
+    if (!mounted) {
+      return;
+    }
+    navigator.pop(); // close the progress dialog
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(error == null ? 'Force Shutdown Failed' : 'Error'),
+        content: Text(error == null
+            ? 'Unable to force shutdown the device. You may need to manually power off the device using the physical power button.'
+            : 'An error occurred during force shutdown: $error'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _progressDialog({String? title, required String message, required String hint}) => AlertDialog(
+        title: title == null ? null : Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(message),
+            SizedBox(height: 8),
+            Text(hint, style: TextStyle(fontStyle: FontStyle.italic)),
+          ],
+        ),
+      );
 }

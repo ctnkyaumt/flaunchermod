@@ -409,12 +409,19 @@ class AppInstallService extends ChangeNotifier {
 
     final total = response.contentLength;
     int received = 0;
+    // Notifying on every chunk rebuilds the install UI hundreds of times a
+    // second on a fast link; 1% steps are more than the progress bar can show.
+    double lastNotified = 0;
     await response.listen((data) {
       sink.add(data);
       received += data.length;
       if (total > 0) {
-        _progress[name] = received / total;
-        notifyListeners();
+        final progress = received / total;
+        _progress[name] = progress;
+        if (progress - lastNotified >= 0.01 || progress >= 1) {
+          lastNotified = progress;
+          notifyListeners();
+        }
       }
     }).asFuture();
     await sink.close();

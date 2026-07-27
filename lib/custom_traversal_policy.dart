@@ -1,56 +1,15 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
-/// This traversal policy manage the up and down direction to be totally
-/// predictable.
-/// Going up or down will always go to the next or previous row. All other
-/// traversal policy try to be smart, and in some cases can skip rows when
-/// going up or down.
-class RowByRowTraversalPolicy extends FocusTraversalPolicy with DirectionalFocusTraversalPolicyMixin {
-  @override
-  Iterable<FocusNode> sortDescendants(Iterable<FocusNode> descendants, FocusNode currentNode) => descendants;
+/// Vertical cut-off (in logical pixels) below which a focus node is considered
+/// page content rather than an AppBar action.
+const double appBarBottom = 100;
 
-  @override
-  bool inDirection(FocusNode currentNode, TraversalDirection direction) {
-    List<FocusNode>? nodes = currentNode.nearestScope?.traversalDescendants.toList();
-    if (nodes == null) {
-      return super.inDirection(currentNode, direction);
-    }
-
-    // For left/right navigation, implement infinite loop cycling within the same row
-    if (direction == TraversalDirection.left || direction == TraversalDirection.right) {
-      // Get all nodes on the same row
-      List<FocusNode> sameRowNodes = nodes.where((node) => node.isOnTheSameRow(currentNode)).toList();
-      
-      if (sameRowNodes.length > 1) {
-        // Sort nodes by horizontal position
-        sameRowNodes.sort((a, b) => a.rect.center.dx.compareTo(b.rect.center.dx));
-        
-        int currentIndex = sameRowNodes.indexWhere((node) => node == currentNode);
-        if (currentIndex != -1) {
-          final nextNode = direction == TraversalDirection.right
-              ? sameRowNodes[(currentIndex + 1) % sameRowNodes.length]
-              : sameRowNodes[(currentIndex - 1 + sameRowNodes.length) % sameRowNodes.length];
-          nextNode.requestFocus();
-          return true;
-        }
-      }
-      
-      // If we can't handle it (single item or error), don't move
-      return true;
-    }
-
-    // For up/down navigation, use the original logic
-    NodeSearcher searcher = NodeSearcher(direction);
-    List<CandidateNode> candidates = searcher.findCandidates(nodes, currentNode);
-    if (candidates.isEmpty) {
-      return super.inDirection(currentNode, direction);
-    }
-    FocusNode nextNode = searcher.findBestFocusNode(candidates, currentNode);
-    nextNode.requestFocus();
-    return true;
-  }
+/// Implemented by the widget state that owns the vertical page view, so the
+/// traversal policy can hand off a directional move that runs off the edge of
+/// the current page.
+abstract class PageNavigationHandler {
+  /// Returns `true` when the move was consumed by switching pages.
+  bool handlePageNavigation(TraversalDirection direction, FocusNode currentNode);
 }
 
 class NodeSearcher {
@@ -59,29 +18,24 @@ class NodeSearcher {
   NodeSearcher(this.directionToSearch);
 
   /// should be called first
-  List<CandidateNode> findCandidates(List<FocusNode> nodes, FocusNode from) {
-    List<FocusNode> copy = List.from(nodes, growable: true);
-
+  List<FocusNode> findCandidates(List<FocusNode> nodes, FocusNode from) {
     switch (directionToSearch) {
       case TraversalDirection.up:
-        copy.removeWhere((element) => element.isBelowOrEquals(from));
-        break;
+        return nodes.where((element) => !element.isBelowOrEquals(from)).toList();
       case TraversalDirection.down:
-        copy.removeWhere((element) => element.isAboveOrEquals(from));
-        break;
+        return nodes.where((element) => !element.isAboveOrEquals(from)).toList();
       case TraversalDirection.right:
-        copy.removeWhere((element) => element.isLeftToOrEquals(from) || !element.isOnTheSameRow(from));
-        break;
+        return nodes
+            .where((element) => !element.isLeftToOrEquals(from) && element.isOnTheSameRow(from))
+            .toList();
       case TraversalDirection.left:
-        copy.removeWhere((element) => element.isRightToOrEquals(from) || !element.isOnTheSameRow(from));
-        break;
+        return nodes
+            .where((element) => !element.isRightToOrEquals(from) && element.isOnTheSameRow(from))
+            .toList();
     }
-    return toCandidateNodes(copy);
   }
 
-  FocusNode findBestFocusNode(List<CandidateNode> nodes, FocusNode from) {
-    List<FocusNode> candidates = toFocusNodes(nodes);
-
+  FocusNode findBestFocusNode(List<FocusNode> candidates, FocusNode from) {
     return candidates.reduce((bestNode, challenger) {
       if (directionToSearch == TraversalDirection.down && challenger.isAbove(bestNode)) {
         return challenger;
@@ -93,25 +47,14 @@ class NodeSearcher {
         return challenger;
       }
       // compute the element which is the closest horizontally
-      if (challenger.isOnTheSameRow(bestNode) && challenger.distance(from) < bestNode.distance(from)) {
+      if (challenger.isOnTheSameRow(bestNode) &&
+          challenger.squaredDistance(from) < bestNode.squaredDistance(from)) {
         return challenger;
       }
       return bestNode;
     });
   }
 }
-
-/// An internal object to use the [NodeSearcher] class as expected
-class CandidateNode {
-  final FocusNode node;
-
-  CandidateNode(this.node);
-}
-
-/// Some conversion utilities used internally
-List<CandidateNode> toCandidateNodes(List<FocusNode> nodes) => nodes.map((e) => CandidateNode(e)).toList();
-
-List<FocusNode> toFocusNodes(List<CandidateNode> nodes) => nodes.map((e) => e.node).toList();
 
 /// A few extension methods to the [FocusNode] to be able to compare their
 /// respective position easily.
@@ -154,17 +97,20 @@ extension Geometry on FocusNode {
     return (rect.center.dy.round() - other.rect.center.dy.round()).abs() <= 5;
   }
 
-  double distance(FocusNode other) {
-    return sqrt(pow(rect.center.dx.round() - other.rect.center.dx.round(), 2) +
-        pow(rect.center.dy.round() - other.rect.center.dy.round(), 2));
+  /// Squared euclidean distance — only ever used for comparisons, so the
+  /// square root would be wasted work on every directional key press.
+  double squaredDistance(FocusNode other) {
+    final dx = rect.center.dx - other.rect.center.dx;
+    final dy = rect.center.dy - other.rect.center.dy;
+    return dx * dx + dy * dy;
   }
 }
 
 /// Custom traversal policy that handles page navigation at boundaries
 class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocusTraversalPolicyMixin {
-  final dynamic state;
+  final PageNavigationHandler handler;
 
-  PageAwareTraversalPolicy(this.state);
+  PageAwareTraversalPolicy(this.handler);
 
   @override
   Iterable<FocusNode> sortDescendants(Iterable<FocusNode> descendants, FocusNode currentNode) => descendants;
@@ -198,32 +144,24 @@ class PageAwareTraversalPolicy extends FocusTraversalPolicy with DirectionalFocu
 
     // For up/down navigation, check if we're at a boundary
     NodeSearcher searcher = NodeSearcher(direction);
-    List<CandidateNode> candidates = searcher.findCandidates(nodes, currentNode);
-    
+    List<FocusNode> candidates = searcher.findCandidates(nodes, currentNode);
+
     // If no candidates found, we're at a boundary - trigger page navigation
     if (candidates.isEmpty) {
-      if (state != null && state.handlePageNavigation != null) {
-        state.handlePageNavigation(direction, currentNode);
-        return true;
-      }
-      return super.inDirection(currentNode, direction);
+      handler.handlePageNavigation(direction, currentNode);
+      return true;
     }
-    
+
     FocusNode nextNode = searcher.findBestFocusNode(candidates, currentNode);
 
     // When moving UP from page content, skip focusing AppBar actions; treat as a boundary
     // so one press can move between pages.
     if (direction == TraversalDirection.up) {
-      final fromContent = currentNode.rect.center.dy > 100;
-      final toAppBar = nextNode.rect.center.dy <= 100;
-      if (fromContent && toAppBar) {
-        if (state != null && state.handlePageNavigation != null) {
-          final handled = state.handlePageNavigation(direction, currentNode);
-          if (handled == true) {
-            return true;
-          }
-          // If not handled (e.g. we are on the first page), allow traversal to AppBar
-        }
+      final fromContent = currentNode.rect.center.dy > appBarBottom;
+      final toAppBar = nextNode.rect.center.dy <= appBarBottom;
+      // If not handled (e.g. we are on the first page), fall through to the AppBar.
+      if (fromContent && toAppBar && handler.handlePageNavigation(direction, currentNode)) {
+        return true;
       }
     }
 

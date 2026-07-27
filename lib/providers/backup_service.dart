@@ -16,7 +16,17 @@ class BackupService {
   BackupService(this._database, this._settingsService);
 
   Future<File> createBackup() async {
-    final apps = await _database.select(_database.apps).get();
+    // Only the metadata columns are backed up, so avoid pulling every banner and
+    // icon blob into memory just to throw them away.
+    final appsQuery = _database.selectOnly(_database.apps)
+      ..addColumns([
+        _database.apps.packageName,
+        _database.apps.name,
+        _database.apps.hidden,
+        _database.apps.sideloaded,
+        _database.apps.isSystemApp,
+      ]);
+    final apps = await appsQuery.get();
     final categories = await _database.select(_database.categories).get();
     final appsCategories = await _database.select(_database.appsCategories).get();
 
@@ -52,12 +62,12 @@ class BackupService {
         "appPackageName": ac.appPackageName,
         "order": ac.order,
       }).toList(),
-      "apps": apps.map((a) => {
-        "packageName": a.packageName,
-        "name": a.name,
-        "hidden": a.hidden,
-        "sideloaded": a.sideloaded,
-        "isSystemApp": a.isSystemApp,
+      "apps": apps.map((row) => {
+        "packageName": row.read(_database.apps.packageName),
+        "name": row.read(_database.apps.name),
+        "hidden": row.read(_database.apps.hidden),
+        "sideloaded": row.read(_database.apps.sideloaded),
+        "isSystemApp": row.read(_database.apps.isSystemApp),
       }).toList(),
     };
 
@@ -212,8 +222,13 @@ class BackupService {
       // but we do it explicitly to be sure.
       await _database.delete(_database.appsCategories).go();
       await _database.delete(_database.categories).go();
-      
-      // 2. Insert/Update Apps first (so apps_categories can reference them)
+
+      // 2. Insert/Update Apps first (so apps_categories can reference them).
+      // The set of rows already present is read once rather than probed per app.
+      final packageNameQuery = _database.selectOnly(_database.apps)
+        ..addColumns([_database.apps.packageName]);
+      final knownPackageNames =
+          (await packageNameQuery.get()).map((row) => row.read(_database.apps.packageName)!).toSet();
       if (appsList is List) {
         for (var a in appsList) {
           if (a is! Map<String, dynamic>) continue;
@@ -223,16 +238,14 @@ class BackupService {
           final restoredHidden = (a["hidden"] as bool?) ?? false;
           final hidden = restoredHidden || !installed;
 
-          final existing = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).getSingleOrNull();
-          
-          if (existing != null) {
-             await (_database.update(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).write(
-               AppsCompanion(
-                 hidden: drift.Value(hidden),
-                 sideloaded: drift.Value((a["sideloaded"] as bool?) ?? false),
-                 isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
-               )
-             );
+          if (knownPackageNames.contains(packageName)) {
+            await (_database.update(_database.apps)..where((tbl) => tbl.packageName.equals(packageName))).write(
+              AppsCompanion(
+                hidden: drift.Value(hidden),
+                sideloaded: drift.Value((a["sideloaded"] as bool?) ?? false),
+                isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
+              )
+            );
           } else {
             await _database.into(_database.apps).insert(
               AppsCompanion(
@@ -244,11 +257,13 @@ class BackupService {
                 isSystemApp: drift.Value((a["isSystemApp"] as bool?) ?? false),
               )
             );
+            knownPackageNames.add(packageName);
           }
         }
       }
 
       // 3. Insert Categories
+      final restoredCategoryIds = <int>{};
       final categoriesList = data["categories"];
       if (categoriesList is List) {
         for (var c in categoriesList) {
@@ -268,32 +283,32 @@ class BackupService {
             ),
             mode: drift.InsertMode.insertOrReplace
           );
+          restoredCategoryIds.add(id);
         }
       }
 
-      // 4. Finally insert Assignments (referencing both Apps and Categories)
+      // 4. Finally insert Assignments (referencing both Apps and Categories).
+      // Both sides are checked against the sets built above so an inconsistent
+      // backup can't trip a foreign key error.
       final appsCategoriesList = data["appsCategories"];
       if (appsCategoriesList is List) {
+        final assignments = <AppsCategoriesCompanion>[];
         for (var ac in appsCategoriesList) {
           if (ac is! Map<String, dynamic>) continue;
           final catId = ac["categoryId"];
           final pkg = ac["appPackageName"];
           if (catId is! int || pkg is! String) continue;
+          if (!restoredCategoryIds.contains(catId) || !knownPackageNames.contains(pkg)) continue;
 
-          // Verify both exist to avoid FK errors if backup is somehow inconsistent
-          final catExists = await (_database.select(_database.categories)..where((tbl) => tbl.id.equals(catId))).getSingleOrNull() != null;
-          final appExists = await (_database.select(_database.apps)..where((tbl) => tbl.packageName.equals(pkg))).getSingleOrNull() != null;
-          
-          if (catExists && appExists) {
-            await _database.into(_database.appsCategories).insert(
-              AppsCategoriesCompanion(
-                categoryId: drift.Value(catId),
-                appPackageName: drift.Value(pkg),
-                order: drift.Value((ac["order"] as int?) ?? 0),
-              ),
-              mode: drift.InsertMode.insertOrReplace
-            );
-          }
+          assignments.add(AppsCategoriesCompanion(
+            categoryId: drift.Value(catId),
+            appPackageName: drift.Value(pkg),
+            order: drift.Value((ac["order"] as int?) ?? 0),
+          ));
+        }
+        if (assignments.isNotEmpty) {
+          await _database
+              .batch((batch) => batch.insertAll(_database.appsCategories, assignments, mode: drift.InsertMode.insertOrReplace));
         }
       }
     });

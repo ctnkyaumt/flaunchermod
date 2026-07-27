@@ -16,17 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'dart:async';
-
-// Import stub implementation instead of Firebase packages
-import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _use24HourTimeFormatKey = "use_24_hour_time_format";
 const _appHighlightAnimationEnabledKey = "app_highlight_animation_enabled";
 const _gradientUuidKey = "gradient_uuid";
-const _unsplashEnabledKey = "unsplash_enabled";
 const _unsplashAuthorKey = "unsplash_author";
 
 const _weatherEnabledKey = "weather_enabled";
@@ -46,12 +41,6 @@ enum WeatherUnits {
 
 class SettingsService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
-  final FirebaseRemoteConfig _firebaseRemoteConfig;
-  Timer? _remoteConfigRefreshTimer;
-
-  bool get crashReportsEnabled => false; // Always disabled
-
-  bool get analyticsEnabled => false; // Always disabled
 
   bool get use24HourTimeFormat => _sharedPreferences.getBool(_use24HourTimeFormatKey) ?? true;
 
@@ -59,7 +48,9 @@ class SettingsService extends ChangeNotifier {
 
   String? get gradientUuid => _sharedPreferences.getString(_gradientUuidKey);
 
-  bool get unsplashEnabled => _firebaseRemoteConfig.getBool(_unsplashEnabledKey);
+  /// The Unsplash wallpaper source needs API credentials that this build does
+  /// not ship, so the entry point stays hidden.
+  bool get unsplashEnabled => false;
 
   String? get unsplashAuthor => _sharedPreferences.getString(_unsplashAuthorKey);
 
@@ -104,35 +95,7 @@ class SettingsService extends ChangeNotifier {
 
   bool get startupPermissionsCompleted => _sharedPreferences.getBool(_startupPermissionsCompletedKey) ?? false;
 
-  SettingsService(
-    this._sharedPreferences,
-    FirebaseCrashlytics? firebaseCrashlytics,
-    FirebaseAnalytics? firebaseAnalytics,
-    this._firebaseRemoteConfig,
-  ) {
-    // Initialize Firebase services if available
-    // Removed Firebase initialization
-    
-    _remoteConfigRefreshTimer = Timer.periodic(Duration(hours: 6, minutes: 1), (_) => _refreshFirebaseRemoteConfig());
-    
-    debugPrint("SettingsService initialized");
-  }
-
-  @override
-  void dispose() {
-    _remoteConfigRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> setCrashReportsEnabled(bool value) async {
-    // No-op - permanently disabled
-    notifyListeners();
-  }
-
-  Future<void> setAnalyticsEnabled(bool value) async {
-    // No-op - permanently disabled
-    notifyListeners();
-  }
+  SettingsService(this._sharedPreferences);
 
   Future<void> setUse24HourTimeFormat(bool value) async {
     await _sharedPreferences.setBool(_use24HourTimeFormatKey, value);
@@ -215,18 +178,6 @@ class SettingsService extends ChangeNotifier {
   Future<void> setStartupPermissionsCompleted(bool value) async {
     await _sharedPreferences.setBool(_startupPermissionsCompletedKey, value);
     notifyListeners();
-  }
-
-  Future<void> _refreshFirebaseRemoteConfig() async {
-    bool updated = false;
-    try {
-      updated = await _firebaseRemoteConfig.fetchAndActivate();
-    } catch (e) {
-      debugPrint("Could not refresh Firebase Remote Config: $e");
-    }
-    if (updated) {
-      notifyListeners();
-    }
   }
 
   Future<void> restoreSettings(Map<String, dynamic> data) async {

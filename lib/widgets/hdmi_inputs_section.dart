@@ -94,7 +94,8 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
       // Ensure mounted check after async gap
       if (!mounted) return;
       setState(() {
-        _hdmiInputs = inputs.map((data) => HdmiInput.fromMap(data)).toList();
+        _hdmiInputs = inputs.map((data) => HdmiInput.fromMap(data)).toList()
+          ..sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
         _isLoading = false;
       });
     } catch (e) {
@@ -105,10 +106,6 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
           _isLoading = false;
         });
       }
-    } finally {
-      // Ensure loading is set to false even if mounted check fails within catch
-      // Although the checks above should handle it.
-      // if (mounted && _isLoading) setState(() => _isLoading = false);
     }
   }
 
@@ -173,9 +170,6 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
     if (_hdmiInputs.isEmpty) {
       return const SizedBox(height: 126, child: Center(child: Text('No HDMI inputs detected.')));
     }
-
-    // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
-    _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
 
     return SizedBox(
       height: 126,
@@ -306,29 +300,30 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
             Selector<SettingsService, bool>(
               selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
               builder: (context, appHighlightAnimationEnabled, __) {
-                if (appHighlightAnimationEnabled) {
-                  _animation.forward();
-                  return AnimatedBuilder(
-                    animation: _animation,
-                    builder: (context, child) => IgnorePointer(
-                      child: AnimatedContainer(
-                        duration: Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        decoration: BoxDecoration(
-                          border: Focus.of(context).hasFocus
-                              ? Border.all(
-                                  color: _lastBorderColor =
-                                      computeBorderColor(_animation.value, _lastBorderColor),
-                                  width: 3)
-                              : null,
-                          borderRadius: BorderRadius.circular(8),
+                // Only the focused card shows the border, so only it needs a ticker.
+                if (!appHighlightAnimationEnabled || !Focus.of(context).hasFocus) {
+                  if (_animation.isAnimating) {
+                    _animation.stop();
+                  }
+                  return const SizedBox.shrink();
+                }
+                _animation.forward();
+                return AnimatedBuilder(
+                  animation: _animation,
+                  builder: (context, child) => IgnorePointer(
+                    child: AnimatedContainer(
+                      duration: Duration(milliseconds: 200),
+                      curve: Curves.easeInOut,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _lastBorderColor = computeBorderColor(_animation.value, _lastBorderColor),
+                          width: 3,
                         ),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                  );
-                }
-                _animation.stop();
-                return SizedBox();
+                  ),
+                );
               },
             ),
           ],

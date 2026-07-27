@@ -80,17 +80,8 @@
         android:banner="@drawable/banner"
         android:fullBackupContent="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="FLauncher"
-        android:name=".FLauncherApplication">
-        
-        <!-- Disable Firebase Provider -->
-        <provider
-            android:name="com.google.firebase.provider.FirebaseInitProvider"
-            android:authorities="${applicationId}.firebaseinitprovider"
-            android:exported="false"
-            android:enabled="false"
-            tools:node="remove" />
-            
+        android:label="FLauncher">
+
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -103,10 +94,6 @@
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
-            <meta-data
-                android:name="firebase_crashlytics_collection_enabled"
-                android:value="false" />
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

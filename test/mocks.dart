@@ -24,7 +24,6 @@ import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
-import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flauncher/unsplash_service.dart';
 import 'package:mockito/annotations.dart';
 
@@ -33,9 +32,6 @@ import 'package:mockito/annotations.dart';
   WallpaperService,
   AppsService,
   SettingsService,
-  FirebaseCrashlytics,
-  FirebaseAnalytics,
-  FirebaseRemoteConfig,
   UnsplashService,
 ], customMocks: [
   MockSpec<FLauncherDatabase>(unsupportedMembers: {#alias}),

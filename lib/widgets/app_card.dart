@@ -89,7 +89,11 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
   }
 
   ImageProvider _cachedMemoryImage(Uint8List bytes) {
-    if (!listEquals(bytes, _imageProvider?.bytes)) {
+    final cached = _imageProvider?.bytes;
+    // `identical` covers the common case (same App instance across rebuilds) in
+    // O(1); the byte-wise compare is only reached when the row was re-read from
+    // the database, and keeps us from re-decoding an unchanged image.
+    if (!identical(bytes, cached) && !listEquals(bytes, cached)) {
       _imageProvider = MemoryImage(bytes);
     }
     return _imageProvider!;
@@ -163,29 +167,32 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
                 Selector<SettingsService, bool>(
                   selector: (_, settingsService) => settingsService.appHighlightAnimationEnabled,
                   builder: (context, appHighlightAnimationEnabled, __) {
-                    if (appHighlightAnimationEnabled) {
-                      _animation.forward();
-                      return AnimatedBuilder(
-                        animation: _animation,
-                        builder: (context, child) => IgnorePointer(
-                          child: AnimatedContainer(
-                            duration: Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            decoration: BoxDecoration(
-                              border: Focus.of(context).hasFocus
-                                  ? Border.all(
-                                      color: _lastBorderColor =
-                                          computeBorderColor(_animation.value, _lastBorderColor),
-                                      width: 3)
-                                  : null,
-                              borderRadius: BorderRadius.circular(8),
+                    // The border is only ever visible on the focused card, so run
+                    // the ticker there only. Otherwise every card on screen would
+                    // drive a 60fps rebuild for a border nobody can see.
+                    if (!appHighlightAnimationEnabled || !Focus.of(context).hasFocus) {
+                      if (_animation.isAnimating) {
+                        _animation.stop();
+                      }
+                      return const SizedBox.shrink();
+                    }
+                    _animation.forward();
+                    return AnimatedBuilder(
+                      animation: _animation,
+                      builder: (context, child) => IgnorePointer(
+                        child: AnimatedContainer(
+                          duration: Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _lastBorderColor = computeBorderColor(_animation.value, _lastBorderColor),
+                              width: 3,
                             ),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                      );
-                    }
-                    _animation.stop();
-                    return SizedBox();
+                      ),
+                    );
                   },
                 ),
               ],

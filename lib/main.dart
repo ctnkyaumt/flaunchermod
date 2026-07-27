@@ -32,8 +32,7 @@ Future<void> main() async {
   Paint.enableDithering = true;
   
   debugPrint("FLauncher: Starting initialization");
-  
-  // Start the app without Firebase
+
   runZonedGuarded<void>(() async {
     try {
       debugPrint("FLauncher: Loading preferences");
@@ -50,13 +49,10 @@ Future<void> main() async {
       runApp(
         FLauncherApp(
           sharedPreferences,
-          null, // crashlytics
-          null, // analytics
           imagePicker,
           fLauncherChannel,
           fLauncherDatabase,
           null, // unsplash service
-          null, // remote config
         ),
       );
       

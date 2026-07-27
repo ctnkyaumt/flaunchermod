@@ -26,12 +26,16 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' hide Category;
 import 'package:flutter/material.dart';
 
+const _flauncherPackageName = "me.efesser.flauncher";
+const _tvCategoryName = "TV Applications";
+const _nonTvCategoryName = "Non-TV Applications";
+
 class AppsService extends ChangeNotifier {
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _database;
   bool _initialized = false;
   final StreamController<String> _packageAddedController = StreamController<String>.broadcast();
-  
+
   /// Expose the FLauncherChannel to allow access to platform-specific functionality
   FLauncherChannel get fLauncherChannel => _fLauncherChannel;
   Stream<String> get packageAddedStream => _packageAddedController.stream;
@@ -39,16 +43,32 @@ class AppsService extends ChangeNotifier {
   List<App> _applications = [];
   List<CategoryWithApps> _categoriesWithApps = [];
 
+  /// Cached read-only view of [_categoriesWithApps], rebuilt only when the
+  /// underlying state changes. The getter is hit on every widget rebuild, so
+  /// re-wrapping every category on each access is wasteful.
+  List<CategoryWithApps>? _categoriesWithAppsView;
+
   bool get initialized => _initialized;
 
   List<App> get applications => UnmodifiableListView(_applications);
 
-  List<CategoryWithApps> get categoriesWithApps => _categoriesWithApps
+  List<CategoryWithApps> get categoriesWithApps => _categoriesWithAppsView ??= _categoriesWithApps
       .map((item) => CategoryWithApps(item.category, UnmodifiableListView(item.applications)))
       .toList(growable: false);
 
+  set _categories(List<CategoryWithApps> value) {
+    _categoriesWithApps = value;
+    _categoriesWithAppsView = null;
+  }
+
   AppsService(this._fLauncherChannel, this._database) {
     _init();
+  }
+
+  @override
+  void dispose() {
+    _packageAddedController.close();
+    super.dispose();
   }
 
   Future<void> _init() async {
@@ -57,97 +77,96 @@ class AppsService extends ChangeNotifier {
       await _initDefaultCategories();
     }
     await _ensureTvApplicationsTop(shouldNotifyListeners: false);
-    _fLauncherChannel.addAppsChangedListener((event) async {
-      switch (event["action"]) {
-        case "PACKAGE_ADDED":
-        case "PACKAGE_CHANGED":
-          final appInfo = event["activitiyInfo"];
-          final packageName = appInfo["packageName"] as String?;
-          if (packageName != null) {
-             _packageAddedController.add(packageName);
-          }
-          await _database.persistApps([_buildAppCompanion(appInfo)]);
-          
-          // Auto-add to category if not hidden
-          if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
-            final pkg = appInfo["packageName"]?.toString();
-            if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
-              break;
-            }
-            _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
-            final isSideloaded = appInfo["sideloaded"] == true;
-            final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
-            
-            var category = _categoriesWithApps
-                .map((e) => e.category)
-                .firstWhereOrNull((c) => c.name == targetCategoryName);
-            
-            if (category == null) {
-              await addCategory(targetCategoryName, shouldNotifyListeners: false);
-              _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
-              category = _categoriesWithApps
-                  .map((e) => e.category)
-                  .firstWhereOrNull((c) => c.name == targetCategoryName);
-            }
-            
-            if (category != null) {
-              final app = await _database.getApp(appInfo["packageName"]);
-              if (app != null) {
-                // Check if already in any category to avoid duplicates if something weird happens
-                // But simplified: just add to target category if not present in it
-                // addToCategory handles insertion
-                await addToCategory(app, category, shouldNotifyListeners: false);
-              }
-            }
-          }
-          break;
-        case "PACKAGES_AVAILABLE":
-          final appsInfo = (event["activitiesInfo"] as List<dynamic>);
-          await _database.persistApps(appsInfo.map(_buildAppCompanion).toList());
-          
-          _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
-          
-          for (final appInfo in appsInfo) {
-             if ((appInfo["isSystemApp"] != true) && appInfo["packageName"] != "me.efesser.flauncher") {
-                final pkg = appInfo["packageName"]?.toString();
-                if (pkg != null && await _database.isAppInAnyCategory(pkg)) {
-                  continue;
-                }
-                final isSideloaded = appInfo["sideloaded"] == true;
-                final targetCategoryName = isSideloaded ? "Non-TV Applications" : "TV Applications";
-                
-                var category = _categoriesWithApps
-                    .map((e) => e.category)
-                    .firstWhereOrNull((c) => c.name == targetCategoryName);
-                    
-                if (category == null) {
-                  await addCategory(targetCategoryName, shouldNotifyListeners: false);
-                  _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
-                  category = _categoriesWithApps
-                      .map((e) => e.category)
-                      .firstWhereOrNull((c) => c.name == targetCategoryName);
-                }
-                
-                if (category != null) {
-                   final app = await _database.getApp(appInfo["packageName"]);
-                   if (app != null) {
-                     await addToCategory(app, category, shouldNotifyListeners: false);
-                   }
-                }
-             }
-          }
-          break;
-        case "PACKAGE_REMOVED":
-          await _database.deleteApps([event["packageName"]]);
-          break;
-      }
-      _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
-      _applications = await _database.listApplications();
-      await _ensureTvApplicationsTop(shouldNotifyListeners: false);
-      notifyListeners();
-    });
+    _fLauncherChannel.addAppsChangedListener(_onAppsChanged);
     _initialized = true;
     notifyListeners();
+  }
+
+  Future<void> _onAppsChanged(Map<dynamic, dynamic> event) async {
+    switch (event["action"]) {
+      case "PACKAGE_ADDED":
+      case "PACKAGE_CHANGED":
+        final appInfo = event["activitiyInfo"];
+        final packageName = appInfo["packageName"] as String?;
+        if (packageName != null) {
+          _packageAddedController.add(packageName);
+        }
+        await _database.persistApps([_buildAppCompanion(appInfo)]);
+        await _autoAssignToDefaultCategories([appInfo]);
+        break;
+      case "PACKAGES_AVAILABLE":
+        final appsInfo = (event["activitiesInfo"] as List<dynamic>);
+        await _database.persistApps(appsInfo.map(_buildAppCompanion).toList());
+        await _autoAssignToDefaultCategories(appsInfo);
+        break;
+      case "PACKAGE_REMOVED":
+        await _database.deleteApps([event["packageName"]]);
+        break;
+    }
+    _categories = await _database.listCategoriesWithVisibleApps();
+    _applications = await _database.listApplications();
+    await _ensureTvApplicationsTop(shouldNotifyListeners: false);
+    notifyListeners();
+  }
+
+  /// Files newly seen, user-visible apps into their default category, creating
+  /// that category if it does not exist yet.
+  ///
+  /// Assignments are grouped per target category and inserted in a single batch,
+  /// so the (expensive, blob-loading) category listing is refreshed at most twice
+  /// instead of once per application.
+  Future<void> _autoAssignToDefaultCategories(List<dynamic> appsInfo) async {
+    final packageNamesByCategory = <String, List<String>>{};
+    for (final appInfo in appsInfo) {
+      if (appInfo["isSystemApp"] == true) {
+        continue;
+      }
+      final packageName = appInfo["packageName"]?.toString();
+      if (packageName == null || packageName == _flauncherPackageName) {
+        continue;
+      }
+      if (await _database.isAppInAnyCategory(packageName)) {
+        continue;
+      }
+      final targetCategoryName = appInfo["sideloaded"] == true ? _nonTvCategoryName : _tvCategoryName;
+      packageNamesByCategory.putIfAbsent(targetCategoryName, () => []).add(packageName);
+    }
+
+    if (packageNamesByCategory.isEmpty) {
+      return;
+    }
+
+    _categories = await _database.listCategoriesWithVisibleApps();
+    for (final entry in packageNamesByCategory.entries) {
+      final category = await _findOrCreateCategory(entry.key);
+      await _insertIntoCategory(category, entry.value);
+    }
+  }
+
+  Future<Category> _findOrCreateCategory(String name) async {
+    final existing = _categoriesWithApps.map((e) => e.category).firstWhereOrNull((c) => c.name == name);
+    if (existing != null) {
+      return existing;
+    }
+    await addCategory(name, shouldNotifyListeners: false);
+    return _categoriesWithApps.map((e) => e.category).firstWhere((c) => c.name == name);
+  }
+
+  /// Appends [packageNames] to [category] in a single batch, without refreshing
+  /// the in-memory state. Callers are responsible for refreshing when needed.
+  Future<void> _insertIntoCategory(Category category, List<String> packageNames) async {
+    if (packageNames.isEmpty) {
+      return;
+    }
+    var order = await _database.nextAppCategoryOrder(category.id) ?? 0;
+    await _database.insertAppsCategories([
+      for (final packageName in packageNames)
+        AppsCategoriesCompanion.insert(
+          categoryId: category.id,
+          appPackageName: packageName,
+          order: order++,
+        )
+    ]);
   }
 
   AppsCompanion _buildAppCompanion(dynamic data) => AppsCompanion(
@@ -173,64 +192,58 @@ class AppsService extends ChangeNotifier {
       );
 
   Future<void> _initDefaultCategories() => _database.transaction(() async {
-        final tvApplications = _applications.where((element) => element.sideloaded == false);
-        final nonTvApplications = _applications.where((element) => element.sideloaded == true);
+        final tvApplications = _applications.where((app) => !app.sideloaded).toList(growable: false);
+        final nonTvApplications = _applications.where((app) => app.sideloaded).toList(growable: false);
         if (nonTvApplications.isNotEmpty) {
-          await addCategory(
-            "Non-TV Applications",
-            shouldNotifyListeners: false,
-          );
+          await addCategory(_nonTvCategoryName, shouldNotifyListeners: false);
           final nonTvAppsCategory =
-              _categoriesWithApps.map((e) => e.category).firstWhere((element) => element.name == "Non-TV Applications");
-          for (final app in nonTvApplications) {
-            await addToCategory(
-              app,
-              nonTvAppsCategory,
-              shouldNotifyListeners: false,
-            );
-          }
+              _categoriesWithApps.map((e) => e.category).firstWhere((element) => element.name == _nonTvCategoryName);
+          await _insertIntoCategory(nonTvAppsCategory, nonTvApplications.map((app) => app.packageName).toList());
         }
         if (tvApplications.isNotEmpty) {
-          await addCategory("TV Applications", shouldNotifyListeners: false);
+          await addCategory(_tvCategoryName, shouldNotifyListeners: false);
           final tvAppsCategory =
-              _categoriesWithApps.map((e) => e.category).firstWhere((element) => element.name == "TV Applications");
-          await setCategoryType(
-            tvAppsCategory,
-            CategoryType.row,
-            shouldNotifyListeners: false,
-          );
-          for (final app in tvApplications) {
-            await addToCategory(app, tvAppsCategory, shouldNotifyListeners: false);
-          }
+              _categoriesWithApps.map((e) => e.category).firstWhere((element) => element.name == _tvCategoryName);
+          await _database.updateCategory(tvAppsCategory.id, CategoriesCompanion(type: Value(CategoryType.row)));
+          await _insertIntoCategory(tvAppsCategory, tvApplications.map((app) => app.packageName).toList());
         }
-        _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+        _categories = await _database.listCategoriesWithVisibleApps();
       });
 
+  /// Keeps the "TV Applications" category pinned first and rendered as a row.
+  ///
+  /// Runs after every package event, so it must avoid writing when nothing
+  /// changed: redundant writes force an extra full re-read of every app blob.
   Future<void> _ensureTvApplicationsTop({bool shouldNotifyListeners = true}) async {
     await _database.transaction(() async {
       final categoriesWithApps = await _database.listCategoriesWithVisibleApps();
       final categories = categoriesWithApps.map((e) => e.category).toList();
-      final tvIndex = categories.indexWhere((c) => c.name == "TV Applications");
+      final tvIndex = categories.indexWhere((c) => c.name == _tvCategoryName);
       if (tvIndex == -1) {
-        _categoriesWithApps = categoriesWithApps;
+        _categories = categoriesWithApps;
         return;
       }
 
       final tvCategory = categories.removeAt(tvIndex);
       categories.insert(0, tvCategory);
 
-      await _database.updateCategory(tvCategory.id, CategoriesCompanion(type: Value(CategoryType.row)));
-      if (tvIndex == 0) {
-        _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+      final needsTypeChange = tvCategory.type != CategoryType.row;
+      final needsReorder = tvIndex != 0;
+      if (!needsTypeChange && !needsReorder) {
+        _categories = categoriesWithApps;
         return;
       }
 
-      final orderedCategories = <CategoriesCompanion>[];
-      for (int i = 0; i < categories.length; i++) {
-        orderedCategories.add(CategoriesCompanion(id: Value(categories[i].id), order: Value(i)));
+      if (needsTypeChange) {
+        await _database.updateCategory(tvCategory.id, CategoriesCompanion(type: Value(CategoryType.row)));
       }
-      await _database.updateCategories(orderedCategories);
-      _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+      if (needsReorder) {
+        await _database.updateCategories([
+          for (int i = 0; i < categories.length; i++)
+            CategoriesCompanion(id: Value(categories[i].id), order: Value(i))
+        ]);
+      }
+      _categories = await _database.listCategoriesWithVisibleApps();
     });
     if (shouldNotifyListeners) {
       notifyListeners();
@@ -251,22 +264,22 @@ class AppsService extends ChangeNotifier {
               ))
           .toList();
 
-      final appsRemovedFromSystem = (await _database.listApplications())
-          .where((app) => !appsFromSystem.any((systemApp) => systemApp.packageName.value == app.packageName))
+      final packageNamesFromSystem = appsFromSystem.map((app) => app.packageName.value).toSet();
+      final appsRemovedFromSystem = existingApps
           .map((app) => app.packageName)
-          .toList();
+          .where((packageName) => !packageNamesFromSystem.contains(packageName));
 
-      final List<String> uninstalledApplications = [];
-      await Future.forEach(appsRemovedFromSystem, (String packageName) async {
+      final uninstalledApplications = <String>[];
+      for (final packageName in appsRemovedFromSystem) {
         if (!(await _fLauncherChannel.applicationExists(packageName))) {
           uninstalledApplications.add(packageName);
         }
-      });
+      }
 
       await _database.persistApps(appsFromSystem);
       await _database.deleteApps(uninstalledApplications);
 
-      _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+      _categories = await _database.listCategoriesWithVisibleApps();
       _applications = await _database.listApplications();
     });
     if (shouldNotifyListeners) {
@@ -289,15 +302,8 @@ class AppsService extends ChangeNotifier {
   Future<void> startAmbientMode() => _fLauncherChannel.startAmbientMode();
 
   Future<void> addToCategory(App app, Category category, {bool shouldNotifyListeners = true}) async {
-    int index = await _database.nextAppCategoryOrder(category.id) ?? 0;
-    await _database.insertAppsCategories([
-      AppsCategoriesCompanion.insert(
-        categoryId: category.id,
-        appPackageName: app.packageName,
-        order: index,
-      )
-    ]);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    await _insertIntoCategory(category, [app.packageName]);
+    _categories = await _database.listCategoriesWithVisibleApps();
     if (shouldNotifyListeners) {
       notifyListeners();
     }
@@ -305,7 +311,7 @@ class AppsService extends ChangeNotifier {
 
   Future<void> removeFromCategory(App app, Category category) async {
     await _database.deleteAppCategory(category.id, app.packageName);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
@@ -320,7 +326,7 @@ class AppsService extends ChangeNotifier {
       ));
     }
     await _database.replaceAppsCategories(orderedAppCategories);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
@@ -339,7 +345,7 @@ class AppsService extends ChangeNotifier {
     }
     await _database.insertCategory(CategoriesCompanion.insert(name: categoryName, order: 0));
     await _database.updateCategories(orderedCategories);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     if (shouldNotifyListeners) {
       notifyListeners();
     }
@@ -347,46 +353,47 @@ class AppsService extends ChangeNotifier {
 
   Future<void> renameCategory(Category category, String categoryName) async {
     await _database.updateCategory(category.id, CategoriesCompanion(name: Value(categoryName)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
   Future<void> deleteCategory(Category category) async {
     await _database.deleteCategory(category.id);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
   Future<void> moveCategory(int oldIndex, int newIndex) async {
     final categoryWithApps = _categoriesWithApps.removeAt(oldIndex);
     _categoriesWithApps.insert(newIndex, categoryWithApps);
+    _categoriesWithAppsView = null;
     final orderedCategories = <CategoriesCompanion>[];
     for (int i = 0; i < _categoriesWithApps.length; ++i) {
       final category = _categoriesWithApps[i].category;
       orderedCategories.add(CategoriesCompanion(id: Value(category.id), order: Value(i)));
     }
     await _database.updateCategories(orderedCategories);
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
   Future<void> hideApplication(App application) async {
     await _database.updateApp(application.packageName, AppsCompanion(hidden: Value(true)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     _applications = await _database.listApplications();
     notifyListeners();
   }
 
   Future<void> unHideApplication(App application) async {
     await _database.updateApp(application.packageName, AppsCompanion(hidden: Value(false)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     _applications = await _database.listApplications();
     notifyListeners();
   }
 
   Future<void> setCategoryType(Category category, CategoryType type, {bool shouldNotifyListeners = true}) async {
     await _database.updateCategory(category.id, CategoriesCompanion(type: Value(type)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     if (shouldNotifyListeners) {
       notifyListeners();
     }
@@ -394,19 +401,19 @@ class AppsService extends ChangeNotifier {
 
   Future<void> setCategorySort(Category category, CategorySort sort) async {
     await _database.updateCategory(category.id, CategoriesCompanion(sort: Value(sort)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
   Future<void> setCategoryColumnsCount(Category category, int columnsCount) async {
     await _database.updateCategory(category.id, CategoriesCompanion(columnsCount: Value(columnsCount)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 
   Future<void> setCategoryRowHeight(Category category, int rowHeight) async {
     await _database.updateCategory(category.id, CategoriesCompanion(rowHeight: Value(rowHeight)));
-    _categoriesWithApps = await _database.listCategoriesWithVisibleApps();
+    _categories = await _database.listCategoriesWithVisibleApps();
     notifyListeners();
   }
 }

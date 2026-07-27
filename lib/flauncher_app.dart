@@ -16,8 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Replace Firebase imports with local stubs
-import 'package:flauncher/stubs/firebase_stubs.dart';
 import 'package:flauncher/actions.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/app_install_service.dart';
@@ -38,13 +36,10 @@ import 'flauncher_channel.dart';
 
 class FLauncherApp extends StatelessWidget {
   final SharedPreferences _sharedPreferences;
-  final FirebaseCrashlytics? _firebaseCrashlytics;
-  final FirebaseAnalytics? _firebaseAnalytics;
   final ImagePicker _imagePicker;
   final FLauncherChannel _fLauncherChannel;
   final FLauncherDatabase _fLauncherDatabase;
   final UnsplashService? _unsplashService;
-  final FirebaseRemoteConfig? _firebaseRemoteConfig;
 
   static const MaterialColor _swatch = MaterialColor(0xFF011526, <int, Color>{
     50: Color(0xFF36A0FA),
@@ -61,22 +56,16 @@ class FLauncherApp extends StatelessWidget {
 
   FLauncherApp(
     this._sharedPreferences,
-    this._firebaseCrashlytics,
-    this._firebaseAnalytics,
     this._imagePicker,
     this._fLauncherChannel,
     this._fLauncherDatabase,
     this._unsplashService,
-    this._firebaseRemoteConfig,
   );
 
   @override
   Widget build(BuildContext context) => MultiProvider(
         providers: [
-          ChangeNotifierProvider(
-              create: (_) =>
-                  SettingsService(_sharedPreferences, _firebaseCrashlytics, _firebaseAnalytics, _firebaseRemoteConfig ?? FirebaseRemoteConfig.instance),
-              lazy: false),
+          ChangeNotifierProvider(create: (_) => SettingsService(_sharedPreferences), lazy: false),
           Provider<FLauncherDatabase>.value(value: _fLauncherDatabase),
           ChangeNotifierProvider(create: (_) => AppsService(_fLauncherChannel, _fLauncherDatabase)),
           ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences)),
