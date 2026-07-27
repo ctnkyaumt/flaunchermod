@@ -15,7 +15,9 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [x] Navigation sound feedback
 - [x] HDMI inputs page/section
 - [x] Weather widget
-- [x] Button mapper integrated (under settings)
+- [x] Button mapper integrated (under settings) — remaps remote buttons, including
+      the app shortcut buttons (Netflix, YouTube, ...). Home and Power are handled
+      by Android itself and cannot be remapped.
 - [x] Backup/restore (local only)
 - [ ] Force stop app
 
@@ -25,8 +27,12 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 
 ## Set FLauncher as default launcher
 
-### Method 1: remap the Home button
-Use the button mapper under settings (of flauncher) to remap the Home button of the remote to launch FLauncher.
+### Method 1: remap another button
+Android handles the Home button internally and never dispatches it to apps, so it
+cannot be remapped without root. Instead, use the button mapper under settings (of
+flauncher) to point a different remote button — a colour button, Guide, or one of the
+app shortcut buttons — at FLauncher. This requires enabling FLauncher's accessibility
+service, which the button mapper screen links to.
 
 ### Method 2: disable the default launcher
 **:warning: Disclaimer :warning:**

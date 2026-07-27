@@ -18,8 +18,10 @@
 
 package me.efesser.flauncher
 
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.Intent.*
+import android.content.IntentFilter
 import android.content.pm.*
 import android.content.ComponentName
 import android.graphics.Bitmap
@@ -58,6 +60,7 @@ import java.io.Serializable
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
+private const val KEY_CAPTURE_EVENT_CHANNEL = "me.efesser.flauncher/key_capture_event"
 private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
 
 class MainActivity : FlutterActivity() {
@@ -65,6 +68,7 @@ class MainActivity : FlutterActivity() {
     private var tvInputCallback: TvInputCallback? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pickBackupJsonResult: MethodChannel.Result? = null
+    private var keyCaptureReceiver: BroadcastReceiver? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -79,6 +83,10 @@ class MainActivity : FlutterActivity() {
                     "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
                     "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
+                    "isButtonMapperEnabled" -> result.success(FLauncherAccessibilityService.isEnabled(this))
+                    "openAccessibilitySettings" -> result.success(openAccessibilitySettings())
+                    "notifyButtonMappingsChanged" -> result.success(notifyButtonMappingsChanged())
+                    "setKeyCaptureMode" -> result.success(setKeyCaptureMode(call.arguments as Boolean))
                     "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
                     "startAmbientMode" -> result.success(startAmbientMode())
                     "getHdmiInputs" -> result.success(getHdmiInputs())
@@ -217,6 +225,70 @@ class MainActivity : FlutterActivity() {
                 }
             }
         })
+
+        // Carries the key code of a button pressed while the mapper is in
+        // "press a button to identify it" mode.
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, KEY_CAPTURE_EVENT_CHANNEL)
+            .setStreamHandler(object : StreamHandler {
+                override fun onListen(arguments: Any?, events: EventSink) {
+                    keyCaptureReceiver = object : BroadcastReceiver() {
+                        override fun onReceive(context: Context?, intent: Intent?) {
+                            if (intent?.action != FLauncherAccessibilityService.ACTION_KEY_CAPTURED) return
+                            events.success(
+                                mapOf(
+                                    "keyCode" to intent.getIntExtra(
+                                        FLauncherAccessibilityService.EXTRA_KEY_CODE, -1
+                                    ),
+                                    "keyLabel" to intent.getStringExtra(
+                                        FLauncherAccessibilityService.EXTRA_KEY_LABEL
+                                    ),
+                                )
+                            )
+                        }
+                    }
+                    val filter = IntentFilter(FLauncherAccessibilityService.ACTION_KEY_CAPTURED)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        registerReceiver(keyCaptureReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                    } else {
+                        registerReceiver(keyCaptureReceiver, filter)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    keyCaptureReceiver?.let {
+                        try {
+                            unregisterReceiver(it)
+                        } catch (e: IllegalArgumentException) {
+                            // Already unregistered.
+                        }
+                        keyCaptureReceiver = null
+                    }
+                }
+            })
+    }
+
+    private fun openAccessibilitySettings() = try {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Tells the running accessibility service to re-read the mapping table. */
+    private fun notifyButtonMappingsChanged(): Boolean {
+        sendBroadcast(
+            Intent(FLauncherAccessibilityService.ACTION_RELOAD_MAPPINGS).setPackage(packageName)
+        )
+        return true
+    }
+
+    private fun setKeyCaptureMode(enabled: Boolean): Boolean {
+        sendBroadcast(
+            Intent(FLauncherAccessibilityService.ACTION_SET_CAPTURE_MODE)
+                .setPackage(packageName)
+                .putExtra(FLauncherAccessibilityService.EXTRA_CAPTURE_ENABLED, enabled)
+        )
+        return true
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

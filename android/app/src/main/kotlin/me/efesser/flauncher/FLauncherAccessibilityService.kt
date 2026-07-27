@@ -1,0 +1,313 @@
+/*
+ * FLauncher
+ * Copyright (C) 2021  Étienne Fesser
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package me.efesser.flauncher
+
+import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
+import android.text.TextUtils
+import android.util.Log
+import android.view.KeyEvent
+import android.view.accessibility.AccessibilityEvent
+
+/**
+ * Intercepts remote control buttons system-wide.
+ *
+ * An accessibility service is the only way an ordinary app can see key events
+ * while another app is in the foreground. Two mechanisms are combined:
+ *
+ *  - [onKeyEvent] catches buttons that emit a key event. Returning `true`
+ *    consumes the event so the foreground app never sees it.
+ *  - [onAccessibilityEvent] catches buttons the firmware wires directly to an
+ *    app launch (Netflix, YouTube, Prime Video on some devices). Those emit no
+ *    key event at all, so the only hook is to notice the target package coming
+ *    to the foreground and launch something else instead.
+ *
+ * The mapping table is read from shared preferences rather than pushed from
+ * Dart, because the launcher's Flutter engine is not running while another app
+ * is in the foreground — which is exactly when remapping needs to work.
+ *
+ * Not interceptable here, by design of the platform: HOME and POWER are handled
+ * inside the system before dispatch and never reach an accessibility service.
+ */
+class FLauncherAccessibilityService : AccessibilityService() {
+
+    companion object {
+        private const val TAG = "FLauncherA11y"
+
+        /** Sent by the launcher after it edits the mapping table. */
+        const val ACTION_RELOAD_MAPPINGS = "me.efesser.flauncher.RELOAD_MAPPINGS"
+
+        /** Sent by the launcher to start/stop "press a button to identify it" mode. */
+        const val ACTION_SET_CAPTURE_MODE = "me.efesser.flauncher.SET_CAPTURE_MODE"
+        const val EXTRA_CAPTURE_ENABLED = "captureEnabled"
+
+        /** Broadcast back to the launcher with the button that was pressed. */
+        const val ACTION_KEY_CAPTURED = "me.efesser.flauncher.KEY_CAPTURED"
+        const val EXTRA_KEY_CODE = "keyCode"
+        const val EXTRA_SCAN_CODE = "scanCode"
+        const val EXTRA_KEY_LABEL = "keyLabel"
+
+        /** Held at least this long counts as a long press. */
+        private const val LONG_PRESS_MS = 500L
+
+        /** A second press within this window counts as a double press. */
+        private const val DOUBLE_PRESS_MS = 300L
+
+        /**
+         * Ignore a repeat of the same app-launch button within this window. The
+         * firmware often fires the launch intent more than once per press.
+         */
+        private const val REDIRECT_DEBOUNCE_MS = 1500L
+
+        /**
+         * The OK button that opened the capture dialog also produces an event.
+         * Ignore select/enter for a moment after arming so it isn't captured as
+         * the button the user meant to map.
+         */
+        private const val CAPTURE_SELECT_GRACE_MS = 1000L
+        private val SELECT_KEY_CODES = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
+
+        fun isEnabled(context: Context): Boolean {
+            val expected = "${context.packageName}/${FLauncherAccessibilityService::class.java.canonicalName}"
+            val enabled = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+            ) ?: return false
+            val splitter = TextUtils.SimpleStringSplitter(':')
+            splitter.setString(enabled)
+            while (splitter.hasNext()) {
+                if (splitter.next().equals(expected, ignoreCase = true)) return true
+            }
+            return false
+        }
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var mappings = ButtonMappingStore.Mappings()
+    private var captureMode = false
+    private var captureArmedAt = 0L
+
+    private var lastRedirectPackage: String? = null
+    private var lastRedirectAt = 0L
+
+    // Press-classification state for the button currently held down.
+    private var downAt = 0L
+    private var pendingSingle: Runnable? = null
+    private var awaitingSecondPressFor: ButtonMappingStore.Binding? = null
+
+    private val preferenceListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == ButtonMappingStore.MAPPINGS_KEY) reloadMappings()
+        }
+
+    private val commandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                ACTION_RELOAD_MAPPINGS -> reloadMappings()
+                ACTION_SET_CAPTURE_MODE -> {
+                    captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_ENABLED, false)
+                    captureArmedAt = SystemClock.elapsedRealtime()
+                    cancelPendingSingle()
+                }
+            }
+        }
+    }
+
+    private val preferences: SharedPreferences
+        get() = getSharedPreferences(ButtonMappingStore.PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        reloadMappings()
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
+        val filter = IntentFilter().apply {
+            addAction(ACTION_RELOAD_MAPPINGS)
+            addAction(ACTION_SET_CAPTURE_MODE)
+        }
+        // Not exported: only the launcher process sends these.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(commandReceiver, filter)
+        }
+        Log.d(TAG, "Button mapper connected")
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        cancelPendingSingle()
+        preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        try {
+            unregisterReceiver(commandReceiver)
+        } catch (e: IllegalArgumentException) {
+            // Never registered; nothing to do.
+        }
+        return super.onUnbind(intent)
+    }
+
+    private fun reloadMappings() {
+        mappings = ButtonMappingStore.load(this)
+        Log.d(
+            TAG,
+            "Loaded ${mappings.bindings.size} button bindings, " +
+                "${mappings.appRedirects.size} app redirects",
+        )
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (captureMode) return handleCapture(event)
+
+        val binding = mappings.resolve(event.keyCode, event.scanCode) ?: return false
+
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                // repeatCount > 0 is auto-repeat from holding the button; keep
+                // the timestamp of the original press.
+                if (event.repeatCount == 0) downAt = SystemClock.elapsedRealtime()
+            }
+            KeyEvent.ACTION_UP -> classifyAndFire(binding)
+        }
+        // Consume down and up alike, so the foreground app sees neither.
+        return true
+    }
+
+    private fun classifyAndFire(binding: ButtonMappingStore.Binding) {
+        val heldFor = SystemClock.elapsedRealtime() - downAt
+
+        // A second press landing inside the double-press window wins outright.
+        if (awaitingSecondPressFor == binding) {
+            cancelPendingSingle()
+            perform(binding.actionFor(ButtonMappingStore.Trigger.DOUBLE))
+            return
+        }
+
+        if (binding.hasLong && heldFor >= LONG_PRESS_MS) {
+            perform(binding.actionFor(ButtonMappingStore.Trigger.LONG))
+            return
+        }
+
+        // Only pay the double-press latency when a double action is configured.
+        if (!binding.hasDouble) {
+            perform(binding.actionFor(ButtonMappingStore.Trigger.SINGLE))
+            return
+        }
+
+        awaitingSecondPressFor = binding
+        val runnable = Runnable {
+            awaitingSecondPressFor = null
+            pendingSingle = null
+            perform(binding.actionFor(ButtonMappingStore.Trigger.SINGLE))
+        }
+        pendingSingle = runnable
+        handler.postDelayed(runnable, DOUBLE_PRESS_MS)
+    }
+
+    private fun cancelPendingSingle() {
+        pendingSingle?.let { handler.removeCallbacks(it) }
+        pendingSingle = null
+        awaitingSecondPressFor = null
+    }
+
+    /**
+     * Swallows everything while learning, so the button under test does not also
+     * trigger its normal behaviour, and reports it to the launcher.
+     */
+    private fun handleCapture(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_UP) return true
+        if (event.keyCode in SELECT_KEY_CODES &&
+            SystemClock.elapsedRealtime() - captureArmedAt < CAPTURE_SELECT_GRACE_MS
+        ) {
+            // This is the OK press that opened the dialog, not a real answer.
+            return true
+        }
+        broadcastCapturedKey(event)
+        return true
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (mappings.appRedirects.isEmpty()) return
+
+        val packageName = event.packageName?.toString() ?: return
+        val action = mappings.appRedirects[packageName] ?: return
+
+        val now = SystemClock.elapsedRealtime()
+        if (packageName == lastRedirectPackage && now - lastRedirectAt < REDIRECT_DEBOUNCE_MS) return
+        lastRedirectPackage = packageName
+        lastRedirectAt = now
+
+        // Send the offending app back before launching the replacement,
+        // otherwise it stays underneath on the back stack.
+        performGlobalAction(GLOBAL_ACTION_BACK)
+        perform(action)
+    }
+
+    override fun onInterrupt() {}
+
+    private fun broadcastCapturedKey(event: KeyEvent) {
+        val intent = Intent(ACTION_KEY_CAPTURED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_KEY_CODE, event.keyCode)
+            putExtra(EXTRA_SCAN_CODE, event.scanCode)
+            putExtra(EXTRA_KEY_LABEL, KeyEvent.keyCodeToString(event.keyCode))
+        }
+        sendBroadcast(intent)
+    }
+
+    private fun perform(action: ButtonMappingStore.Action?) {
+        when (action) {
+            is ButtonMappingStore.Action.LaunchApp -> launchPackage(action.packageName)
+            ButtonMappingStore.Action.OpenFlauncher -> launchPackage(packageName)
+            ButtonMappingStore.Action.OpenSettings -> startActivitySafely(
+                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            // Block, or nothing bound to this trigger: the event was already
+            // consumed, which is the whole point.
+            ButtonMappingStore.Action.Block, null -> Unit
+        }
+    }
+
+    private fun launchPackage(target: String) {
+        val intent = packageManager.getLeanbackLaunchIntentForPackage(target)
+            ?: packageManager.getLaunchIntentForPackage(target)
+        if (intent == null) {
+            Log.w(TAG, "No launch intent for $target")
+            return
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        startActivitySafely(intent)
+    }
+
+    private fun startActivitySafely(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not start $intent", e)
+        }
+    }
+}

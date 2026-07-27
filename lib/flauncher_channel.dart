@@ -24,6 +24,7 @@ class FLauncherChannel {
   static const _methodChannel = MethodChannel('me.efesser.flauncher/method');
   static const _eventChannel = EventChannel('me.efesser.flauncher/event');
   static const _hdmiEventChannel = EventChannel('me.efesser.flauncher/hdmi_event');
+  static const _keyCaptureEventChannel = EventChannel('me.efesser.flauncher/key_capture_event');
 
   Future<List<dynamic>> getApplications() async => (await _methodChannel.invokeListMethod('getApplications'))!;
 
@@ -93,4 +94,22 @@ class FLauncherChannel {
 
   Future<bool> shareFile(String path) async =>
       (await _methodChannel.invokeMethod('shareFile', path)) ?? false;
+
+  /// Whether the accessibility service that intercepts remote buttons is on.
+  Future<bool> isButtonMapperEnabled() async =>
+      (await _methodChannel.invokeMethod('isButtonMapperEnabled')) ?? false;
+
+  Future<bool> openAccessibilitySettings() async =>
+      (await _methodChannel.invokeMethod('openAccessibilitySettings')) ?? false;
+
+  /// Asks the running service to re-read the mapping table.
+  Future<void> notifyButtonMappingsChanged() async =>
+      await _methodChannel.invokeMethod('notifyButtonMappingsChanged');
+
+  /// While capture mode is on, the service swallows every button and reports
+  /// its key code on [keyCaptureStream] instead of acting on it.
+  Future<void> setKeyCaptureMode(bool enabled) async =>
+      await _methodChannel.invokeMethod('setKeyCaptureMode', enabled);
+
+  Stream<dynamic> get keyCaptureStream => _keyCaptureEventChannel.receiveBroadcastStream();
 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="button_mapper_service_summary">Remap remote control buttons</string>
+    <string name="button_mapper_service_description">Lets FLauncher remap the buttons on your remote, including the app shortcut buttons. FLauncher only reads which button was pressed so it can run the action you assigned to it; no screen content is read or collected.</string>
+</resources>
