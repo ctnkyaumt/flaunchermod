@@ -248,6 +248,12 @@ class MainActivity : FlutterActivity() {
                                     "keyLabel" to intent.getStringExtra(
                                         FLauncherAccessibilityService.EXTRA_KEY_LABEL
                                     ),
+                                    "keyAction" to intent.getIntExtra(
+                                        FLauncherAccessibilityService.EXTRA_KEY_ACTION, -1
+                                    ),
+                                    "device" to intent.getStringExtra(
+                                        FLauncherAccessibilityService.EXTRA_DEVICE
+                                    ),
                                 )
                             )
                         }

@@ -16,6 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:async';
+
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flutter/material.dart';
@@ -75,6 +77,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       icon: Icon(Icons.add),
                       label: Text("Map a button"),
                       onPressed: () => _addKeyMapping(context, service),
+                    ),
+                    TextButton.icon(
+                      icon: Icon(Icons.bug_report_outlined),
+                      label: Text("Test remote buttons"),
+                      onPressed: () => _testButtons(context, service),
                     ),
                     _hint(
                       context,
@@ -297,6 +304,20 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     }
   }
 
+  Future<void> _testButtons(BuildContext context, ButtonMappingService service) async {
+    if (!service.serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Turn on the accessibility service first")),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ButtonTestDialog(service: service),
+    );
+  }
+
   Future<void> _addAppRedirect(BuildContext context, ButtonMappingService service) async {
     final source = await _pickApplication(context, title: "Which app does the button open?");
     if (source == null || !mounted) {
@@ -431,6 +452,98 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       ),
     );
   }
+}
+
+/// Lists every key event the accessibility service can see.
+///
+/// The point is to answer one question: does a given remote button reach an
+/// app at all? Buttons the firmware handles internally — Home, Power, and on
+/// many boxes the Netflix and Prime buttons — never show up here, and no
+/// amount of mapping will catch them.
+class _ButtonTestDialog extends StatefulWidget {
+  final ButtonMappingService service;
+
+  const _ButtonTestDialog({required this.service});
+
+  @override
+  State<_ButtonTestDialog> createState() => _ButtonTestDialogState();
+}
+
+class _ButtonTestDialogState extends State<_ButtonTestDialog> {
+  final List<String> _lines = [];
+  StreamSubscription<dynamic>? _subscription;
+  Timer? _keepArmed;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = widget.service.keyEvents.listen(_onEvent);
+    widget.service.setCaptureMode(true);
+    // The service disarms itself after 30s so a crashed dialog cannot leave the
+    // remote dead; keep telling it we are still here.
+    _keepArmed = Timer.periodic(
+      Duration(seconds: 15),
+      (_) => widget.service.setCaptureMode(true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _keepArmed?.cancel();
+    _subscription?.cancel();
+    widget.service.setCaptureMode(false);
+    super.dispose();
+  }
+
+  void _onEvent(dynamic event) {
+    if (event is! Map) {
+      return;
+    }
+    final action = event["keyAction"] == 0 ? "down" : "up";
+    final device = (event["device"] as String?) ?? "";
+    setState(() {
+      _lines.insert(
+        0,
+        "$action  keyCode ${event["keyCode"]}  scanCode ${event["scanCode"]}"
+        "${device.isEmpty ? "" : "  ($device)"}",
+      );
+      if (_lines.length > 40) {
+        _lines.removeLast();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text("Press buttons on the remote"),
+        content: SizedBox(
+          width: 520,
+          height: 260,
+          child: _lines.isEmpty
+              ? Center(
+                  child: Text(
+                    "Nothing yet. A button that prints nothing here is handled by "
+                    "the firmware and cannot be mapped by any app.",
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _lines.length,
+                  itemBuilder: (_, index) => Text(
+                    _lines[index],
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            autofocus: true,
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text("Done"),
+          ),
+        ],
+      );
 }
 
 /// A [SimpleDialog] row that can take focus on its own.

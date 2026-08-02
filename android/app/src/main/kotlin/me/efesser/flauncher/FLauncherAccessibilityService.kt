@@ -72,6 +72,8 @@ class FLauncherAccessibilityService : AccessibilityService() {
         const val EXTRA_KEY_CODE = "keyCode"
         const val EXTRA_SCAN_CODE = "scanCode"
         const val EXTRA_KEY_LABEL = "keyLabel"
+        const val EXTRA_KEY_ACTION = "keyAction"
+        const val EXTRA_DEVICE = "device"
 
         /**
          * Held at least this long counts as a long press. The action fires as
@@ -331,15 +333,16 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * trigger its normal behaviour, and reports it to the launcher.
      */
     private fun handleCapture(event: KeyEvent): Boolean {
-        // Report on the way down. Some remote buttons only ever send a down,
-        // and waiting for the up meant they could never be identified at all.
-        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0) return true
+        // Auto-repeat from a held button says nothing new.
+        if (event.repeatCount > 0) return true
         if (event.keyCode in SELECT_KEY_CODES &&
             SystemClock.elapsedRealtime() - captureArmedAt < CAPTURE_SELECT_GRACE_MS
         ) {
             // This is the OK press that opened the dialog, not a real answer.
             return true
         }
+        // Both edges are reported: the button test screen shows everything the
+        // service can see, and some remote buttons only ever send a down.
         broadcastCapturedKey(event)
         return true
     }
@@ -365,11 +368,18 @@ class FLauncherAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     private fun broadcastCapturedKey(event: KeyEvent) {
+        Log.d(
+            TAG,
+            "captured action=${event.action} keyCode=${event.keyCode} " +
+                "scanCode=${event.scanCode} device=${event.device?.name}",
+        )
         val intent = Intent(ACTION_KEY_CAPTURED).apply {
             setPackage(packageName)
             putExtra(EXTRA_KEY_CODE, event.keyCode)
             putExtra(EXTRA_SCAN_CODE, event.scanCode)
             putExtra(EXTRA_KEY_LABEL, KeyEvent.keyCodeToString(event.keyCode))
+            putExtra(EXTRA_KEY_ACTION, event.action)
+            putExtra(EXTRA_DEVICE, event.device?.name ?: "")
         }
         sendBroadcast(intent)
     }

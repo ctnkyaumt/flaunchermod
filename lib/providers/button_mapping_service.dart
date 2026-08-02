@@ -417,6 +417,12 @@ class ButtonMappingService extends ChangeNotifier {
       });
   }
 
+  /// Every key event the accessibility service sees while capture mode is on.
+  /// Used by the button test screen to show what a remote actually emits.
+  Stream<dynamic> get keyEvents => _channel.keyCaptureStream;
+
+  Future<void> setCaptureMode(bool enabled) => _channel.setKeyCaptureMode(enabled);
+
   /// Puts the service into capture mode and completes with the first button
   /// pressed, or null if [timeout] elapses first.
   ///
