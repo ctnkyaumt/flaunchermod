@@ -273,11 +273,39 @@ class MainActivity : FlutterActivity() {
             })
     }
 
-    private fun openAccessibilitySettings() = try {
-        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(FLAG_ACTIVITY_NEW_TASK))
-        true
-    } catch (e: Exception) {
-        false
+    /**
+     * Opens whichever accessibility screen this device actually has.
+     *
+     * `ACTION_ACCESSIBILITY_SETTINGS` is missing on plenty of TV boxes, whose
+     * settings app is a cut-down build, so fall back to the Android TV activity
+     * by name and finally to the settings root rather than doing nothing.
+     */
+    private fun openAccessibilitySettings(): Boolean {
+        val candidates = listOf(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.tv.settings",
+                    "com.android.tv.settings.system.AccessibilitySettingsActivity",
+                )
+            ),
+            Intent(Intent.ACTION_MAIN).setComponent(
+                ComponentName(
+                    "com.android.tv.settings",
+                    "com.android.tv.settings.accessibility.AccessibilityActivity",
+                )
+            ),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        for (intent in candidates) {
+            try {
+                startActivity(intent.addFlags(FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (e: Exception) {
+                // Not present on this device; try the next one.
+            }
+        }
+        return false
     }
 
     /** Tells the running accessibility service to re-read the mapping table. */
@@ -476,26 +504,52 @@ class MainActivity : FlutterActivity() {
      */
     @Suppress("DEPRECATION")
     private fun getMappableApplications(): List<Map<String, Serializable?>> {
-        // Same value under both names; the newer one only exists from API 24.
+        // MATCH_DISABLED_COMPONENTS alone misses the preloads that sit in the
+        // DISABLED_UNTIL_USED state, which is how most TV firmware ships the
+        // streaming apps people then turn off. Same values under both names;
+        // the newer ones only exist from API 24.
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            PackageManager.MATCH_DISABLED_COMPONENTS
+            PackageManager.MATCH_DISABLED_COMPONENTS or
+                PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS or
+                PackageManager.MATCH_UNINSTALLED_PACKAGES
         } else {
-            PackageManager.GET_DISABLED_COMPONENTS
+            PackageManager.GET_DISABLED_COMPONENTS or PackageManager.GET_UNINSTALLED_PACKAGES
         }
         val self = getPackageName()
         return packageManager.getInstalledApplications(flags)
             .asSequence()
             .filter { it.packageName != self }
-            .filter { !it.enabled || applicationExists(it.packageName) }
-            .map {
+            .map { it to !isDisabled(it) }
+            // Launchable apps, plus every disabled one — the disabled apps are
+            // the whole point, and they resolve no launcher intent.
+            .filter { (info, enabled) -> !enabled || applicationExists(info.packageName) }
+            .map { (info, enabled) ->
                 mapOf<String, Serializable?>(
-                    "name" to it.loadLabel(packageManager).toString(),
-                    "packageName" to it.packageName,
-                    "enabled" to it.enabled,
+                    "name" to info.loadLabel(packageManager).toString(),
+                    "packageName" to info.packageName,
+                    "enabled" to enabled,
                 )
             }
             .sortedBy { (it["name"] as String).lowercase() }
             .toList()
+    }
+
+    /**
+     * Whether the user has switched this app off.
+     *
+     * [ApplicationInfo.enabled] misses `DISABLED_UNTIL_USED`, the state most TV
+     * preloads sit in, so ask for the enabled setting as well.
+     */
+    private fun isDisabled(info: ApplicationInfo): Boolean {
+        if (!info.enabled) return true
+        val setting = try {
+            packageManager.getApplicationEnabledSetting(info.packageName)
+        } catch (e: IllegalArgumentException) {
+            return false
+        }
+        return setting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED ||
+            setting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER ||
+            setting == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
     }
 
     private fun applicationExists(packageName: String) = try {

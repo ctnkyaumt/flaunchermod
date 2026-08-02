@@ -147,7 +147,19 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
               EnsureVisible(
                 alignment: 0.5,
                 child: OutlinedButton(
-                  onPressed: service.openAccessibilitySettings,
+                  onPressed: () async {
+                    if (await service.openAccessibilitySettings() || !mounted) {
+                      return;
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          "No settings screen answered. Open Settings > Accessibility yourself "
+                          "and turn on FLauncher there.",
+                        ),
+                      ),
+                    );
+                  },
                   child: Text("Open accessibility settings"),
                 ),
               ),
@@ -348,6 +360,19 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     final app = await _pickApplication(context, title: "Open which app?");
     if (app == null) {
       return null;
+    }
+    // Android refuses to start a disabled or absent app, so the binding is
+    // saved but will do nothing until that is sorted out.
+    if (mounted && !(app.installed && app.enabled)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            app.installed
+                ? "${app.name} is disabled. Enable it in Android settings or the button will do nothing."
+                : "${app.name} is not installed. Install it or the button will do nothing.",
+          ),
+        ),
+      );
     }
     return ButtonAction(
       type: ButtonActionType.launchApp,

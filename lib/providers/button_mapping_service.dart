@@ -120,9 +120,11 @@ const _knownScanCodes = <int, String>{
 /// target may also be installed later.
 const _remoteButtonApps = <String, String>{
   "com.netflix.ninja": "Netflix",
+  "com.netflix.mediaclient": "Netflix",
   "com.google.android.youtube.tv": "YouTube",
   "com.google.android.youtube.tvmusic": "YouTube Music",
   "com.amazon.amazonvideo.livingroom": "Prime Video",
+  "com.amazon.avod.thirdpartyclient": "Prime Video",
   "com.disney.disneyplus": "Disney+",
   "com.wbd.stream": "HBO Max",
   "com.spotify.tv.android": "Spotify",
@@ -373,7 +375,8 @@ class ButtonMappingService extends ChangeNotifier {
     }
   }
 
-  Future<void> openAccessibilitySettings() => _channel.openAccessibilitySettings();
+  /// False when the device has no settings screen we could reach.
+  Future<bool> openAccessibilitySettings() => _channel.openAccessibilitySettings();
 
   /// Everything a button can be pointed at: every installed app including the
   /// disabled ones, plus the well-known remote apps that are missing entirely.
@@ -396,11 +399,14 @@ class ButtonMappingService extends ChangeNotifier {
       debugPrint("ButtonMappingService: could not list applications - $e");
     }
 
+    // Only fill in a well-known app when the device really does not have it,
+    // under any of its package names.
+    final presentNames = targets.values.map((target) => target.name.toLowerCase()).toSet();
     _remoteButtonApps.forEach((packageName, name) {
-      targets.putIfAbsent(
-        packageName,
-        () => AppTarget(packageName: packageName, name: name, installed: false),
-      );
+      if (targets.containsKey(packageName) || presentNames.contains(name.toLowerCase())) {
+        return;
+      }
+      targets[packageName] = AppTarget(packageName: packageName, name: name, installed: false);
     });
 
     // Installed first, then the ones that are only known by name.
