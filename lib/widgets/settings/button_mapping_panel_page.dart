@@ -88,7 +88,8 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       context,
                       "Netflix, YouTube and similar buttons open their app directly "
                       "without sending a key press. Pick the app the button opens to "
-                      "send it somewhere else instead.",
+                      "send it somewhere else instead. Leave that app enabled — a "
+                      "disabled app never opens, so there is no launch to catch.",
                     ),
                     ...service.appRedirects.map((redirect) => _redirectTile(context, service, redirect)),
                     TextButton.icon(
@@ -300,6 +301,20 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     final source = await _pickApplication(context, title: "Which app does the button open?");
     if (source == null || !mounted) {
       return;
+    }
+    // A redirect fires when the app comes to the foreground. A disabled app
+    // never gets that far, so the button does nothing and there is nothing to
+    // catch — the app has to be left enabled for this to work at all.
+    if (source.installed && !source.enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "${source.name} is disabled, so its button opens nothing and there is no launch "
+            "to redirect. Re-enable it in Android settings and this will take over instead.",
+          ),
+          duration: Duration(seconds: 8),
+        ),
+      );
     }
     final action = await _pickAction(context);
     if (action != null && !identical(action, _clearAction)) {

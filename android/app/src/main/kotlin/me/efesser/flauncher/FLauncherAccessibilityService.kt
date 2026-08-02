@@ -331,7 +331,9 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * trigger its normal behaviour, and reports it to the launcher.
      */
     private fun handleCapture(event: KeyEvent): Boolean {
-        if (event.action != KeyEvent.ACTION_UP) return true
+        // Report on the way down. Some remote buttons only ever send a down,
+        // and waiting for the up meant they could never be identified at all.
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0) return true
         if (event.keyCode in SELECT_KEY_CODES &&
             SystemClock.elapsedRealtime() - captureArmedAt < CAPTURE_SELECT_GRACE_MS
         ) {
