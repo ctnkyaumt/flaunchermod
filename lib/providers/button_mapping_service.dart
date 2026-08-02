@@ -399,11 +399,12 @@ class ButtonMappingService extends ChangeNotifier {
       debugPrint("ButtonMappingService: could not list applications - $e");
     }
 
-    // Only fill in a well-known app when the device really does not have it,
-    // under any of its package names.
-    final presentNames = targets.values.map((target) => target.name.toLowerCase()).toSet();
+    // Only fill in a well-known app when the device really does not have it.
+    // Tracked by name as we go, so the several package names one app ships
+    // under do not each add their own entry.
+    final seenNames = targets.values.map((target) => target.name.toLowerCase()).toSet();
     _remoteButtonApps.forEach((packageName, name) {
-      if (targets.containsKey(packageName) || presentNames.contains(name.toLowerCase())) {
+      if (targets.containsKey(packageName) || !seenNames.add(name.toLowerCase())) {
         return;
       }
       targets[packageName] = AppTarget(packageName: packageName, name: name, installed: false);

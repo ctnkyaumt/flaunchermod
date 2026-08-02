@@ -538,7 +538,10 @@ class _ButtonTestDialogState extends State<_ButtonTestDialog> {
         ),
         actions: [
           TextButton(
-            autofocus: true,
+            // Deliberately not autofocused. The OK press that opened this
+            // dialog repeats while held, and with Done under the cursor that
+            // turned into an open/close loop. Back closes it; so does this,
+            // once the user has moved to it.
             onPressed: () => Navigator.of(context).pop(),
             child: Text("Done"),
           ),

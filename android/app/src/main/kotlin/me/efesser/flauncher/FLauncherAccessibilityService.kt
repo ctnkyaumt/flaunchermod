@@ -333,6 +333,11 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * trigger its normal behaviour, and reports it to the launcher.
      */
     private fun handleCapture(event: KeyEvent): Boolean {
+        // Back has to keep working, otherwise the dialog that armed capture mode
+        // cannot be closed — capture swallows everything else. The cost is that
+        // Back itself cannot be mapped.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) return false
+
         // Auto-repeat from a held button says nothing new.
         if (event.repeatCount > 0) return true
         if (event.keyCode in SELECT_KEY_CODES &&

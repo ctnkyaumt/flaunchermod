@@ -516,28 +516,46 @@ class MainActivity : FlutterActivity() {
         // the newer ones only exist from API 24.
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             PackageManager.MATCH_DISABLED_COMPONENTS or
-                PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS or
-                PackageManager.MATCH_UNINSTALLED_PACKAGES
+                PackageManager.MATCH_DISABLED_UNTIL_USED_COMPONENTS
         } else {
-            PackageManager.GET_DISABLED_COMPONENTS or PackageManager.GET_UNINSTALLED_PACKAGES
+            PackageManager.GET_DISABLED_COMPONENTS
         }
         val self = getPackageName()
-        return packageManager.getInstalledApplications(flags)
-            .asSequence()
-            .filter { it.packageName != self }
-            .map { it to !isDisabled(it) }
-            // Launchable apps, plus every disabled one — the disabled apps are
-            // the whole point, and they resolve no launcher intent.
-            .filter { (info, enabled) -> !enabled || applicationExists(info.packageName) }
-            .map { (info, enabled) ->
-                mapOf<String, Serializable?>(
-                    "name" to info.loadLabel(packageManager).toString(),
-                    "packageName" to info.packageName,
-                    "enabled" to enabled,
+        val byPackage = LinkedHashMap<String, Map<String, Serializable?>>()
+
+        // Launchable apps first, from the same cheap query the launcher already
+        // uses. This part must not depend on the bulk call below, which returns
+        // every package on the device and can blow the binder transaction limit
+        // on a TV with a large system image.
+        for (activityInfo in queryIntentActivities(false) + queryIntentActivities(true)) {
+            if (activityInfo.packageName == self) continue
+            byPackage.getOrPut(activityInfo.packageName) {
+                mapOf(
+                    "name" to activityInfo.loadLabel(packageManager).toString(),
+                    "packageName" to activityInfo.packageName,
+                    "enabled" to true,
                 )
             }
-            .sortedBy { (it["name"] as String).lowercase() }
-            .toList()
+        }
+
+        // Then the disabled ones, which resolve no launcher intent and so are
+        // invisible above. Best effort: if this fails the list is still usable.
+        try {
+            for (info in packageManager.getInstalledApplications(flags)) {
+                if (info.packageName == self || byPackage.containsKey(info.packageName)) continue
+                if (!isDisabled(info)) continue
+                byPackage[info.packageName] = mapOf(
+                    "name" to runCatching { info.loadLabel(packageManager).toString() }
+                        .getOrDefault(info.packageName),
+                    "packageName" to info.packageName,
+                    "enabled" to false,
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("FLauncher", "Could not list disabled applications", e)
+        }
+
+        return byPackage.values.sortedBy { (it["name"] as String).lowercase() }
     }
 
     /**
