@@ -16,42 +16,20 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
   final Set<String> _installedPackages = {};
   final Set<String> _installedAppNames = {};
-  final List<FocusNode> _focusNodes = [];
+
+  /// When the page was opened.
+  ///
+  /// The OK press that opens this page keeps being delivered after the first
+  /// row has taken focus, which started an install nobody asked for. Ignore
+  /// activations for a moment so that press cannot land on a button.
+  late final DateTime _openedAt;
+  static const _openGrace = Duration(milliseconds: 800);
 
   @override
   void initState() {
     super.initState();
-    _focusNodes.addAll(List.generate(_apps.length, (_) => FocusNode()));
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestFocus();
-    });
+    _openedAt = DateTime.now();
     _refreshInstalledPackages();
-  }
-
-  @override
-  void dispose() {
-    for (var node in _focusNodes) {
-      node.dispose();
-    }
-    super.dispose();
-  }
-
-  void _requestFocus() {
-    if (!mounted) return;
-    // Attempt to focus the first available (not installed) app button
-    for (int i = 0; i < _apps.length; i++) {
-      if (!_isInstalled(_apps[i]) && !_isInstalledByName(_apps[i])) {
-        if (_focusNodes[i].canRequestFocus) {
-          _focusNodes[i].requestFocus();
-          return;
-        }
-      }
-    }
-    // Fallback: focus the first item if possible
-    if (_focusNodes.isNotEmpty && _focusNodes[0].canRequestFocus) {
-      _focusNodes[0].requestFocus();
-    }
   }
 
   bool _isInstalled(AppSpec app) {
@@ -107,7 +85,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
           }
         }
       });
-      WidgetsBinding.instance.addPostFrameCallback((_) => _requestFocus());
     } catch (_) {}
   }
 
@@ -116,6 +93,26 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
     // After install (or attempt), refresh installed packages
     await _refreshInstalledPackages();
   }
+
+  /// Every row stays pressable so the remote can move through the whole list;
+  /// the rows that have nothing to do just say so.
+  void _onRowPressed(AppSpec app, {required bool installed, required bool anyBusy}) {
+    if (DateTime.now().difference(_openedAt) < _openGrace) {
+      return;
+    }
+    if (anyBusy) {
+      _say("Another install is already running");
+      return;
+    }
+    if (installed) {
+      _say("${app.name} is already installed");
+      return;
+    }
+    _startInstall(app);
+  }
+
+  void _say(String message) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -149,8 +146,6 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
               final isBusy = activeAppName == name;
               final anyBusy = activeAppName != null;
 
-              final onPressed = (installed || anyBusy) ? null : () => _startInstall(app);
-              
               String statusText = serviceStatus ?? "Idle";
               if (installed) {
                 statusText = "Already installed";
@@ -176,9 +171,12 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
                       ],
                     ),
                     trailing: ElevatedButton(
-                      focusNode: _focusNodes[index],
+                      autofocus: index == 0,
                       child: Text(buttonText),
-                      onPressed: onPressed,
+                      // Never null: a disabled button cannot take focus, which
+                      // made the list stop dead at the first installed app.
+                      onPressed: () =>
+                          _onRowPressed(app, installed: installed, anyBusy: anyBusy),
                     ),
                   ),
                 ),

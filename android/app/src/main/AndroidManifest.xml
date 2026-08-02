@@ -49,6 +49,14 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.BROADCAST_STICKY" />
 
+    <!--
+      Disabled apps match no intent filter, so the <queries> block below cannot
+      see them and the button mapper would have nothing to offer for exactly the
+      apps people turn off. A launcher needs the full package list anyway.
+    -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+                     tools:ignore="QueryAllPackagesPermission" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

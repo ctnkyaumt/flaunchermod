@@ -16,8 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'package:flauncher/database.dart';
-import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flutter/material.dart';
@@ -358,9 +356,12 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     );
   }
 
-  Future<App?> _pickApplication(BuildContext context, {required String title}) {
-    final applications = context.read<AppsService>().applications;
-    return showDialog<App>(
+  Future<AppTarget?> _pickApplication(BuildContext context, {required String title}) async {
+    final applications = await context.read<ButtonMappingService>().mappableApplications();
+    if (!mounted || applications.isEmpty) {
+      return null;
+    }
+    return showDialog<AppTarget>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: Text(title),
@@ -373,7 +374,16 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                 child: _DialogOption(
                   autofocus: entry.key == 0,
                   onPressed: () => Navigator.of(dialogContext).pop(entry.value),
-                  child: Text(entry.value.name),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(entry.value.name),
+                      Text(
+                        entry.value.status,
+                        style: Theme.of(dialogContext).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )

@@ -102,6 +102,10 @@ class FLauncherChannel {
   Future<bool> openAccessibilitySettings() async =>
       (await _methodChannel.invokeMethod('openAccessibilitySettings')) ?? false;
 
+  /// Everything that can be a button mapping target, disabled apps included.
+  Future<List<dynamic>> getMappableApplications() async =>
+      (await _methodChannel.invokeListMethod('getMappableApplications')) ?? [];
+
   /// Asks the running service to re-read the mapping table.
   Future<void> notifyButtonMappingsChanged() async =>
       await _methodChannel.invokeMethod('notifyButtonMappingsChanged');

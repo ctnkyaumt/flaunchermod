@@ -113,6 +113,51 @@ const _knownScanCodes = <int, String>{
   0x000c0221: "Voice assistant",
 };
 
+/// Apps that TV remotes commonly carry a dedicated button for.
+///
+/// Offered as mapping targets whether or not they are installed: a button that
+/// launches an app you removed is exactly the button worth remapping, and the
+/// target may also be installed later.
+const _remoteButtonApps = <String, String>{
+  "com.netflix.ninja": "Netflix",
+  "com.google.android.youtube.tv": "YouTube",
+  "com.google.android.youtube.tvmusic": "YouTube Music",
+  "com.amazon.amazonvideo.livingroom": "Prime Video",
+  "com.disney.disneyplus": "Disney+",
+  "com.wbd.stream": "HBO Max",
+  "com.spotify.tv.android": "Spotify",
+  "com.apple.atve.androidtv.appletv": "Apple TV",
+  "tv.twitch.android.app": "Twitch",
+  "com.plexapp.android": "Plex",
+  "tv.wuaki": "Rakuten TV",
+  "com.google.android.videos": "Google TV",
+};
+
+/// An app that a button can be pointed at.
+class AppTarget {
+  final String packageName;
+  final String name;
+
+  /// False for the well-known remote apps that are not on this device.
+  final bool installed;
+
+  /// False when the app is installed but switched off in Android settings.
+  final bool enabled;
+
+  const AppTarget({
+    required this.packageName,
+    required this.name,
+    this.installed = true,
+    this.enabled = true,
+  });
+
+  String get status {
+    if (!installed) return "Not installed";
+    if (!enabled) return "Disabled";
+    return packageName;
+  }
+}
+
 /// A remote button and the actions bound to it.
 class KeyMapping {
   final int keyCode;
@@ -329,6 +374,42 @@ class ButtonMappingService extends ChangeNotifier {
   }
 
   Future<void> openAccessibilitySettings() => _channel.openAccessibilitySettings();
+
+  /// Everything a button can be pointed at: every installed app including the
+  /// disabled ones, plus the well-known remote apps that are missing entirely.
+  Future<List<AppTarget>> mappableApplications() async {
+    final targets = <String, AppTarget>{};
+    try {
+      for (final entry in await _channel.getMappableApplications()) {
+        if (entry is! Map) continue;
+        final packageName = entry["packageName"];
+        if (packageName is! String || packageName.isEmpty) continue;
+        targets[packageName] = AppTarget(
+          packageName: packageName,
+          name: (entry["name"] as String?)?.trim().isNotEmpty == true
+              ? entry["name"] as String
+              : packageName,
+          enabled: entry["enabled"] as bool? ?? true,
+        );
+      }
+    } catch (e) {
+      debugPrint("ButtonMappingService: could not list applications - $e");
+    }
+
+    _remoteButtonApps.forEach((packageName, name) {
+      targets.putIfAbsent(
+        packageName,
+        () => AppTarget(packageName: packageName, name: name, installed: false),
+      );
+    });
+
+    // Installed first, then the ones that are only known by name.
+    return targets.values.toList()
+      ..sort((a, b) {
+        if (a.installed != b.installed) return a.installed ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+  }
 
   /// Puts the service into capture mode and completes with the first button
   /// pressed, or null if [timeout] elapses first.

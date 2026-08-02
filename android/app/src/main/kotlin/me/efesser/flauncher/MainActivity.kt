@@ -84,6 +84,7 @@ class MainActivity : FlutterActivity() {
                     "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "isButtonMapperEnabled" -> result.success(FLauncherAccessibilityService.isEnabled(this))
+                    "getMappableApplications" -> result.success(getMappableApplications())
                     "openAccessibilitySettings" -> result.success(openAccessibilitySettings())
                     "notifyButtonMappingsChanged" -> result.success(notifyButtonMappingsChanged())
                     "setKeyCaptureMode" -> result.success(setKeyCaptureMode(call.arguments as Boolean))
@@ -462,6 +463,39 @@ class MainActivity : FlutterActivity() {
             ?: return packageManager.getLaunchIntentForPackage(packageName)
                 ?.resolveActivityInfo(packageManager, 0)
                 ?.let { buildAppMap(it, true) }
+    }
+
+    /**
+     * Every app worth offering as a button mapping target.
+     *
+     * [getApplications] only returns what resolves a launcher intent, which
+     * leaves out disabled apps — and the apps a remote has a dedicated button
+     * for are exactly the ones people disable. Ask the package manager for the
+     * disabled components too, then keep anything launchable plus anything
+     * disabled.
+     */
+    @Suppress("DEPRECATION")
+    private fun getMappableApplications(): List<Map<String, Serializable?>> {
+        // Same value under both names; the newer one only exists from API 24.
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            PackageManager.MATCH_DISABLED_COMPONENTS
+        } else {
+            PackageManager.GET_DISABLED_COMPONENTS
+        }
+        val self = getPackageName()
+        return packageManager.getInstalledApplications(flags)
+            .asSequence()
+            .filter { it.packageName != self }
+            .filter { !it.enabled || applicationExists(it.packageName) }
+            .map {
+                mapOf<String, Serializable?>(
+                    "name" to it.loadLabel(packageManager).toString(),
+                    "packageName" to it.packageName,
+                    "enabled" to it.enabled,
+                )
+            }
+            .sortedBy { (it["name"] as String).lowercase() }
+            .toList()
     }
 
     private fun applicationExists(packageName: String) = try {
