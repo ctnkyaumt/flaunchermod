@@ -53,6 +53,12 @@ class CategoryRow extends StatelessWidget {
                   child: ListView.custom(
                     padding: EdgeInsets.all(8),
                     scrollDirection: Axis.horizontal,
+                    // Build every card, not just the visible ones. The traversal
+                    // policy wraps left/right by looking at the focus nodes that
+                    // exist, so with a lazy list the wrap landed on the last card
+                    // that happened to be built rather than the last card in the
+                    // category.
+                    cacheExtent: double.infinity,
                     childrenDelegate: SliverChildBuilderDelegate(
                       (context, index) => EnsureVisible(
                         key: Key("${category.id}-${applications[index].packageName}"),

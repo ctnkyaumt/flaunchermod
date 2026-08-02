@@ -17,18 +17,16 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   final Set<String> _installedPackages = {};
   final Set<String> _installedAppNames = {};
 
-  /// When the page was opened.
+  /// False until the installed-app scan has answered.
   ///
-  /// The OK press that opens this page keeps being delivered after the first
-  /// row has taken focus, which started an install nobody asked for. Ignore
-  /// activations for a moment so that press cannot land on a button.
-  late final DateTime _openedAt;
-  static const _openGrace = Duration(milliseconds: 800);
+  /// Nothing focusable is shown before then: the rows would all read "Install",
+  /// and the OK press that opened this page is still queued behind the platform
+  /// call, so it landed on whichever row had taken focus.
+  bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    _openedAt = DateTime.now();
     _refreshInstalledPackages();
   }
 
@@ -43,49 +41,46 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   String _normalizeAppName(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 
   Future<void> _refreshInstalledPackages() async {
+    var installed = <String>{};
+    var namesFromList = <String>{};
     try {
-      final channel = FLauncherChannel();
-      final apps = await channel.getApplications();
-      final packagesFromList = apps
+      // One lightweight call. getApplications() ships every banner and icon
+      // over the channel and the per-app applicationExists() calls added a
+      // round trip each, which is what made the page sit on "Install" for a
+      // second before correcting itself.
+      final apps = await FLauncherChannel().getMappableApplications();
+      installed = apps
           .whereType<Map>()
           .map((e) => e["packageName"])
           .whereType<String>()
           .toSet();
-      final namesFromList = apps
+      namesFromList = apps
           .whereType<Map>()
           .map((e) => e["name"])
           .whereType<String>()
           .map(_normalizeAppName)
           .toSet();
+    } catch (_) {
+      // Leave the sets empty; every row simply offers to install.
+    }
 
-      final installed = <String>{...packagesFromList};
+    if (!mounted) return;
+    setState(() {
+      _ready = true;
+      _installedPackages
+        ..clear()
+        ..addAll(installed);
+      _installedAppNames.clear();
       for (final app in _apps) {
-        final packageName = app.packageName;
-        if (packageName != null && !installed.contains(packageName)) {
-          final exists = await channel.applicationExists(packageName);
-          if (exists) {
-            installed.add(packageName);
-          }
+        final appInstalled = _isInstalled(app) ||
+            (app.packageName == null && namesFromList.contains(_normalizeAppName(app.name))) ||
+            (_normalizeAppName(app.name).contains("smarttube") && namesFromList.any((n) => n.contains("smarttube"))) ||
+            (_normalizeAppName(app.name).contains("blackbulb") && namesFromList.any((n) => n.contains("blackbulb")));
+        if (appInstalled) {
+          _installedAppNames.add(app.name);
         }
       }
-
-      if (!mounted) return;
-      setState(() {
-        _installedPackages
-          ..clear()
-          ..addAll(installed);
-        _installedAppNames.clear();
-        for (final app in _apps) {
-          final appInstalled = _isInstalled(app) ||
-              (app.packageName == null && namesFromList.contains(_normalizeAppName(app.name))) ||
-              (_normalizeAppName(app.name).contains("smarttube") && namesFromList.any((n) => n.contains("smarttube"))) ||
-              (_normalizeAppName(app.name).contains("blackbulb") && namesFromList.any((n) => n.contains("blackbulb")));
-          if (appInstalled) {
-            _installedAppNames.add(app.name);
-          }
-        }
-      });
-    } catch (_) {}
+    });
   }
 
   Future<void> _startInstall(AppSpec app) async {
@@ -96,10 +91,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
 
   /// Every row stays pressable so the remote can move through the whole list;
   /// the rows that have nothing to do just say so.
-  void _onRowPressed(AppSpec app, {required bool installed, required bool anyBusy}) {
-    if (DateTime.now().difference(_openedAt) < _openGrace) {
-      return;
-    }
+  Future<void> _onRowPressed(AppSpec app, {required bool installed, required bool anyBusy}) async {
     if (anyBusy) {
       _say("Another install is already running");
       return;
@@ -108,7 +100,33 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       _say("${app.name} is already installed");
       return;
     }
-    _startInstall(app);
+    if (await _confirmInstall(app)) {
+      await _startInstall(app);
+    }
+  }
+
+  /// Downloading and installing an APK is worth one deliberate press, and it
+  /// means a stray activation lands on Cancel instead of starting a download.
+  Future<bool> _confirmInstall(AppSpec app) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text("Install ${app.name}?"),
+        content: Text("The APK will be downloaded, then Android will ask you to confirm."),
+        actions: [
+          TextButton(
+            autofocus: true,
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text("Install"),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   void _say(String message) =>
@@ -131,59 +149,64 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
           ),
         ),
         Divider(),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _apps.length,
-            itemBuilder: (context, index) {
-              final app = _apps[index];
-              final name = app.name;
-              final installed = _isInstalled(app) || _isInstalledByName(app);
-              
-              final serviceStatus = installService.status[name];
-              final serviceProgress = installService.progress[name] ?? 0.0;
-              final activeAppName = installService.activeAppName;
-              
-              final isBusy = activeAppName == name;
-              final anyBusy = activeAppName != null;
+        if (!_ready)
+          Expanded(
+            child: Center(child: Text("Checking which apps are installed…")),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: _apps.length,
+              itemBuilder: (context, index) {
+                final app = _apps[index];
+                final name = app.name;
+                final installed = _isInstalled(app) || _isInstalledByName(app);
 
-              String statusText = serviceStatus ?? "Idle";
-              if (installed) {
-                statusText = "Already installed";
-              }
-              
-              final buttonText = installed
-                  ? "Installed"
-                  : isBusy
-                      ? "Working"
-                      : "Install";
+                final serviceStatus = installService.status[name];
+                final serviceProgress = installService.progress[name] ?? 0.0;
+                final activeAppName = installService.activeAppName;
 
-              return EnsureVisible(
-                alignment: 0.5,
-                child: Card(
-                  child: ListTile(
-                    title: Text(name),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(statusText),
-                        if (isBusy && serviceProgress > 0)
-                          LinearProgressIndicator(value: serviceProgress),
-                      ],
-                    ),
-                    trailing: ElevatedButton(
-                      autofocus: index == 0,
-                      child: Text(buttonText),
-                      // Never null: a disabled button cannot take focus, which
-                      // made the list stop dead at the first installed app.
-                      onPressed: () =>
-                          _onRowPressed(app, installed: installed, anyBusy: anyBusy),
+                final isBusy = activeAppName == name;
+                final anyBusy = activeAppName != null;
+
+                String statusText = serviceStatus ?? "Idle";
+                if (installed) {
+                  statusText = "Already installed";
+                }
+
+                final buttonText = installed
+                    ? "Installed"
+                    : isBusy
+                        ? "Working"
+                        : "Install";
+
+                return EnsureVisible(
+                  alignment: 0.5,
+                  child: Card(
+                    child: ListTile(
+                      title: Text(name),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(statusText),
+                          if (isBusy && serviceProgress > 0)
+                            LinearProgressIndicator(value: serviceProgress),
+                        ],
+                      ),
+                      trailing: ElevatedButton(
+                        autofocus: index == 0,
+                        child: Text(buttonText),
+                        // Never null: a disabled button cannot take focus, which
+                        // made the list stop dead at the first installed app.
+                        onPressed: () =>
+                            _onRowPressed(app, installed: installed, anyBusy: anyBusy),
+                      ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
-        ),
       ],
     );
   }
