@@ -112,7 +112,9 @@ dependencies {
 
     // Talks to the device's own adbd over loopback, so the launcher can get
     // shell privilege on its own. See AdbInputBridge.
-    implementation "com.github.MuntashirAkon:libadb-android:1.0.1"
+    implementation "com.github.MuntashirAkon:libadb-android:3.1.1"
+    // The TLS the Android 11+ pairing handshake needs.
+    implementation "org.conscrypt:conscrypt-android:2.5.3"
     // Supplies the sun.security.x509 classes the AOSP libcore removed, which
     // AdbConnectionManager needs to build its client certificate. This is the
     // alternative to pulling in BouncyCastle, whose current builds ship Java 21
