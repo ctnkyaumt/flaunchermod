@@ -34,21 +34,21 @@ import java.security.cert.CertificateFactory
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.Random
-import sun.security.x509.AlgorithmId
-import sun.security.x509.CertificateAlgorithmId
-import sun.security.x509.CertificateExtensions
-import sun.security.x509.CertificateIssuerName
-import sun.security.x509.CertificateSerialNumber
-import sun.security.x509.CertificateSubjectName
-import sun.security.x509.CertificateValidity
-import sun.security.x509.CertificateVersion
-import sun.security.x509.CertificateX509Key
-import sun.security.x509.KeyIdentifier
-import sun.security.x509.PrivateKeyUsageExtension
-import sun.security.x509.SubjectKeyIdentifierExtension
-import sun.security.x509.X500Name
-import sun.security.x509.X509CertImpl
-import sun.security.x509.X509CertInfo
+import android.sun.security.x509.AlgorithmId
+import android.sun.security.x509.CertificateAlgorithmId
+import android.sun.security.x509.CertificateExtensions
+import android.sun.security.x509.CertificateIssuerName
+import android.sun.security.x509.CertificateSerialNumber
+import android.sun.security.x509.CertificateSubjectName
+import android.sun.security.x509.CertificateValidity
+import android.sun.security.x509.CertificateVersion
+import android.sun.security.x509.CertificateX509Key
+import android.sun.security.x509.KeyIdentifier
+import android.sun.security.x509.PrivateKeyUsageExtension
+import android.sun.security.x509.SubjectKeyIdentifierExtension
+import android.sun.security.x509.X500Name
+import android.sun.security.x509.X509CertImpl
+import android.sun.security.x509.X509CertInfo
 
 /**
  * The launcher's identity as an ADB client.
