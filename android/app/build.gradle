@@ -64,9 +64,9 @@ android {
 
     defaultConfig {
         applicationId "me.efesser.flauncher"
-        // 23 is the floor for the Shizuku provider, and every Android TV device
-        // this fork targets is well past it. Upstream FLauncher still allows 21.
-        minSdkVersion 23
+        // 24 is the floor for the Shizuku api, and every Android TV device this
+        // fork targets is well past it. Upstream FLauncher still allows 21.
+        minSdkVersion 24
         targetSdkVersion 33
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
