@@ -885,8 +885,8 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
             SizedBox(height: 8),
             Text(
               widget.rawOnly
-                  ? "Nothing within ${_timeout.inSeconds} seconds means the helper cannot "
-                      "read this remote — check that Shizuku is still running."
+                  ? "Nothing within ${_timeout.inSeconds} seconds means the reader is not "
+                      "seeing this remote. Check the status line on the previous screen."
                   : "If nothing happens within ${_timeout.inSeconds} seconds, that button "
                       "doesn't send a key press — try 'Map a firmware button' instead.",
               style: Theme.of(context).textTheme.bodySmall,

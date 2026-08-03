@@ -62,6 +62,8 @@ object AdbInputBridge {
     private val RETRY_DELAYS_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
     private const val MAX_ATTEMPTS = 12
 
+    private const val LOG_FIRST_LINES = 12
+
     /**
      * adbd not listening is by far the most common failure, and the message the
      * exception carries for it says nothing useful. Name the fix instead.
@@ -214,20 +216,30 @@ object AdbInputBridge {
         // -q drops the device listing, leaving only the events themselves.
         val stream = connection.openStream("shell:getevent -q")
         reader = Thread.currentThread()
+        Log.d(TAG, "getevent stream open")
+        var seen = 0
         BufferedReader(InputStreamReader(stream.openInputStream())).use { input ->
             while (running) {
                 val line = input.readLine() ?: break
+                // The first handful verbatim, so an unexpected output format is
+                // obvious from a log rather than silently matching nothing.
+                if (seen < LOG_FIRST_LINES) {
+                    seen++
+                    Log.d(TAG, "getevent[$seen]: $line")
+                }
                 val match = EVENT_LINE.find(line.trim()) ?: continue
                 val type = match.groupValues[2].toIntOrNull(16) ?: continue
                 if (type != EV_KEY) continue
                 val code = match.groupValues[3].toIntOrNull(16) ?: continue
                 val value = match.groupValues[4].toIntOrNull(16) ?: continue
                 val device = match.groupValues[1]
+                Log.d(TAG, "raw key code=$code value=$value device=$device")
 
                 val target = listener ?: continue
                 handler.post { target.onRawKey(code, value, device) }
             }
         }
+        Log.d(TAG, "getevent stream ended")
         state = State.DISCONNECTED
     }
 
