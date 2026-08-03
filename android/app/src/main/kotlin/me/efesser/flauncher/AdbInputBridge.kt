@@ -59,6 +59,9 @@ object AdbInputBridge {
 
     private const val MDNS_TIMEOUT_MS = 7_000L
 
+    private val RETRY_DELAYS_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
+    private const val MAX_ATTEMPTS = 12
+
     /**
      * adbd not listening is by far the most common failure, and the message the
      * exception carries for it says nothing useful. Name the fix instead.
@@ -93,6 +96,9 @@ object AdbInputBridge {
     @Volatile
     private var running = false
 
+    /** Retries so far; reset on every successful connection. */
+    private var attempt = 0
+
     /** Whether the device needs a pairing code before it will accept a key. */
     val pairingSupported: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -113,6 +119,13 @@ object AdbInputBridge {
      * Connects and starts reporting key events. Safe to call again; a second
      * call replaces the listener and reconnects only if needed.
      */
+    /** Clears the backoff so a user pressing Connect gets an immediate try. */
+    fun resetBackoff() {
+        attempt = 0
+        handler.removeCallbacksAndMessages(null)
+        if (state == State.FAILED) state = State.DISCONNECTED
+    }
+
     fun start(context: Context, listener: ShizukuInputBridge.RawKeyListener?) {
         this.listener = listener
         if (state == State.CONNECTED || state == State.CONNECTING) return
@@ -142,14 +155,59 @@ object AdbInputBridge {
                 }
                 state = State.CONNECTED
                 lastError = null
+                attempt = 0
                 Log.d(TAG, "Connected to local adbd")
+                persistTcpPort(connection)
                 pump(connection)
+                // pump() only returns when the stream ends, which means the
+                // connection dropped rather than that we are done.
+                if (running) scheduleRetry(context)
             } catch (e: Exception) {
                 lastError = describe(e)
                 state = State.FAILED
                 Log.w(TAG, "Could not read input over ADB", e)
+                if (running) scheduleRetry(context)
             }
         }
+    }
+
+    /**
+     * Makes adbd keep listening on TCP across reboots.
+     *
+     * `adb tcpip 5555` sets `service.adb.tcp.port`, which is not persistent, so
+     * it has to be repeated after every boot. The `persist.` variant survives,
+     * and the shell we are already talking through is allowed to set it — so the
+     * command from a computer is needed exactly once, ever, rather than daily.
+     */
+    private fun persistTcpPort(connection: AbsAdbConnectionManager) {
+        try {
+            connection.openStream("shell:setprop persist.adb.tcp.port $LEGACY_PORT").use { stream ->
+                stream.openInputStream().use { it.readBytes() }
+            }
+            Log.d(TAG, "persist.adb.tcp.port set; adbd will listen again after a reboot")
+        } catch (e: Exception) {
+            // Some builds refuse the property. The connection still works for
+            // this boot, it just will not come back on its own.
+            Log.w(TAG, "Could not persist the adb port", e)
+        }
+    }
+
+    /**
+     * Retries with a backoff. At boot the accessibility service is up before
+     * adbd has opened its socket, so the first attempt usually loses the race.
+     */
+    private fun scheduleRetry(context: Context) {
+        state = State.DISCONNECTED
+        if (attempt >= MAX_ATTEMPTS) {
+            state = State.FAILED
+            return
+        }
+        val delay = RETRY_DELAYS_MS[attempt.coerceAtMost(RETRY_DELAYS_MS.lastIndex)]
+        attempt++
+        val pending = listener
+        handler.postDelayed({
+            if (running) start(context.applicationContext, pending)
+        }, delay)
     }
 
     private fun pump(connection: AbsAdbConnectionManager) {
@@ -176,6 +234,8 @@ object AdbInputBridge {
     fun stop() {
         running = false
         listener = null
+        attempt = 0
+        handler.removeCallbacksAndMessages(null)
         try {
             manager?.close()
         } catch (e: Exception) {

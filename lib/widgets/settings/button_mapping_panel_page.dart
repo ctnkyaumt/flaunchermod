@@ -160,9 +160,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       "below with the port and code Android shows. Nothing else needs "
                       "installing."
                   : "Otherwise, adbd has to be listening on TCP. This device is too old for "
-                      "wireless debugging, so run this once from a computer, and again after "
-                      "every reboot:\n\n    adb tcpip 5555\n\nThen press Connect and accept "
-                      "the prompt on screen.",
+                      "wireless debugging, so run this once from a computer:\n\n"
+                      "    adb tcpip 5555\n\n"
+                      "Then press Connect and accept the prompt on screen. That is a one-off "
+                      "— on the first successful connection FLauncher makes the setting "
+                      "permanent, and reconnects on its own after every reboot.",
             ),
             TextButton.icon(
               icon: Icon(Icons.link),

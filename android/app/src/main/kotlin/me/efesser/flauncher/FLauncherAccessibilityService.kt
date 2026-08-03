@@ -163,7 +163,10 @@ class FLauncherAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 ACTION_RELOAD_MAPPINGS -> reloadMappings()
-                ACTION_REBIND_RAW_INPUT -> ShizukuInputBridge.start(::onRawKey)
+                ACTION_REBIND_RAW_INPUT -> {
+                    AdbInputBridge.resetBackoff()
+                    startRawInput()
+                }
                 ACTION_SET_CAPTURE_MODE -> {
                     captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_ENABLED, false)
                     captureArmedAt = SystemClock.elapsedRealtime()
