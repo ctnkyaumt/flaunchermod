@@ -114,7 +114,8 @@ dependencies {
     // shell privilege on its own. See AdbInputBridge.
     implementation "com.github.MuntashirAkon:libadb-android:1.0.1"
     // Supplies the sun.security.x509 classes the AOSP libcore removed, which
-    // the ADB pairing handshake needs to build its client certificate.
+    // AdbConnectionManager needs to build its client certificate. This is the
+    // alternative to pulling in BouncyCastle, whose current builds ship Java 21
+    // bytecode that Jetifier refuses.
     implementation "com.github.MuntashirAkon:sun-security-android:1.1"
-    implementation "org.bouncycastle:bcprov-jdk18on:1.78.1"
 }
