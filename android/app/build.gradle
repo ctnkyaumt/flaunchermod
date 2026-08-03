@@ -55,6 +55,11 @@ android {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
+    // The Shizuku user service talks to the app over AIDL.
+    buildFeatures {
+        aidl true
+    }
+
     defaultConfig {
         applicationId "me.efesser.flauncher"
         minSdkVersion 21
@@ -94,4 +99,9 @@ flutter {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+
+    // Runs a helper process at shell privilege, which is what it takes to read
+    // /dev/input directly. See RawInputService.
+    implementation "dev.rikka.shizuku:api:13.1.5"
+    implementation "dev.rikka.shizuku:provider:13.1.5"
 }

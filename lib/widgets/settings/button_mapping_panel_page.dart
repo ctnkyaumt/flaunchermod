@@ -50,9 +50,12 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // The user may have just come back from the accessibility settings screen.
+    // The user may have just come back from the accessibility settings screen,
+    // or from starting Shizuku.
     if (state == AppLifecycleState.resumed) {
-      context.read<ButtonMappingService>().refreshServiceState();
+      context.read<ButtonMappingService>()
+        ..refreshServiceState()
+        ..refreshShizukuStatus();
     }
   }
 
@@ -105,6 +108,9 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       onPressed: () => _addAppRedirect(context, service),
                     ),
                     Divider(),
+                    _sectionTitle(context, "Firmware buttons (Shizuku)"),
+                    _shizukuSection(context, service),
+                    Divider(),
                     _hint(
                       context,
                       "The Home and Power buttons are handled by Android before any app "
@@ -128,6 +134,133 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Text(text, style: Theme.of(context).textTheme.bodySmall),
       );
+
+  /// The Netflix and Prime buttons on most boxes never become key events at
+  /// all, so nothing above can catch them. Reading the kernel input devices
+  /// can, and that needs the shell privilege Shizuku hands out.
+  Widget _shizukuSection(BuildContext context, ButtonMappingService service) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _hint(
+            context,
+            "Buttons that print nothing in the button test are handled by the firmware "
+            "and never reach an app. They can still be read straight from the kernel, "
+            "which needs Shizuku running. Disable the app the button opens first — this "
+            "adds your action, it cannot take the original one away.",
+          ),
+          if (service.shizukuStatus == ShizukuStatus.unavailable)
+            _hint(context, "Shizuku is not running. Install it and start it, then come back.")
+          else ...[
+            if (service.shizukuStatus == ShizukuStatus.permissionRequired)
+              TextButton.icon(
+                icon: Icon(Icons.lock_open),
+                label: Text("Grant Shizuku permission"),
+                onPressed: () async {
+                  await service.requestShizukuPermission();
+                  await service.refreshShizukuStatus();
+                },
+              ),
+            if (service.rawMappings.isEmpty)
+              _hint(context, "No firmware buttons mapped yet.")
+            else
+              ...service.rawMappings.map((mapping) => _rawMappingTile(context, service, mapping)),
+            TextButton.icon(
+              icon: Icon(Icons.add),
+              label: Text("Map a firmware button"),
+              onPressed: () => _addRawMapping(context, service),
+            ),
+          ],
+        ],
+      );
+
+  Widget _rawMappingTile(BuildContext context, ButtonMappingService service, RawMapping mapping) =>
+      Card(
+        margin: EdgeInsets.only(bottom: 8),
+        child: EnsureVisible(
+          alignment: 0.5,
+          child: ListTile(
+            dense: true,
+            title: Text(mapping.displayName, style: Theme.of(context).textTheme.bodyMedium),
+            subtitle: Text(mapping.summary, style: Theme.of(context).textTheme.bodySmall),
+            trailing: IconButton(
+              constraints: BoxConstraints(),
+              splashRadius: 20,
+              icon: Icon(Icons.delete_outline),
+              onPressed: () => service.removeRawMapping(mapping),
+            ),
+            onTap: () => _editRawTriggers(context, service, mapping),
+          ),
+        ),
+      );
+
+  Future<void> _addRawMapping(BuildContext context, ButtonMappingService service) async {
+    if (service.shizukuStatus != ShizukuStatus.ready) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Grant Shizuku permission first")),
+      );
+      return;
+    }
+
+    final captured = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _CaptureKeyDialog(service: service, rawOnly: true),
+    );
+    if (captured == null || !mounted) {
+      return;
+    }
+    final code = captured["rawCode"];
+    if (code is! int || code < 0) {
+      return;
+    }
+
+    final action = await _pickAction(context);
+    if (action != null && !identical(action, _clearAction)) {
+      await service.setRawAction(
+        code: code,
+        device: captured["device"] as String?,
+        trigger: PressTrigger.single,
+        action: action,
+      );
+    }
+  }
+
+  Future<void> _editRawTriggers(
+    BuildContext context,
+    ButtonMappingService service,
+    RawMapping mapping,
+  ) async {
+    final trigger = await showDialog<PressTrigger>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(mapping.displayName),
+        children: [
+          for (final value in PressTrigger.values)
+            _DialogOption(
+              autofocus: value == PressTrigger.single,
+              onPressed: () => Navigator.of(dialogContext).pop(value),
+              child: Text(
+                "${value.label} — ${mapping.actionFor(value)?.description ?? "not set"}",
+              ),
+            ),
+        ],
+      ),
+    );
+    if (trigger == null || !mounted) {
+      return;
+    }
+
+    final action = await _pickAction(context, allowClear: mapping.actionFor(trigger) != null);
+    if (action == null) {
+      return;
+    }
+    await service.setRawAction(
+      code: mapping.code,
+      device: mapping.device,
+      trigger: trigger,
+      action: identical(action, _clearAction) ? null : action,
+    );
+  }
 
   Widget _serviceDisabledNotice(BuildContext context, ButtonMappingService service) => Card(
         margin: EdgeInsets.only(bottom: 8),
@@ -501,11 +634,15 @@ class _ButtonTestDialogState extends State<_ButtonTestDialog> {
     }
     final action = event["keyAction"] == 0 ? "down" : "up";
     final device = (event["device"] as String?) ?? "";
+    final rawCode = event["rawCode"];
+    final isRaw = rawCode is int && rawCode >= 0;
     setState(() {
       _lines.insert(
         0,
-        "$action  keyCode ${event["keyCode"]}  scanCode ${event["scanCode"]}"
-        "${device.isEmpty ? "" : "  ($device)"}",
+        isRaw
+            ? "$action  raw code $rawCode  ($device)"
+            : "$action  keyCode ${event["keyCode"]}  scanCode ${event["scanCode"]}"
+                "${device.isEmpty ? "" : "  ($device)"}",
       );
       if (_lines.length > 40) {
         _lines.removeLast();
@@ -581,7 +718,12 @@ class _DialogOption extends StatelessWidget {
 class _CaptureKeyDialog extends StatefulWidget {
   final ButtonMappingService service;
 
-  const _CaptureKeyDialog({required this.service});
+  /// Only accept events read off /dev/input, ignoring ordinary key events.
+  /// A firmware button is being learned, and the remote's normal buttons would
+  /// otherwise answer for it.
+  final bool rawOnly;
+
+  const _CaptureKeyDialog({required this.service, this.rawOnly = false});
 
   @override
   State<_CaptureKeyDialog> createState() => _CaptureKeyDialogState();
@@ -597,7 +739,10 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
   }
 
   Future<void> _capture() async {
-    final captured = await widget.service.captureNextKey(timeout: _timeout);
+    final captured = await widget.service.captureNextKey(
+      timeout: _timeout,
+      rawOnly: widget.rawOnly,
+    );
     if (mounted) {
       Navigator.of(context).pop(captured);
     }
@@ -614,8 +759,11 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
             Text("Press the remote button you want to map."),
             SizedBox(height: 8),
             Text(
-              "If nothing happens within ${_timeout.inSeconds} seconds, that button "
-              "doesn't send a key press — use 'Redirect an app button' instead.",
+              widget.rawOnly
+                  ? "Nothing within ${_timeout.inSeconds} seconds means the helper cannot "
+                      "read this remote — check that Shizuku is still running."
+                  : "If nothing happens within ${_timeout.inSeconds} seconds, that button "
+                      "doesn't send a key press — try 'Map a firmware button' instead.",
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

@@ -31,6 +31,7 @@ import android.net.Uri
 import android.app.Activity
 import android.content.ContentUris
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
@@ -85,6 +86,9 @@ class MainActivity : FlutterActivity() {
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
                     "isButtonMapperEnabled" -> result.success(FLauncherAccessibilityService.isEnabled(this))
                     "getMappableApplications" -> result.success(getMappableApplications())
+                    "shizukuStatus" -> result.success(ShizukuInputBridge.status().name)
+                    "requestShizukuPermission" -> result.success(requestShizukuPermission())
+                    "shizukuInputDevices" -> result.success(ShizukuInputBridge.openedDevices)
                     "openAccessibilitySettings" -> result.success(openAccessibilitySettings())
                     "notifyButtonMappingsChanged" -> result.success(notifyButtonMappingsChanged())
                     "setKeyCaptureMode" -> result.success(setKeyCaptureMode(call.arguments as Boolean))
@@ -254,6 +258,9 @@ class MainActivity : FlutterActivity() {
                                     "device" to intent.getStringExtra(
                                         FLauncherAccessibilityService.EXTRA_DEVICE
                                     ),
+                                    "rawCode" to intent.getIntExtra(
+                                        FLauncherAccessibilityService.EXTRA_RAW_CODE, -1
+                                    ),
                                 )
                             )
                         }
@@ -312,6 +319,22 @@ class MainActivity : FlutterActivity() {
             }
         }
         return false
+    }
+
+    /**
+     * Asks Shizuku for permission, and tells the accessibility service to pick
+     * up the raw input helper once it has been granted.
+     */
+    private fun requestShizukuPermission(): Boolean {
+        val granted = ShizukuInputBridge.requestPermission()
+        if (granted) notifyRawInputAvailable()
+        return granted
+    }
+
+    private fun notifyRawInputAvailable() {
+        sendBroadcast(
+            Intent(FLauncherAccessibilityService.ACTION_REBIND_RAW_INPUT).setPackage(packageName)
+        )
     }
 
     /** Tells the running accessibility service to re-read the mapping table. */
@@ -473,7 +496,34 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /**
+     * Shizuku answers a permission request on its own listener rather than
+     * through onRequestPermissionsResult.
+     */
+    private val shizukuPermissionListener =
+        rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == ShizukuInputBridge.PERMISSION_REQUEST_CODE &&
+                grantResult == PackageManager.PERMISSION_GRANTED
+            ) {
+                notifyRawInputAvailable()
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            rikka.shizuku.Shizuku.addRequestPermissionResultListener(shizukuPermissionListener)
+        } catch (e: Exception) {
+            // Shizuku is optional; without it the raw input path stays off.
+        }
+    }
+
     override fun onDestroy() {
+        try {
+            rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
+        } catch (e: Exception) {
+            // Never registered.
+        }
         val launcherApps = getSystemService(LAUNCHER_APPS_SERVICE) as LauncherApps
         launcherAppsCallbacks.forEach(launcherApps::unregisterCallback)
         tvInputCallback?.let {

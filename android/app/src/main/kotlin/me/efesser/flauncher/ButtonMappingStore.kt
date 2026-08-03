@@ -116,6 +116,12 @@ object ButtonMappingStore {
     data class Mappings(
         val bindings: List<Binding> = emptyList(),
         val appRedirects: Map<String, Action> = emptyMap(),
+        /**
+         * Keyed by Linux key code, read off /dev/input by the Shizuku helper.
+         * Separate from [bindings] because these codes come from a different
+         * namespace than Android key codes and the two must not be confused.
+         */
+        val rawBindings: Map<Int, Binding> = emptyMap(),
     ) {
         /**
          * Finds the binding for an incoming event.
@@ -167,7 +173,27 @@ object ButtonMappingStore {
                 }
             }
 
-            Mappings(bindings, appRedirects)
+            val rawBindings = mutableMapOf<Int, Binding>()
+            val rawArray = root.optJSONArray("rawMappings")
+            if (rawArray != null) {
+                for (i in 0 until rawArray.length()) {
+                    val entry = rawArray.optJSONObject(i) ?: continue
+                    if (!entry.has("code")) continue
+                    val code = entry.optInt("code", -1)
+                    if (code < 0) continue
+                    // Reuse Binding for the actions; the key code field is unused.
+                    val binding = Binding(
+                        keyCode = KeyEvent.KEYCODE_UNKNOWN,
+                        scanCode = null,
+                        single = Action.fromJson(entry.optJSONObject("single")),
+                        double = Action.fromJson(entry.optJSONObject("double")),
+                        long = Action.fromJson(entry.optJSONObject("long")),
+                    )
+                    if (binding.hasAny) rawBindings[code] = binding
+                }
+            }
+
+            Mappings(bindings, appRedirects, rawBindings)
         } catch (e: Exception) {
             Mappings()
         }

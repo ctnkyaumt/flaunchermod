@@ -67,6 +67,9 @@ class FLauncherAccessibilityService : AccessibilityService() {
         const val ACTION_SET_CAPTURE_MODE = "me.efesser.flauncher.SET_CAPTURE_MODE"
         const val EXTRA_CAPTURE_ENABLED = "captureEnabled"
 
+        /** Sent by the launcher when Shizuku permission has just been granted. */
+        const val ACTION_REBIND_RAW_INPUT = "me.efesser.flauncher.REBIND_RAW_INPUT"
+
         /** Broadcast back to the launcher with the button that was pressed. */
         const val ACTION_KEY_CAPTURED = "me.efesser.flauncher.KEY_CAPTURED"
         const val EXTRA_KEY_CODE = "keyCode"
@@ -74,6 +77,9 @@ class FLauncherAccessibilityService : AccessibilityService() {
         const val EXTRA_KEY_LABEL = "keyLabel"
         const val EXTRA_KEY_ACTION = "keyAction"
         const val EXTRA_DEVICE = "device"
+
+        /** Linux key code, present only for events read off /dev/input. */
+        const val EXTRA_RAW_CODE = "rawCode"
 
         /**
          * Held at least this long counts as a long press. The action fires as
@@ -105,6 +111,10 @@ class FLauncherAccessibilityService : AccessibilityService() {
          */
         private const val CAPTURE_SELECT_GRACE_MS = 1000L
         private val SELECT_KEY_CODES = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
+
+        /** `value` of a raw EV_KEY event. */
+        private const val RAW_UP = 0
+        private const val RAW_DOWN = 1
 
         fun isEnabled(context: Context): Boolean {
             val expected = "${context.packageName}/${FLauncherAccessibilityService::class.java.canonicalName}"
@@ -151,6 +161,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
                 ACTION_RELOAD_MAPPINGS -> reloadMappings()
+                ACTION_REBIND_RAW_INPUT -> ShizukuInputBridge.start(::onRawKey)
                 ACTION_SET_CAPTURE_MODE -> {
                     captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_ENABLED, false)
                     captureArmedAt = SystemClock.elapsedRealtime()
@@ -173,6 +184,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         val filter = IntentFilter().apply {
             addAction(ACTION_RELOAD_MAPPINGS)
             addAction(ACTION_SET_CAPTURE_MODE)
+            addAction(ACTION_REBIND_RAW_INPUT)
         }
         // Not exported: only the launcher process sends these.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -180,7 +192,28 @@ class FLauncherAccessibilityService : AccessibilityService() {
         } else {
             registerReceiver(commandReceiver, filter)
         }
+        // The accessibility service is the one part of the launcher that is
+        // always running, so it owns the raw input helper too.
+        ShizukuInputBridge.start(::onRawKey)
         Log.d(TAG, "Button mapper connected")
+    }
+
+    /**
+     * A key press read off /dev/input, for the buttons that never reach an app
+     * as a key event. Classified with the same single/double/long machinery as
+     * an ordinary key, on the same handler.
+     */
+    private fun onRawKey(code: Int, value: Int, device: String) {
+        if (captureMode) {
+            broadcastCapturedRawKey(code, value, device)
+            return
+        }
+        val binding = mappings.rawBindings[code] ?: return
+        when (value) {
+            RAW_DOWN -> onBindingDown(binding, repeat = false)
+            RAW_UP -> onBindingUp(binding)
+            // RAW_REPEAT says nothing new; the long press is already scheduled.
+        }
     }
 
     /**
@@ -204,6 +237,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        ShizukuInputBridge.stop()
         cancelPressState()
         handler.removeCallbacks(captureTimeout)
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
@@ -231,17 +265,17 @@ class FLauncherAccessibilityService : AccessibilityService() {
             ?: return super.onKeyEvent(event)
 
         when (event.action) {
-            KeyEvent.ACTION_DOWN -> onBindingDown(binding, event)
+            KeyEvent.ACTION_DOWN -> onBindingDown(binding, event.repeatCount > 0)
             KeyEvent.ACTION_UP -> onBindingUp(binding)
         }
         // Consume down and up alike, so the foreground app sees neither.
         return true
     }
 
-    private fun onBindingDown(binding: ButtonMappingStore.Binding, event: KeyEvent) {
-        // repeatCount > 0 is auto-repeat from holding the button, and the long
-        // press is already scheduled from the original press.
-        if (event.repeatCount > 0) return
+    private fun onBindingDown(binding: ButtonMappingStore.Binding, repeat: Boolean) {
+        // Auto-repeat from holding the button; the long press is already
+        // scheduled from the original press.
+        if (repeat) return
 
         // Pressing a different button settles the question of whether the
         // previous one was a double press, so run its single action now instead
@@ -385,6 +419,22 @@ class FLauncherAccessibilityService : AccessibilityService() {
             putExtra(EXTRA_KEY_LABEL, KeyEvent.keyCodeToString(event.keyCode))
             putExtra(EXTRA_KEY_ACTION, event.action)
             putExtra(EXTRA_DEVICE, event.device?.name ?: "")
+        }
+        sendBroadcast(intent)
+    }
+
+    /** Same channel as a captured key, flagged so the UI can tell them apart. */
+    private fun broadcastCapturedRawKey(code: Int, value: Int, device: String) {
+        if (value != RAW_DOWN && value != RAW_UP) return
+        Log.d(TAG, "captured raw code=$code value=$value device=$device")
+        val intent = Intent(ACTION_KEY_CAPTURED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_KEY_CODE, KeyEvent.KEYCODE_UNKNOWN)
+            putExtra(EXTRA_SCAN_CODE, 0)
+            putExtra(EXTRA_KEY_LABEL, "RAW")
+            putExtra(EXTRA_KEY_ACTION, if (value == RAW_DOWN) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP)
+            putExtra(EXTRA_DEVICE, device)
+            putExtra(EXTRA_RAW_CODE, code)
         }
         sendBroadcast(intent)
     }

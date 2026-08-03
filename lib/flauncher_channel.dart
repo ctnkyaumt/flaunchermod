@@ -106,6 +106,19 @@ class FLauncherChannel {
   Future<List<dynamic>> getMappableApplications() async =>
       (await _methodChannel.invokeListMethod('getMappableApplications')) ?? [];
 
+  /// One of `UNAVAILABLE`, `PERMISSION_REQUIRED`, `READY`.
+  Future<String> shizukuStatus() async =>
+      (await _methodChannel.invokeMethod('shizukuStatus')) ?? "UNAVAILABLE";
+
+  /// True when permission was already held; otherwise Shizuku shows its dialog
+  /// and the answer arrives later.
+  Future<bool> requestShizukuPermission() async =>
+      (await _methodChannel.invokeMethod('requestShizukuPermission')) ?? false;
+
+  /// The /dev/input nodes the helper managed to open.
+  Future<List<dynamic>> shizukuInputDevices() async =>
+      (await _methodChannel.invokeListMethod('shizukuInputDevices')) ?? [];
+
   /// Asks the running service to re-read the mapping table.
   Future<void> notifyButtonMappingsChanged() async =>
       await _methodChannel.invokeMethod('notifyButtonMappingsChanged');

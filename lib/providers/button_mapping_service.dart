@@ -275,6 +275,91 @@ class KeyMapping {
   }
 }
 
+/// A button identified by its Linux key code, read straight off `/dev/input`.
+///
+/// These are the buttons that never reach an app as a key event, so the only
+/// place they exist is the kernel. Reading them needs the Shizuku helper.
+class RawMapping {
+  final int code;
+
+  /// The `/dev/input` node it came from, shown to help tell remotes apart.
+  final String? device;
+
+  final ButtonAction? single;
+  final ButtonAction? doublePress;
+  final ButtonAction? long;
+
+  const RawMapping({
+    required this.code,
+    this.device,
+    this.single,
+    this.doublePress,
+    this.long,
+  });
+
+  bool get hasAny => single != null || doublePress != null || long != null;
+
+  ButtonAction? actionFor(PressTrigger trigger) {
+    switch (trigger) {
+      case PressTrigger.single:
+        return single;
+      case PressTrigger.doublePress:
+        return doublePress;
+      case PressTrigger.long:
+        return long;
+    }
+  }
+
+  RawMapping withAction(PressTrigger trigger, ButtonAction? action) => RawMapping(
+        code: code,
+        device: device,
+        single: trigger == PressTrigger.single ? action : single,
+        doublePress: trigger == PressTrigger.doublePress ? action : doublePress,
+        long: trigger == PressTrigger.long ? action : long,
+      );
+
+  Map<String, dynamic> toJson() => {
+        "code": code,
+        if (device != null) "device": device,
+        if (single != null) "single": single!.toJson(),
+        if (doublePress != null) "double": doublePress!.toJson(),
+        if (long != null) "long": long!.toJson(),
+      };
+
+  static RawMapping? fromJson(Map<String, dynamic> json) {
+    final code = json["code"];
+    if (code is! int) {
+      return null;
+    }
+    ButtonAction? action(String key) {
+      final raw = json[key];
+      return raw is Map ? ButtonAction.fromJson(Map<String, dynamic>.from(raw)) : null;
+    }
+
+    final mapping = RawMapping(
+      code: code,
+      device: json["device"] as String?,
+      single: action("single"),
+      doublePress: action("double"),
+      long: action("long"),
+    );
+    return mapping.hasAny ? mapping : null;
+  }
+
+  String get displayName => "Raw button $code";
+
+  String get summary {
+    final parts = <String>[
+      for (final trigger in PressTrigger.values)
+        if (actionFor(trigger) != null) "${trigger.label}: ${actionFor(trigger)!.description}",
+    ];
+    return parts.isEmpty ? "Nothing bound" : parts.join("\n");
+  }
+}
+
+/// Whether the shell-privileged helper that reads `/dev/input` can run.
+enum ShizukuStatus { unavailable, permissionRequired, ready }
+
 /// A button the firmware wires straight to an app launch — the Netflix, YouTube
 /// and Prime Video buttons on most TV remotes. These emit no key code at all,
 /// so they are caught by noticing the app come to the foreground.
@@ -318,11 +403,17 @@ class ButtonMappingService extends ChangeNotifier {
 
   List<KeyMapping> _keyMappings = [];
   List<AppRedirect> _appRedirects = [];
+  List<RawMapping> _rawMappings = [];
   bool _serviceEnabled = false;
+  ShizukuStatus _shizukuStatus = ShizukuStatus.unavailable;
 
   List<KeyMapping> get keyMappings => List.unmodifiable(_keyMappings);
 
   List<AppRedirect> get appRedirects => List.unmodifiable(_appRedirects);
+
+  List<RawMapping> get rawMappings => List.unmodifiable(_rawMappings);
+
+  ShizukuStatus get shizukuStatus => _shizukuStatus;
 
   /// Whether the accessibility service is switched on in Android settings.
   /// Nothing is intercepted until it is.
@@ -331,6 +422,7 @@ class ButtonMappingService extends ChangeNotifier {
   ButtonMappingService(this._sharedPreferences, this._channel) {
     _load();
     refreshServiceState();
+    refreshShizukuStatus();
   }
 
   void _load() {
@@ -350,6 +442,11 @@ class ButtonMappingService extends ChangeNotifier {
           .map((entry) => AppRedirect.fromJson(Map<String, dynamic>.from(entry)))
           .whereType<AppRedirect>()
           .toList();
+      _rawMappings = ((root["rawMappings"] as List?) ?? [])
+          .whereType<Map>()
+          .map((entry) => RawMapping.fromJson(Map<String, dynamic>.from(entry)))
+          .whereType<RawMapping>()
+          .toList();
     } catch (e) {
       debugPrint("ButtonMappingService: could not parse stored mappings - $e");
     }
@@ -359,6 +456,7 @@ class ButtonMappingService extends ChangeNotifier {
     final payload = jsonEncode({
       "keyMappings": _keyMappings.map((mapping) => mapping.toJson()).toList(),
       "appRedirects": _appRedirects.map((redirect) => redirect.toJson()).toList(),
+      "rawMappings": _rawMappings.map((mapping) => mapping.toJson()).toList(),
     });
     await _sharedPreferences.setString(_buttonMappingsKey, payload);
     // The service also watches the preferences file, but the broadcast makes
@@ -373,6 +471,77 @@ class ButtonMappingService extends ChangeNotifier {
       _serviceEnabled = enabled;
       notifyListeners();
     }
+  }
+
+  Future<void> refreshShizukuStatus() async {
+    ShizukuStatus status;
+    try {
+      switch (await _channel.shizukuStatus()) {
+        case "READY":
+          status = ShizukuStatus.ready;
+          break;
+        case "PERMISSION_REQUIRED":
+          status = ShizukuStatus.permissionRequired;
+          break;
+        default:
+          status = ShizukuStatus.unavailable;
+      }
+    } catch (e) {
+      status = ShizukuStatus.unavailable;
+    }
+    if (status != _shizukuStatus) {
+      _shizukuStatus = status;
+      notifyListeners();
+    }
+  }
+
+  /// Shows Shizuku's own consent dialog when permission is not held yet. The
+  /// answer arrives asynchronously, so callers should refresh afterwards.
+  Future<void> requestShizukuPermission() async {
+    try {
+      await _channel.requestShizukuPermission();
+    } catch (e) {
+      debugPrint("ButtonMappingService: Shizuku permission request failed - $e");
+    }
+    await refreshShizukuStatus();
+  }
+
+  /// The `/dev/input` nodes the helper opened. Empty means it is not running.
+  Future<List<String>> shizukuInputDevices() async {
+    try {
+      return (await _channel.shizukuInputDevices()).whereType<String>().toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Binds [action] to one trigger of a raw button, dropping the mapping once
+  /// nothing is left on it.
+  Future<void> setRawAction({
+    required int code,
+    String? device,
+    required PressTrigger trigger,
+    required ButtonAction? action,
+  }) async {
+    final index = _rawMappings.indexWhere((existing) => existing.code == code);
+    final updated = (index == -1 ? RawMapping(code: code, device: device) : _rawMappings[index])
+        .withAction(trigger, action);
+
+    final next = [..._rawMappings];
+    if (index == -1) {
+      if (updated.hasAny) next.add(updated);
+    } else if (updated.hasAny) {
+      next[index] = updated;
+    } else {
+      next.removeAt(index);
+    }
+    _rawMappings = next;
+    await _persist();
+  }
+
+  Future<void> removeRawMapping(RawMapping mapping) async {
+    _rawMappings = _rawMappings.where((existing) => existing.code != mapping.code).toList();
+    await _persist();
   }
 
   /// False when the device has no settings screen we could reach.
@@ -431,10 +600,16 @@ class ButtonMappingService extends ChangeNotifier {
   /// turned back off — including when the caller gives up.
   Future<Map<String, dynamic>?> captureNextKey({
     Duration timeout = const Duration(seconds: 10),
+    bool rawOnly = false,
   }) async {
     // Subscribe before arming capture mode, otherwise a very fast press could
-    // land between the two and be lost.
-    final captured = _channel.keyCaptureStream.first.timeout(timeout);
+    // land between the two and be lost. Only the press is interesting; the
+    // release carries the same identity.
+    final captured = _channel.keyCaptureStream
+        .where((event) => event is Map && event["keyAction"] == 0)
+        .where((event) => !rawOnly || (event["rawCode"] is int && event["rawCode"] >= 0))
+        .first
+        .timeout(timeout);
     await _channel.setKeyCaptureMode(true);
     try {
       final event = await captured;
