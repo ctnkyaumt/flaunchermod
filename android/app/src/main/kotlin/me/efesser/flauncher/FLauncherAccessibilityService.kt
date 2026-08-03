@@ -194,8 +194,23 @@ class FLauncherAccessibilityService : AccessibilityService() {
         }
         // The accessibility service is the one part of the launcher that is
         // always running, so it owns the raw input helper too.
-        ShizukuInputBridge.start(::onRawKey)
+        startRawInput()
         Log.d(TAG, "Button mapper connected")
+    }
+
+    /**
+     * Brings up whichever route to shell privilege this device has.
+     *
+     * Shizuku first when it happens to be installed and permitted, since it
+     * needs no setup once running. Otherwise the launcher talks to the device's
+     * own adbd, which needs nothing installed at all.
+     */
+    private fun startRawInput() {
+        if (ShizukuInputBridge.status() == ShizukuInputBridge.Status.READY) {
+            ShizukuInputBridge.start(::onRawKey)
+            return
+        }
+        AdbInputBridge.start(this, ::onRawKey)
     }
 
     /**
@@ -238,6 +253,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         ShizukuInputBridge.stop()
+        AdbInputBridge.stop()
         cancelPressState()
         handler.removeCallbacks(captureTimeout)
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)

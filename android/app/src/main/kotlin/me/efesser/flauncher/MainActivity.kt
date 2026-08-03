@@ -89,6 +89,21 @@ class MainActivity : FlutterActivity() {
                     "shizukuStatus" -> result.success(ShizukuInputBridge.status().name)
                     "requestShizukuPermission" -> result.success(requestShizukuPermission())
                     "shizukuInputDevices" -> result.success(ShizukuInputBridge.openedDevices)
+                    "rawInputStatus" -> result.success(rawInputStatus())
+                    "adbPair" -> {
+                        val args = call.arguments as Map<*, *>
+                        result.success(
+                            AdbInputBridge.pair(
+                                this,
+                                (args["port"] as Number).toInt(),
+                                args["code"] as String,
+                            )
+                        )
+                    }
+                    "startRawInput" -> {
+                        notifyRawInputAvailable()
+                        result.success(true)
+                    }
                     "openAccessibilitySettings" -> result.success(openAccessibilitySettings())
                     "notifyButtonMappingsChanged" -> result.success(notifyButtonMappingsChanged())
                     "setKeyCaptureMode" -> result.success(setKeyCaptureMode(call.arguments as Boolean))
@@ -330,6 +345,15 @@ class MainActivity : FlutterActivity() {
         if (granted) notifyRawInputAvailable()
         return granted
     }
+
+    /** One picture of both routes to shell privilege, for the settings page. */
+    private fun rawInputStatus(): Map<String, Serializable?> = mapOf(
+        "shizuku" to ShizukuInputBridge.status().name,
+        "adb" to AdbInputBridge.state.name,
+        "adbError" to AdbInputBridge.lastError,
+        "pairingRequired" to AdbInputBridge.pairingSupported,
+        "devices" to ArrayList(ShizukuInputBridge.openedDevices),
+    )
 
     private fun notifyRawInputAvailable() {
         sendBroadcast(

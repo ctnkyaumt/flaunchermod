@@ -360,6 +360,63 @@ class RawMapping {
 /// Whether the shell-privileged helper that reads `/dev/input` can run.
 enum ShizukuStatus { unavailable, permissionRequired, ready }
 
+/// State of the launcher's own connection to the device's adbd.
+enum AdbState { disconnected, connecting, connected, failed }
+
+/// Both routes to the shell privilege that reading `/dev/input` needs.
+class RawInputStatus {
+  final ShizukuStatus shizuku;
+  final AdbState adb;
+
+  /// Last ADB failure, worth showing because the causes are all user-fixable.
+  final String? adbError;
+
+  /// True from Android 11, where adbd wants a pairing code before it will
+  /// accept a new key.
+  final bool pairingRequired;
+
+  const RawInputStatus({
+    this.shizuku = ShizukuStatus.unavailable,
+    this.adb = AdbState.disconnected,
+    this.adbError,
+    this.pairingRequired = false,
+  });
+
+  /// Whether firmware buttons can be read right now.
+  bool get ready => shizuku == ShizukuStatus.ready || adb == AdbState.connected;
+
+  static RawInputStatus fromMap(Map<dynamic, dynamic> map) => RawInputStatus(
+        shizuku: _shizuku(map["shizuku"] as String?),
+        adb: _adb(map["adb"] as String?),
+        adbError: map["adbError"] as String?,
+        pairingRequired: map["pairingRequired"] as bool? ?? false,
+      );
+
+  static ShizukuStatus _shizuku(String? name) {
+    switch (name) {
+      case "READY":
+        return ShizukuStatus.ready;
+      case "PERMISSION_REQUIRED":
+        return ShizukuStatus.permissionRequired;
+      default:
+        return ShizukuStatus.unavailable;
+    }
+  }
+
+  static AdbState _adb(String? name) {
+    switch (name) {
+      case "CONNECTED":
+        return AdbState.connected;
+      case "CONNECTING":
+        return AdbState.connecting;
+      case "FAILED":
+        return AdbState.failed;
+      default:
+        return AdbState.disconnected;
+    }
+  }
+}
+
 /// A button the firmware wires straight to an app launch — the Netflix, YouTube
 /// and Prime Video buttons on most TV remotes. These emit no key code at all,
 /// so they are caught by noticing the app come to the foreground.
@@ -406,6 +463,7 @@ class ButtonMappingService extends ChangeNotifier {
   List<RawMapping> _rawMappings = [];
   bool _serviceEnabled = false;
   ShizukuStatus _shizukuStatus = ShizukuStatus.unavailable;
+  RawInputStatus _rawInputStatus = const RawInputStatus();
 
   List<KeyMapping> get keyMappings => List.unmodifiable(_keyMappings);
 
@@ -414,6 +472,8 @@ class ButtonMappingService extends ChangeNotifier {
   List<RawMapping> get rawMappings => List.unmodifiable(_rawMappings);
 
   ShizukuStatus get shizukuStatus => _shizukuStatus;
+
+  RawInputStatus get rawInputStatus => _rawInputStatus;
 
   /// Whether the accessibility service is switched on in Android settings.
   /// Nothing is intercepted until it is.
@@ -474,25 +534,42 @@ class ButtonMappingService extends ChangeNotifier {
   }
 
   Future<void> refreshShizukuStatus() async {
-    ShizukuStatus status;
+    RawInputStatus status;
     try {
-      switch (await _channel.shizukuStatus()) {
-        case "READY":
-          status = ShizukuStatus.ready;
-          break;
-        case "PERMISSION_REQUIRED":
-          status = ShizukuStatus.permissionRequired;
-          break;
-        default:
-          status = ShizukuStatus.unavailable;
-      }
+      status = RawInputStatus.fromMap(await _channel.rawInputStatus());
     } catch (e) {
-      status = ShizukuStatus.unavailable;
+      status = const RawInputStatus();
     }
-    if (status != _shizukuStatus) {
-      _shizukuStatus = status;
-      notifyListeners();
+    _rawInputStatus = status;
+    _shizukuStatus = status.shizuku;
+    notifyListeners();
+  }
+
+  /// Pairs with the device's own adbd, then brings the connection up.
+  Future<bool> pairWithAdb(int port, String code) async {
+    bool paired;
+    try {
+      paired = await _channel.adbPair(port, code);
+    } catch (e) {
+      debugPrint("ButtonMappingService: ADB pairing failed - $e");
+      paired = false;
     }
+    if (paired) {
+      await _channel.startRawInput();
+    }
+    await refreshShizukuStatus();
+    return paired;
+  }
+
+  /// Asks the accessibility service to connect without pairing, which is all
+  /// that is needed before Android 11 or once a key is already authorised.
+  Future<void> connectRawInput() async {
+    try {
+      await _channel.startRawInput();
+    } catch (e) {
+      debugPrint("ButtonMappingService: could not start raw input - $e");
+    }
+    await refreshShizukuStatus();
   }
 
   /// Shows Shizuku's own consent dialog when permission is not held yet. The

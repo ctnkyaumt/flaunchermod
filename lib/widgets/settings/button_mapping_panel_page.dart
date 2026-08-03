@@ -108,7 +108,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       onPressed: () => _addAppRedirect(context, service),
                     ),
                     Divider(),
-                    _sectionTitle(context, "Firmware buttons (Shizuku)"),
+                    _sectionTitle(context, "Firmware buttons"),
                     _shizukuSection(context, service),
                     Divider(),
                     _hint(
@@ -145,21 +145,35 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
             context,
             "Buttons that print nothing in the button test are handled by the firmware "
             "and never reach an app. They can still be read straight from the kernel, "
-            "which needs Shizuku running. Disable the app the button opens first — this "
+            "which needs shell privilege. Disable the app the button opens first — this "
             "adds your action, it cannot take the original one away.",
           ),
-          if (service.shizukuStatus == ShizukuStatus.unavailable)
-            _hint(context, "Shizuku is not running. Install it and start it, then come back.")
-          else ...[
-            if (service.shizukuStatus == ShizukuStatus.permissionRequired)
+          _hint(context, _rawInputStatusLine(service.rawInputStatus)),
+          if (!service.rawInputStatus.ready) ...[
+            if (service.rawInputStatus.shizuku == ShizukuStatus.permissionRequired)
               TextButton.icon(
                 icon: Icon(Icons.lock_open),
                 label: Text("Grant Shizuku permission"),
-                onPressed: () async {
-                  await service.requestShizukuPermission();
-                  await service.refreshShizukuStatus();
-                },
+                onPressed: () => service.requestShizukuPermission(),
               ),
+            _hint(
+              context,
+              "Otherwise, turn on Developer options > Wireless debugging in Android "
+              "settings, then connect below. Nothing else needs installing.",
+            ),
+            TextButton.icon(
+              icon: Icon(Icons.link),
+              label: Text("Connect"),
+              onPressed: () => service.connectRawInput(),
+            ),
+            if (service.rawInputStatus.pairingRequired)
+              TextButton.icon(
+                icon: Icon(Icons.pin),
+                label: Text("Pair with a code"),
+                onPressed: () => _pairWithAdb(context, service),
+              ),
+          ],
+          if (service.rawInputStatus.ready) ...[
             if (service.rawMappings.isEmpty)
               _hint(context, "No firmware buttons mapped yet.")
             else
@@ -172,6 +186,50 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
           ],
         ],
       );
+
+  String _rawInputStatusLine(RawInputStatus status) {
+    if (status.shizuku == ShizukuStatus.ready) {
+      return "Connected through Shizuku.";
+    }
+    switch (status.adb) {
+      case AdbState.connected:
+        return "Connected to this device's own debug bridge.";
+      case AdbState.connecting:
+        return "Connecting…";
+      case AdbState.failed:
+        return "Not connected: ${status.adbError ?? "unknown error"}";
+      case AdbState.disconnected:
+        return "Not connected.";
+    }
+  }
+
+  Future<void> _pairWithAdb(BuildContext context, ButtonMappingService service) async {
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => _AdbPairDialog(),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    final port = int.tryParse(result[0]);
+    if (port == null) {
+      return;
+    }
+    final paired = await service.pairWithAdb(port, result[1]);
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          paired
+              ? "Paired. Firmware buttons can be read now."
+              : "Pairing failed. Check the port and code are the ones on screen, and that "
+                  "the pairing dialog is still open.",
+        ),
+      ),
+    );
+  }
 
   Widget _rawMappingTile(BuildContext context, ButtonMappingService service, RawMapping mapping) =>
       Card(
@@ -194,9 +252,9 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       );
 
   Future<void> _addRawMapping(BuildContext context, ButtonMappingService service) async {
-    if (service.shizukuStatus != ShizukuStatus.ready) {
+    if (!service.rawInputStatus.ready) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Grant Shizuku permission first")),
+        SnackBar(content: Text("Connect to the debug bridge first")),
       );
       return;
     }
@@ -711,6 +769,63 @@ class _DialogOption extends StatelessWidget {
           padding: EdgeInsets.symmetric(vertical: 8, horizontal: 24),
           child: SizedBox(width: double.infinity, child: child),
         ),
+      );
+}
+
+/// Collects the port and code Android shows under Wireless debugging > Pair
+/// device with pairing code.
+class _AdbPairDialog extends StatefulWidget {
+  @override
+  State<_AdbPairDialog> createState() => _AdbPairDialogState();
+}
+
+class _AdbPairDialogState extends State<_AdbPairDialog> {
+  final _port = TextEditingController();
+  final _code = TextEditingController();
+
+  @override
+  void dispose() {
+    _port.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text("Pair with this device"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "In Android settings open Developer options > Wireless debugging > "
+              "Pair device with pairing code, and copy the two numbers here. Leave "
+              "that screen open until pairing finishes.",
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: _port,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: "Port"),
+            ),
+            TextField(
+              controller: _code,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: "Pairing code"),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop([_port.text.trim(), _code.text.trim()]),
+            child: Text("Pair"),
+          ),
+        ],
       );
 }
 

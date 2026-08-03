@@ -119,6 +119,18 @@ class FLauncherChannel {
   Future<List<dynamic>> shizukuInputDevices() async =>
       (await _methodChannel.invokeListMethod('shizukuInputDevices')) ?? [];
 
+  /// Both routes to shell privilege at once: Shizuku state and ADB state.
+  Future<Map<dynamic, dynamic>> rawInputStatus() async =>
+      (await _methodChannel.invokeMapMethod('rawInputStatus')) ?? {};
+
+  /// Pairs with the device's own adbd. Android 11+, where wireless debugging
+  /// shows a pairing code and the port to use.
+  Future<bool> adbPair(int port, String code) async =>
+      (await _methodChannel.invokeMethod('adbPair', {"port": port, "code": code})) ?? false;
+
+  /// Asks the accessibility service to (re)connect whichever route is available.
+  Future<void> startRawInput() async => await _methodChannel.invokeMethod('startRawInput');
+
   /// Asks the running service to re-read the mapping table.
   Future<void> notifyButtonMappingsChanged() async =>
       await _methodChannel.invokeMethod('notifyButtonMappingsChanged');
