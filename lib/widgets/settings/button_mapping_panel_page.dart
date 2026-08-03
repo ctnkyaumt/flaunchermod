@@ -83,11 +83,6 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       label: Text("Map a button"),
                       onPressed: () => _addKeyMapping(context, service),
                     ),
-                    TextButton.icon(
-                      icon: Icon(Icons.bug_report_outlined),
-                      label: Text("Test remote buttons"),
-                      onPressed: () => _testButtons(context, service),
-                    ),
                     _hint(
                       context,
                       "Select a mapped button to add a double press or long press action. "
@@ -160,8 +155,14 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
               ),
             _hint(
               context,
-              "Otherwise, turn on Developer options > Wireless debugging in Android "
-              "settings, then connect below. Nothing else needs installing.",
+              service.rawInputStatus.pairingRequired
+                  ? "Otherwise, turn on Developer options > Wireless debugging, then pair "
+                      "below with the port and code Android shows. Nothing else needs "
+                      "installing."
+                  : "Otherwise, adbd has to be listening on TCP. This device is too old for "
+                      "wireless debugging, so run this once from a computer, and again after "
+                      "every reboot:\n\n    adb tcpip 5555\n\nThen press Connect and accept "
+                      "the prompt on screen.",
             ),
             TextButton.icon(
               icon: Icon(Icons.link),
@@ -184,6 +185,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
               icon: Icon(Icons.add),
               label: Text("Map a firmware button"),
               onPressed: () => _addRawMapping(context, service),
+            ),
+            TextButton.icon(
+              icon: Icon(Icons.bug_report_outlined),
+              label: Text("Test remote buttons"),
+              onPressed: () => _testButtons(context, service),
             ),
           ],
         ],

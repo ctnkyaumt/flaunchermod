@@ -52,6 +52,27 @@ object AdbInputBridge {
 
     private const val EV_KEY = 0x01
 
+    private const val LOOPBACK = "127.0.0.1"
+
+    /** The port `adb tcpip 5555` opens. Nothing listens there by default. */
+    private const val LEGACY_PORT = 5555
+
+    private const val MDNS_TIMEOUT_MS = 7_000L
+
+    /**
+     * adbd not listening is by far the most common failure, and the message the
+     * exception carries for it says nothing useful. Name the fix instead.
+     */
+    private fun describe(e: Exception): String = when {
+        e is java.net.ConnectException ||
+            e is java.net.SocketTimeoutException ||
+            e.message?.contains("ECONNREFUSED", ignoreCase = true) == true ->
+            "adbd is not listening on TCP. Run `adb tcpip 5555` once from a computer."
+        e.javaClass.simpleName.contains("PairingRequired") ->
+            "This device wants a pairing code first."
+        else -> e.message ?: e.javaClass.simpleName
+    }
+
     enum class State { DISCONNECTED, CONNECTING, CONNECTED, FAILED }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -101,18 +122,30 @@ object AdbInputBridge {
         thread(name = "adb-getevent", isDaemon = true) {
             try {
                 val connection = AdbConnectionManager.getInstance(context)
+                connection.setHostAddress(LOOPBACK)
                 manager = connection
-                // Finds the wireless debugging port over mDNS on Android 11+,
-                // and falls back to the classic 5555 before that.
-                if (!connection.autoConnect(context, 10_000)) {
-                    connection.connect(5555)
+
+                val connected = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Wireless debugging picks a random port and announces it
+                    // over mDNS; there is no fixed one to guess.
+                    connection.autoConnect(context, MDNS_TIMEOUT_MS) ||
+                        connection.connect(LOOPBACK, LEGACY_PORT)
+                } else {
+                    // No mDNS before Android 11. adbd only listens on TCP once
+                    // someone has set service.adb.tcp.port, which is what
+                    // `adb tcpip 5555` does.
+                    connection.connect(LOOPBACK, LEGACY_PORT)
+                }
+
+                if (!connected) {
+                    throw IllegalStateException("adbd refused the connection")
                 }
                 state = State.CONNECTED
                 lastError = null
                 Log.d(TAG, "Connected to local adbd")
                 pump(connection)
             } catch (e: Exception) {
-                lastError = e.message ?: e.javaClass.simpleName
+                lastError = describe(e)
                 state = State.FAILED
                 Log.w(TAG, "Could not read input over ADB", e)
             }
