@@ -57,7 +57,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     if (state == AppLifecycleState.resumed) {
       context.read<ButtonMappingService>()
         ..refreshServiceState()
-        ..refreshShizukuStatus();
+        ..refreshRawInputStatus();
     }
   }
 
@@ -106,7 +106,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                     ),
                     Divider(),
                     _sectionTitle(context, "Firmware buttons"),
-                    _shizukuSection(context, service),
+                    _rawInputSection(context, service),
                     Divider(),
                     _hint(
                       context,
@@ -135,7 +135,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
   /// The Netflix and Prime buttons on most boxes never become key events at
   /// all, so nothing above can catch them. Reading the kernel input devices
   /// can, and that needs the shell privilege Shizuku hands out.
-  Widget _shizukuSection(BuildContext context, ButtonMappingService service) => Column(
+  Widget _rawInputSection(BuildContext context, ButtonMappingService service) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _hint(
@@ -160,11 +160,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       "below with the port and code Android shows. Nothing else needs "
                       "installing."
                   : "Otherwise, adbd has to be listening on TCP. This device is too old for "
-                      "wireless debugging, so run this once from a computer:\n\n"
+                      "wireless debugging, so run this from a computer after each reboot:\n\n"
                       "    adb tcpip 5555\n\n"
-                      "Then press Connect and accept the prompt on screen. That is a one-off "
-                      "— on the first successful connection FLauncher makes the setting "
-                      "permanent, and reconnects on its own after every reboot.",
+                      "Then press Connect and accept the prompt on screen. Android remembers "
+                      "FLauncher's key, but deliberately does not keep the TCP listener open "
+                      "across reboots.",
             ),
             TextButton.icon(
               icon: Icon(Icons.link),
@@ -198,8 +198,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       );
 
   String _rawInputStatusLine(RawInputStatus status) {
-    if (status.shizuku == ShizukuStatus.ready) {
+    if (status.shizukuConnected) {
       return "Connected through Shizuku.";
+    }
+    if (status.shizuku == ShizukuStatus.ready && status.adb == AdbState.disconnected) {
+      return "Shizuku permission granted; connect the input reader.";
     }
     switch (status.adb) {
       case AdbState.connected:
@@ -262,6 +265,12 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       );
 
   Future<void> _addRawMapping(BuildContext context, ButtonMappingService service) async {
+    if (!service.serviceEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Turn on the accessibility service first")),
+      );
+      return;
+    }
     if (!service.rawInputStatus.ready) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Connect to the debug bridge first")),
@@ -272,7 +281,10 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     final captured = await showDialog<Map<String, dynamic>>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _CaptureKeyDialog(service: service, rawOnly: true),
+      builder: (_) => _CaptureKeyDialog(
+        service: service,
+        source: ButtonCaptureSource.raw,
+      ),
     );
     if (captured == null || !mounted) {
       return;
@@ -430,6 +442,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     await service.setKeyAction(
       keyCode: mapping.keyCode,
       scanCode: mapping.scanCode,
+      matchMode: mapping.matchMode,
       keyLabel: mapping.keyLabel,
       trigger: trigger,
       // _clearAction is the sentinel meaning "unbind this trigger".
@@ -493,16 +506,87 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       return;
     }
 
+    final matchMode = await _pickKeyMatchMode(context, service, keyCode, scanCode);
+    if (matchMode == null || !mounted) {
+      return;
+    }
+
     final action = await _pickAction(context);
     if (action != null && !identical(action, _clearAction)) {
       await service.setKeyAction(
         keyCode: keyCode,
         scanCode: scanCode,
+        matchMode: matchMode,
         keyLabel: captured["keyLabel"] as String?,
         trigger: PressTrigger.single,
         action: action,
       );
     }
+  }
+
+  /// Key codes are the stable default. The scan-code option mirrors the
+  /// troubleshooting path in established button mappers, but applies only to
+  /// this binding so it cannot silently break every existing mapping.
+  Future<KeyMatchMode?> _pickKeyMatchMode(
+    BuildContext context,
+    ButtonMappingService service,
+    int keyCode,
+    int? scanCode,
+  ) async {
+    if (keyCode == 0) return KeyMatchMode.scanCode;
+    if (scanCode == null) return KeyMatchMode.keyCode;
+
+    // Re-capturing the same physical button should edit its existing binding.
+    for (final mapping in service.keyMappings) {
+      if (mapping.keyCode == keyCode && mapping.scanCode == scanCode) {
+        return mapping.matchMode;
+      }
+    }
+
+    // Keep the common path one-step. Only ask about scan codes once the device
+    // has demonstrated the ambiguity by reporting the same Android key code for
+    // two different physical buttons.
+    final hasCollision = service.keyMappings.any(
+      (mapping) => mapping.keyCode == keyCode && mapping.scanCode != scanCode,
+    );
+    if (!hasCollision) return KeyMatchMode.keyCode;
+
+    return showDialog<KeyMatchMode>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text("Identify this button by"),
+        children: [
+          _DialogOption(
+            autofocus: true,
+            onPressed: () => Navigator.of(dialogContext).pop(KeyMatchMode.scanCode),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Hardware scan code (recommended)"),
+                Text(
+                  "These two buttons report the same key code; use their scan "
+                  "codes to tell them apart.",
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          _DialogOption(
+            onPressed: () => Navigator.of(dialogContext).pop(KeyMatchMode.keyCode),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Android key code"),
+                Text(
+                  "Use one action for both buttons and replace the existing key-code mapping.",
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _testButtons(BuildContext context, ButtonMappingService service) async {
@@ -843,12 +927,14 @@ class _AdbPairDialogState extends State<_AdbPairDialog> {
 class _CaptureKeyDialog extends StatefulWidget {
   final ButtonMappingService service;
 
-  /// Only accept events read off /dev/input, ignoring ordinary key events.
-  /// A firmware button is being learned, and the remote's normal buttons would
-  /// otherwise answer for it.
-  final bool rawOnly;
+  /// Android and `/dev/input` events share one native event channel, so every
+  /// capture dialog must say which source it is learning.
+  final ButtonCaptureSource source;
 
-  const _CaptureKeyDialog({required this.service, this.rawOnly = false});
+  const _CaptureKeyDialog({
+    required this.service,
+    this.source = ButtonCaptureSource.android,
+  });
 
   @override
   State<_CaptureKeyDialog> createState() => _CaptureKeyDialogState();
@@ -866,7 +952,7 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
   Future<void> _capture() async {
     final captured = await widget.service.captureNextKey(
       timeout: _timeout,
-      rawOnly: widget.rawOnly,
+      source: widget.source,
     );
     if (mounted) {
       Navigator.of(context).pop(captured);
@@ -884,7 +970,7 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
             Text("Press the remote button you want to map."),
             SizedBox(height: 8),
             Text(
-              widget.rawOnly
+              widget.source == ButtonCaptureSource.raw
                   ? "Nothing within ${_timeout.inSeconds} seconds means the reader is not "
                       "seeing this remote. Check the status line on the previous screen."
                   : "If nothing happens within ${_timeout.inSeconds} seconds, that button "

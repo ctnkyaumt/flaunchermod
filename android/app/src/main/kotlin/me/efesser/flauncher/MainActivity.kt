@@ -351,6 +351,7 @@ class MainActivity : FlutterActivity() {
     /** One picture of both routes to shell privilege, for the settings page. */
     private fun rawInputStatus(): Map<String, Serializable?> = mapOf(
         "shizuku" to ShizukuInputBridge.status().name,
+        "shizukuConnected" to ShizukuInputBridge.connected,
         "adb" to AdbInputBridge.state.name,
         "adbError" to AdbInputBridge.lastError,
         "pairingRequired" to AdbInputBridge.pairingSupported,

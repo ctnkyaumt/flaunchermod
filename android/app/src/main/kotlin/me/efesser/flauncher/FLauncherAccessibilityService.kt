@@ -147,6 +147,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     // press duration is meaningless, and a stray up would look like a long press.
     private var heldBinding: ButtonMappingStore.Binding? = null
     private var longPressFired = false
+    private var actionFiredOnDown = false
     private var pendingLong: Runnable? = null
 
     private var pendingSingle: Runnable? = null
@@ -306,6 +307,17 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
         heldBinding = binding
         longPressFired = false
+        actionFiredOnDown = false
+
+        // With no double or long action there is nothing to disambiguate. Fire
+        // on the first down for lower latency and for firmware buttons that
+        // never deliver an ACTION_UP. Waiting for release made those buttons
+        // look broken.
+        if (!binding.hasDouble && !binding.hasLong) {
+            actionFiredOnDown = true
+            perform(binding.actionFor(ButtonMappingStore.Trigger.SINGLE))
+            return
+        }
         if (!binding.hasLong) return
 
         val runnable = Runnable {
@@ -320,7 +332,16 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     private fun onBindingUp(binding: ButtonMappingStore.Binding) {
+        // An unrelated or stale key-up must not cancel the long-press timer for
+        // the button that is actually held.
+        if (heldBinding != binding) return
         cancelPendingLong()
+
+        if (actionFiredOnDown) {
+            actionFiredOnDown = false
+            heldBinding = null
+            return
+        }
 
         // Already handled while the button was still held.
         if (longPressFired) {
@@ -329,9 +350,6 @@ class FLauncherAccessibilityService : AccessibilityService() {
             return
         }
 
-        // No matching down means the press started before this binding existed,
-        // or the down went elsewhere; there is nothing to classify.
-        if (heldBinding != binding) return
         heldBinding = null
 
         // A second press landing inside the double-press window wins outright.
@@ -381,6 +399,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         cancelPendingLong()
         heldBinding = null
         longPressFired = false
+        actionFiredOnDown = false
     }
 
     /**

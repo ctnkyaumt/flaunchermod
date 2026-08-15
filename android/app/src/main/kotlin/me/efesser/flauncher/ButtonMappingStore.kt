@@ -40,6 +40,9 @@ object ButtonMappingStore {
     /** How a button press was classified. */
     enum class Trigger { SINGLE, DOUBLE, LONG }
 
+    /** Which field of an Android key event identifies a binding. */
+    enum class MatchMode { KEY_CODE, SCAN_CODE }
+
     /** Action carried out when a mapped button fires. */
     sealed class Action {
         /** Launch an installed package by name. */
@@ -73,12 +76,14 @@ object ButtonMappingStore {
     /**
      * One physical remote button and what it should do.
      *
-     * [scanCode] identifies the button only when [keyCode] is `KEYCODE_UNKNOWN`;
-     * see [Mappings.resolve].
+     * [matchMode] is explicit because some remotes report one Android key code
+     * for several vendor buttons. Those bindings can opt into the more specific
+     * scan code without changing every other mapping.
      */
     data class Binding(
         val keyCode: Int,
         val scanCode: Int?,
+        val matchMode: MatchMode,
         val single: Action?,
         val double: Action?,
         val long: Action?,
@@ -103,9 +108,22 @@ object ButtonMappingStore {
                 } else {
                     null
                 }
+                val matchMode = when (json.optString("matchMode")) {
+                    "scanCode" -> MatchMode.SCAN_CODE
+                    "keyCode" -> MatchMode.KEY_CODE
+                    // Backward compatibility with mappings saved before the
+                    // match mode was explicit.
+                    else -> if (keyCode == KeyEvent.KEYCODE_UNKNOWN && scanCode != null) {
+                        MatchMode.SCAN_CODE
+                    } else {
+                        MatchMode.KEY_CODE
+                    }
+                }
+                if (matchMode == MatchMode.SCAN_CODE && scanCode == null) return null
                 val binding = Binding(
                     keyCode = keyCode,
                     scanCode = scanCode,
+                    matchMode = matchMode,
                     single = Action.fromJson(json.optJSONObject("single")),
                     double = Action.fromJson(json.optJSONObject("double")),
                     long = Action.fromJson(json.optJSONObject("long")),
@@ -128,18 +146,14 @@ object ButtonMappingStore {
         /**
          * Finds the binding for an incoming event.
          *
-         * The key code identifies the button whenever the driver reports one,
-         * because it is the same across every remote that has that button —
-         * scan codes are per input device, so a binding keyed on one would stop
-         * working as soon as the user picked up a different remote. Scan codes
-         * are only consulted for `KEYCODE_UNKNOWN`, where they are the sole
-         * thing telling the extra buttons apart.
+         * A scan-code binding is more specific and wins when both modes match
+         * an event. Key-code bindings remain portable across different remotes.
          */
         fun resolve(keyCode: Int, scanCode: Int): Binding? =
-            if (keyCode != KeyEvent.KEYCODE_UNKNOWN) {
-                bindings.firstOrNull { it.keyCode == keyCode }
-            } else {
-                bindings.firstOrNull { it.scanCode != null && it.scanCode == scanCode }
+            bindings.firstOrNull {
+                scanCode != 0 && it.matchMode == MatchMode.SCAN_CODE && it.scanCode == scanCode
+            } ?: bindings.firstOrNull {
+                it.matchMode == MatchMode.KEY_CODE && it.keyCode == keyCode
             }
     }
 
@@ -187,6 +201,7 @@ object ButtonMappingStore {
                     val binding = Binding(
                         keyCode = KeyEvent.KEYCODE_UNKNOWN,
                         scanCode = null,
+                        matchMode = MatchMode.KEY_CODE,
                         single = Action.fromJson(entry.optJSONObject("single")),
                         double = Action.fromJson(entry.optJSONObject("double")),
                         long = Action.fromJson(entry.optJSONObject("long")),

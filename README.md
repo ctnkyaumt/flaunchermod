@@ -17,7 +17,8 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [x] Weather widget
 - [x] Button mapper integrated (under settings) — remaps remote buttons, including
       the app shortcut buttons (Netflix, YouTube, ...). Home and Power are handled
-      by Android itself and cannot be remapped.
+      by Android itself and cannot be remapped. See the
+      [input architecture notes](docs/button-mapping-reference-analysis.md).
 - [x] Backup/restore (local only)
 - [ ] Force stop app
 

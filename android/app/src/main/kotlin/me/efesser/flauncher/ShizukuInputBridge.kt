@@ -60,6 +60,10 @@ object ShizukuInputBridge {
     var openedDevices: List<String> = emptyList()
         private set
 
+    /** Permission alone is not a live reader; the helper must be bound too. */
+    val connected: Boolean
+        get() = service?.asBinder()?.isBinderAlive == true && openedDevices.isNotEmpty()
+
     private val callback = object : IRawInputCallback.Stub() {
         override fun onRawKey(code: Int, value: Int, device: String?) {
             val target = listener ?: return

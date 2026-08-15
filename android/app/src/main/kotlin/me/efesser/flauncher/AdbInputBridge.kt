@@ -159,7 +159,6 @@ object AdbInputBridge {
                 lastError = null
                 attempt = 0
                 Log.d(TAG, "Connected to local adbd")
-                persistTcpPort(connection)
                 pump(connection)
                 // pump() only returns when the stream ends, which means the
                 // connection dropped rather than that we are done.
@@ -170,27 +169,6 @@ object AdbInputBridge {
                 Log.w(TAG, "Could not read input over ADB", e)
                 if (running) scheduleRetry(context)
             }
-        }
-    }
-
-    /**
-     * Makes adbd keep listening on TCP across reboots.
-     *
-     * `adb tcpip 5555` sets `service.adb.tcp.port`, which is not persistent, so
-     * it has to be repeated after every boot. The `persist.` variant survives,
-     * and the shell we are already talking through is allowed to set it — so the
-     * command from a computer is needed exactly once, ever, rather than daily.
-     */
-    private fun persistTcpPort(connection: AbsAdbConnectionManager) {
-        try {
-            connection.openStream("shell:setprop persist.adb.tcp.port $LEGACY_PORT").use { stream ->
-                stream.openInputStream().use { it.readBytes() }
-            }
-            Log.d(TAG, "persist.adb.tcp.port set; adbd will listen again after a reboot")
-        } catch (e: Exception) {
-            // Some builds refuse the property. The connection still works for
-            // this boot, it just will not come back on its own.
-            Log.w(TAG, "Could not persist the adb port", e)
         }
     }
 

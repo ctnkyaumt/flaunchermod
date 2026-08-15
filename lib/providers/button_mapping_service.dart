@@ -101,6 +101,14 @@ extension PressTriggerLabel on PressTrigger {
   }
 }
 
+/// Which part of an Android `KeyEvent` identifies a mapped button.
+///
+/// Key codes are portable and remain the default. Some remotes collapse
+/// several vendor buttons onto one Android key code, though; those buttons can
+/// opt into their hardware scan code instead. Keeping this choice per mapping
+/// avoids the all-or-nothing "use scan codes" switch used by other mappers.
+enum KeyMatchMode { keyCode, scanCode }
+
 /// Scan codes for remote buttons that report no usable key code.
 ///
 /// Most TV remote extras come through as `KEYCODE_UNKNOWN`, so the scan code is
@@ -166,10 +174,12 @@ class AppTarget {
 class KeyMapping {
   final int keyCode;
 
-  /// Hardware scan code, when the event carried one. Only used to tell apart
-  /// buttons that report `KEYCODE_UNKNOWN`; a scan code is specific to one
-  /// input device, so it is not what identifies a button that has a key code.
+  /// Hardware scan code, when the event carried one. It identifies unknown
+  /// Android keys and can be selected explicitly when a remote reports one key
+  /// code for several vendor buttons.
   final int? scanCode;
+
+  final KeyMatchMode matchMode;
 
   /// Platform name for the key code, e.g. `KEYCODE_GUIDE`.
   final String? keyLabel;
@@ -181,6 +191,7 @@ class KeyMapping {
   const KeyMapping({
     required this.keyCode,
     this.scanCode,
+    this.matchMode = KeyMatchMode.keyCode,
     this.keyLabel,
     this.single,
     this.doublePress,
@@ -203,6 +214,7 @@ class KeyMapping {
   KeyMapping withAction(PressTrigger trigger, ButtonAction? action) => KeyMapping(
         keyCode: keyCode,
         scanCode: scanCode,
+        matchMode: matchMode,
         keyLabel: keyLabel,
         single: trigger == PressTrigger.single ? action : single,
         doublePress: trigger == PressTrigger.doublePress ? action : doublePress,
@@ -211,14 +223,13 @@ class KeyMapping {
 
   /// Identity of the physical button, used to find an existing binding.
   ///
-  /// Mirrors `ButtonMappingStore.Mappings.resolve`: the key code identifies the
-  /// button whenever there is one, and the scan code only stands in for the
-  /// extra buttons that report `KEYCODE_UNKNOWN`.
-  String get id => keyCode != 0 ? "kc:$keyCode" : "sc:$scanCode";
+  /// Mirrors `ButtonMappingStore.Mappings.resolve` on the native side.
+  String get id => matchMode == KeyMatchMode.scanCode ? "sc:$scanCode" : "kc:$keyCode";
 
   Map<String, dynamic> toJson() => {
         "keyCode": keyCode,
         if (scanCode != null) "scanCode": scanCode,
+        "matchMode": describeEnum(matchMode),
         if (keyLabel != null) "keyLabel": keyLabel,
         if (single != null) "single": single!.toJson(),
         if (doublePress != null) "double": doublePress!.toJson(),
@@ -236,9 +247,20 @@ class KeyMapping {
     }
 
     final scanCode = json["scanCode"];
+    final matchMode = json["matchMode"] == describeEnum(KeyMatchMode.scanCode) ||
+            // Existing mappings did not persist a mode. Preserve their old
+            // behaviour: only KEYCODE_UNKNOWN fell back to the scan code.
+            (!json.containsKey("matchMode") && keyCode == 0)
+        ? KeyMatchMode.scanCode
+        : KeyMatchMode.keyCode;
+    if (matchMode == KeyMatchMode.scanCode && !(scanCode is int && scanCode != 0)) {
+      return null;
+    }
+
     final mapping = KeyMapping(
       keyCode: keyCode,
       scanCode: scanCode is int && scanCode != 0 ? scanCode : null,
+      matchMode: matchMode,
       keyLabel: json["keyLabel"] as String?,
       single: action("single"),
       doublePress: action("double"),
@@ -249,7 +271,9 @@ class KeyMapping {
 
   /// Friendly name for the button, falling back to the raw codes.
   String get displayName {
-    final known = keyCode == 0 && scanCode != null ? _knownScanCodes[scanCode] : null;
+    final known = matchMode == KeyMatchMode.scanCode && scanCode != null
+        ? _knownScanCodes[scanCode]
+        : null;
     if (known != null) {
       return known;
     }
@@ -260,11 +284,15 @@ class KeyMapping {
       final stripped = label.startsWith("KEYCODE_") ? label.substring("KEYCODE_".length) : label;
       final words = stripped.replaceAll("_", " ").toLowerCase();
       if (words.isNotEmpty) {
-        return "${words[0].toUpperCase()}${words.substring(1)}";
+        final friendly = "${words[0].toUpperCase()}${words.substring(1)}";
+        return matchMode == KeyMatchMode.scanCode ? "$friendly (scan $scanCode)" : friendly;
       }
     }
 
-    return scanCode != null ? "Button (scan $scanCode)" : "Key $keyCode";
+    if (matchMode == KeyMatchMode.scanCode) {
+      return "Button (scan $scanCode)";
+    }
+    return "Key $keyCode";
   }
 
   /// One-line summary of everything bound to this button.
@@ -365,9 +393,32 @@ enum ShizukuStatus { unavailable, permissionRequired, ready }
 /// State of the launcher's own connection to the device's adbd.
 enum AdbState { disconnected, connecting, connected, failed }
 
+/// Which native input stream a capture dialog is waiting for.
+///
+/// Android and raw events are both broadcast while capture mode is armed. A
+/// normal mapping must explicitly reject raw events, otherwise the faster
+/// `/dev/input` reader can win the race and make a perfectly valid Android key
+/// look unmappable.
+enum ButtonCaptureSource { android, raw, any }
+
+bool isButtonCaptureEvent(Map<dynamic, dynamic> event, ButtonCaptureSource source) {
+  if (event["keyAction"] != 0) return false;
+  final rawCode = event["rawCode"];
+  final isRaw = rawCode is int && rawCode >= 0;
+  switch (source) {
+    case ButtonCaptureSource.android:
+      return !isRaw;
+    case ButtonCaptureSource.raw:
+      return isRaw;
+    case ButtonCaptureSource.any:
+      return true;
+  }
+}
+
 /// Both routes to the shell privilege that reading `/dev/input` needs.
 class RawInputStatus {
   final ShizukuStatus shizuku;
+  final bool shizukuConnected;
   final AdbState adb;
 
   /// Last ADB failure, worth showing because the causes are all user-fixable.
@@ -379,16 +430,18 @@ class RawInputStatus {
 
   const RawInputStatus({
     this.shizuku = ShizukuStatus.unavailable,
+    this.shizukuConnected = false,
     this.adb = AdbState.disconnected,
     this.adbError,
     this.pairingRequired = false,
   });
 
   /// Whether firmware buttons can be read right now.
-  bool get ready => shizuku == ShizukuStatus.ready || adb == AdbState.connected;
+  bool get ready => shizukuConnected || adb == AdbState.connected;
 
   static RawInputStatus fromMap(Map<dynamic, dynamic> map) => RawInputStatus(
         shizuku: _shizuku(map["shizuku"] as String?),
+        shizukuConnected: map["shizukuConnected"] as bool? ?? false,
         adb: _adb(map["adb"] as String?),
         adbError: map["adbError"] as String?,
         pairingRequired: map["pairingRequired"] as bool? ?? false,
@@ -464,7 +517,6 @@ class ButtonMappingService extends ChangeNotifier {
   List<AppRedirect> _appRedirects = [];
   List<RawMapping> _rawMappings = [];
   bool _serviceEnabled = false;
-  ShizukuStatus _shizukuStatus = ShizukuStatus.unavailable;
   RawInputStatus _rawInputStatus = const RawInputStatus();
 
   List<KeyMapping> get keyMappings => List.unmodifiable(_keyMappings);
@@ -472,8 +524,6 @@ class ButtonMappingService extends ChangeNotifier {
   List<AppRedirect> get appRedirects => List.unmodifiable(_appRedirects);
 
   List<RawMapping> get rawMappings => List.unmodifiable(_rawMappings);
-
-  ShizukuStatus get shizukuStatus => _shizukuStatus;
 
   RawInputStatus get rawInputStatus => _rawInputStatus;
 
@@ -484,7 +534,7 @@ class ButtonMappingService extends ChangeNotifier {
   ButtonMappingService(this._sharedPreferences, this._channel) {
     _load();
     refreshServiceState();
-    refreshShizukuStatus();
+    refreshRawInputStatus();
   }
 
   void _load() {
@@ -535,16 +585,20 @@ class ButtonMappingService extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshShizukuStatus() async {
+  Future<void> refreshRawInputStatus() async {
     RawInputStatus status;
     try {
       status = RawInputStatus.fromMap(await _channel.rawInputStatus());
     } catch (e) {
       status = const RawInputStatus();
     }
+    final changed = status.shizuku != _rawInputStatus.shizuku ||
+        status.shizukuConnected != _rawInputStatus.shizukuConnected ||
+        status.adb != _rawInputStatus.adb ||
+        status.adbError != _rawInputStatus.adbError ||
+        status.pairingRequired != _rawInputStatus.pairingRequired;
     _rawInputStatus = status;
-    _shizukuStatus = status.shizuku;
-    notifyListeners();
+    if (changed) notifyListeners();
   }
 
   /// Pairs with the device's own adbd, then brings the connection up.
@@ -557,9 +611,16 @@ class ButtonMappingService extends ChangeNotifier {
       paired = false;
     }
     if (paired) {
-      await _channel.startRawInput();
+      try {
+        await _channel.startRawInput();
+        await _waitForRawInput();
+      } catch (e) {
+        debugPrint("ButtonMappingService: paired but could not start raw input - $e");
+        await refreshRawInputStatus();
+      }
+    } else {
+      await refreshRawInputStatus();
     }
-    await refreshShizukuStatus();
     return paired;
   }
 
@@ -570,8 +631,22 @@ class ButtonMappingService extends ChangeNotifier {
       await _channel.startRawInput();
     } catch (e) {
       debugPrint("ButtonMappingService: could not start raw input - $e");
+      await refreshRawInputStatus();
+      return;
     }
-    await refreshShizukuStatus();
+    await _waitForRawInput();
+  }
+
+  /// Binding Shizuku and opening an ADB stream both finish after the method
+  /// channel call returns. Poll briefly so the page transitions from Connect
+  /// to Map without requiring the user to leave and reopen it.
+  Future<void> _waitForRawInput() async {
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    do {
+      await refreshRawInputStatus();
+      if (_rawInputStatus.ready) return;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    } while (DateTime.now().isBefore(deadline));
   }
 
   /// Shows Shizuku's own consent dialog when permission is not held yet. The
@@ -582,7 +657,7 @@ class ButtonMappingService extends ChangeNotifier {
     } catch (e) {
       debugPrint("ButtonMappingService: Shizuku permission request failed - $e");
     }
-    await refreshShizukuStatus();
+    await refreshRawInputStatus();
   }
 
   /// The `/dev/input` nodes the helper opened. Empty means it is not running.
@@ -679,14 +754,13 @@ class ButtonMappingService extends ChangeNotifier {
   /// turned back off — including when the caller gives up.
   Future<Map<String, dynamic>?> captureNextKey({
     Duration timeout = const Duration(seconds: 10),
-    bool rawOnly = false,
+    ButtonCaptureSource source = ButtonCaptureSource.android,
   }) async {
     // Subscribe before arming capture mode, otherwise a very fast press could
     // land between the two and be lost. Only the press is interesting; the
     // release carries the same identity.
     final captured = _channel.keyCaptureStream
-        .where((event) => event is Map && event["keyAction"] == 0)
-        .where((event) => !rawOnly || (event["rawCode"] is int && event["rawCode"] >= 0))
+        .where((event) => event is Map && isButtonCaptureEvent(event, source))
         .first
         .timeout(timeout);
     await _channel.setKeyCaptureMode(true);
@@ -710,11 +784,17 @@ class ButtonMappingService extends ChangeNotifier {
   Future<void> setKeyAction({
     required int keyCode,
     int? scanCode,
+    KeyMatchMode matchMode = KeyMatchMode.keyCode,
     String? keyLabel,
     required PressTrigger trigger,
     required ButtonAction? action,
   }) async {
-    final candidate = KeyMapping(keyCode: keyCode, scanCode: scanCode, keyLabel: keyLabel);
+    final candidate = KeyMapping(
+      keyCode: keyCode,
+      scanCode: scanCode,
+      matchMode: matchMode,
+      keyLabel: keyLabel,
+    );
     final index = _keyMappings.indexWhere((existing) => existing.id == candidate.id);
 
     final updated =
