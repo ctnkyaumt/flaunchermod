@@ -46,14 +46,18 @@ object ShizukuInputBridge {
     enum class Status { UNAVAILABLE, PERMISSION_REQUIRED, READY }
 
     fun interface RawKeyListener {
-        fun onRawKey(code: Int, value: Int, device: String)
+        fun onRawKey(code: Int, value: Int, device: String, scanCode: Int)
     }
 
     private val handler = Handler(Looper.getMainLooper())
 
     private var service: IRawInputService? = null
+    @Volatile
     private var listener: RawKeyListener? = null
+    @Volatile
     private var wantRunning = false
+    @Volatile
+    private var generation = 0
 
     /** Nodes the helper managed to open, for the diagnostics screen. */
     @Volatile
@@ -64,16 +68,21 @@ object ShizukuInputBridge {
     val connected: Boolean
         get() = service?.asBinder()?.isBinderAlive == true && openedDevices.isNotEmpty()
 
-    private val callback = object : IRawInputCallback.Stub() {
-        override fun onRawKey(code: Int, value: Int, device: String?) {
+    private fun callback(session: Int) = object : IRawInputCallback.Stub() {
+        override fun onRawKey(code: Int, value: Int, device: String?, scanCode: Int) {
             val target = listener ?: return
             // Arrives on a binder thread; everything downstream expects main.
-            handler.post { target.onRawKey(code, value, device ?: "") }
+            handler.post {
+                if (wantRunning && generation == session && listener === target) {
+                    target.onRawKey(code, value, device ?: "", scanCode)
+                }
+            }
         }
     }
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (!wantRunning) return
             if (binder == null || !binder.pingBinder()) {
                 Log.w(TAG, "Helper bound with a dead binder")
                 return
@@ -81,7 +90,7 @@ object ShizukuInputBridge {
             val bound = IRawInputService.Stub.asInterface(binder)
             service = bound
             try {
-                bound.start(callback)
+                bound.start(callback(generation))
                 openedDevices = bound.openedDevices() ?: emptyList()
                 Log.d(TAG, "Helper reading ${openedDevices.size} nodes")
             } catch (e: Exception) {
@@ -97,7 +106,7 @@ object ShizukuInputBridge {
 
     private val binderReceived = Shizuku.OnBinderReceivedListener {
         // Shizuku often starts after us; pick the connection back up then.
-        if (wantRunning) handler.post { start(listener) }
+        handler.post { if (wantRunning) start(listener) }
     }
 
     private val binderDead = Shizuku.OnBinderDeadListener {
@@ -114,7 +123,7 @@ object ShizukuInputBridge {
             .daemon(false)
             .processNameSuffix("rawinput")
             .debuggable(false)
-            .version(1)
+            .version(2)
 
     fun status(): Status = try {
         when {
@@ -173,6 +182,7 @@ object ShizukuInputBridge {
 
     fun stop() {
         wantRunning = false
+        generation++
         listener = null
         try {
             service?.stop()

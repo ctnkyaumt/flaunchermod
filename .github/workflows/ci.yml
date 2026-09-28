@@ -36,6 +36,9 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Test button mapping
+        run: flutter test test/providers/button_mapping_service_test.dart
+
       # Extract version from pubspec.yaml
       - name: Extract version
         id: extract_version
@@ -54,6 +57,14 @@ jobs:
           # Explicitly point to the keystore file location might be needed depending on build.gradle setup
           # KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks 
           
+      - name: Test native button input
+        working-directory: android
+        run: ./gradlew app:testReleaseUnitTest
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+
       # Upload Release APK Artifacts
       - name: Upload Release APK Artifacts
         uses: actions/upload-artifact@v4

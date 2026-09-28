@@ -82,6 +82,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
         /** Linux key code, present only for events read off /dev/input. */
         const val EXTRA_RAW_CODE = "rawCode"
+        const val EXTRA_RAW_SCAN_CODE = "rawScanCode"
 
         /**
          * Held at least this long counts as a long press. The action fires as
@@ -113,6 +114,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
          */
         private const val CAPTURE_SELECT_GRACE_MS = 1000L
         private val SELECT_KEY_CODES = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
+        private val RAW_SELECT_CODES = setOf(28, 96, 352, 353) // ENTER, KPENTER, OK, SELECT
 
         /** `value` of a raw EV_KEY event. */
         private const val RAW_UP = 0
@@ -146,12 +148,18 @@ class FLauncherAccessibilityService : AccessibilityService() {
     // is what makes an ACTION_UP trustworthy: without a matching ACTION_DOWN the
     // press duration is meaningless, and a stray up would look like a long press.
     private var heldBinding: ButtonMappingStore.Binding? = null
+    private var heldKey: String? = null
     private var longPressFired = false
     private var actionFiredOnDown = false
     private var pendingLong: Runnable? = null
 
     private var pendingSingle: Runnable? = null
     private var awaitingSecondPressFor: ButtonMappingStore.Binding? = null
+    private var awaitingSecondKey: String? = null
+
+    // Keep both edges consumed if capture closes between a down and its up.
+    private val capturedKeysDown = mutableSetOf<String>()
+    private var redirectTarget: String? = null
 
     private val captureTimeout = Runnable { captureMode = false }
 
@@ -213,9 +221,11 @@ class FLauncherAccessibilityService : AccessibilityService() {
      */
     private fun startRawInput() {
         if (ShizukuInputBridge.status() == ShizukuInputBridge.Status.READY) {
+            AdbInputBridge.stop()
             ShizukuInputBridge.start(::onRawKey)
             return
         }
+        ShizukuInputBridge.stop()
         AdbInputBridge.start(this, ::onRawKey)
     }
 
@@ -224,15 +234,20 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * as a key event. Classified with the same single/double/long machinery as
      * an ordinary key, on the same handler.
      */
-    private fun onRawKey(code: Int, value: Int, device: String) {
+    private fun onRawKey(code: Int, value: Int, device: String, scanCode: Int) {
         if (captureMode) {
-            broadcastCapturedRawKey(code, value, device)
+            // Ignore the tail of the OK press that opened the dialog.
+            if (code in RAW_SELECT_CODES &&
+                SystemClock.elapsedRealtime() - captureArmedAt < CAPTURE_SELECT_GRACE_MS
+            ) return
+            broadcastCapturedRawKey(code, value, device, scanCode)
             return
         }
-        val binding = mappings.rawBindings[code] ?: return
+        val binding = mappings.resolveRaw(code, scanCode) ?: return
+        val identity = "raw:$device:$code:$scanCode"
         when (value) {
-            RAW_DOWN -> onBindingDown(binding, repeat = false)
-            RAW_UP -> onBindingUp(binding)
+            RAW_DOWN -> onBindingDown(binding, identity, repeat = false)
+            RAW_UP -> onBindingUp(binding, identity)
             // RAW_REPEAT says nothing new; the long press is already scheduled.
         }
     }
@@ -272,6 +287,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     private fun reloadMappings() {
+        cancelPressState()
         mappings = ButtonMappingStore.load(this)
         Log.d(
             TAG,
@@ -281,20 +297,35 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (captureMode) return handleCapture(event)
+        val identity = "android:${event.deviceId}:${event.keyCode}:${event.scanCode}"
+        if (event.action == KeyEvent.ACTION_UP && capturedKeysDown.remove(identity)) {
+            if (captureMode) handleCapture(event)
+            return true
+        }
+        if (captureMode) {
+            val consumed = handleCapture(event)
+            if (consumed && event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.add(identity)
+            return consumed
+        }
+        if (identity in capturedKeysDown && event.repeatCount > 0) return true
+        if (event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.remove(identity)
 
         val binding = mappings.resolve(event.keyCode, event.scanCode)
             ?: return super.onKeyEvent(event)
 
         when (event.action) {
-            KeyEvent.ACTION_DOWN -> onBindingDown(binding, event.repeatCount > 0)
-            KeyEvent.ACTION_UP -> onBindingUp(binding)
+            KeyEvent.ACTION_DOWN -> onBindingDown(binding, identity, event.repeatCount > 0)
+            KeyEvent.ACTION_UP -> {
+                if (event.isCanceled) {
+                    if (heldKey == identity) cancelPressState()
+                } else onBindingUp(binding, identity)
+            }
         }
         // Consume down and up alike, so the foreground app sees neither.
         return true
     }
 
-    private fun onBindingDown(binding: ButtonMappingStore.Binding, repeat: Boolean) {
+    private fun onBindingDown(binding: ButtonMappingStore.Binding, identity: String, repeat: Boolean) {
         // Auto-repeat from holding the button; the long press is already
         // scheduled from the original press.
         if (repeat) return
@@ -302,10 +333,15 @@ class FLauncherAccessibilityService : AccessibilityService() {
         // Pressing a different button settles the question of whether the
         // previous one was a double press, so run its single action now instead
         // of making the user wait out the rest of the window.
-        if (awaitingSecondPressFor != null && awaitingSecondPressFor != binding) flushPendingSingle()
+        if (awaitingSecondPressFor != null && awaitingSecondKey != identity) flushPendingSingle()
+        if (awaitingSecondKey == identity) {
+            // The second DOWN must meet the deadline, not its later release.
+            pendingSingle?.let { handler.removeCallbacks(it) }
+        }
         cancelPendingLong()
 
         heldBinding = binding
+        heldKey = identity
         longPressFired = false
         actionFiredOnDown = false
 
@@ -331,15 +367,16 @@ class FLauncherAccessibilityService : AccessibilityService() {
         handler.postDelayed(runnable, LONG_PRESS_MS)
     }
 
-    private fun onBindingUp(binding: ButtonMappingStore.Binding) {
+    private fun onBindingUp(binding: ButtonMappingStore.Binding, identity: String) {
         // An unrelated or stale key-up must not cancel the long-press timer for
         // the button that is actually held.
-        if (heldBinding != binding) return
+        if (heldKey != identity) return
         cancelPendingLong()
 
         if (actionFiredOnDown) {
             actionFiredOnDown = false
             heldBinding = null
+            heldKey = null
             return
         }
 
@@ -347,13 +384,15 @@ class FLauncherAccessibilityService : AccessibilityService() {
         if (longPressFired) {
             longPressFired = false
             heldBinding = null
+            heldKey = null
             return
         }
 
         heldBinding = null
+        heldKey = null
 
         // A second press landing inside the double-press window wins outright.
-        if (awaitingSecondPressFor == binding) {
+        if (awaitingSecondKey == identity) {
             cancelPendingSingle()
             perform(binding.actionFor(ButtonMappingStore.Trigger.DOUBLE))
             return
@@ -366,8 +405,10 @@ class FLauncherAccessibilityService : AccessibilityService() {
         }
 
         awaitingSecondPressFor = binding
+        awaitingSecondKey = identity
         val runnable = Runnable {
             awaitingSecondPressFor = null
+            awaitingSecondKey = null
             pendingSingle = null
             perform(binding.actionFor(ButtonMappingStore.Trigger.SINGLE))
         }
@@ -379,6 +420,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         pendingSingle?.let { handler.removeCallbacks(it) }
         pendingSingle = null
         awaitingSecondPressFor = null
+        awaitingSecondKey = null
     }
 
     /** Runs a single-press action that is still waiting out the double window. */
@@ -398,6 +440,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         cancelPendingSingle()
         cancelPendingLong()
         heldBinding = null
+        heldKey = null
         longPressFired = false
         actionFiredOnDown = false
     }
@@ -428,20 +471,32 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        if (captureMode) return
         if (mappings.appRedirects.isEmpty()) return
 
         val packageName = event.packageName?.toString() ?: return
-        val action = mappings.appRedirects[packageName] ?: return
-
+        // One redirect per app transition; avoid A -> B -> A redirect loops.
+        if (packageName == redirectTarget) return
         val now = SystemClock.elapsedRealtime()
+        // Transient SystemUI windows must not erase the target during launch.
+        if (now - lastRedirectAt < REDIRECT_DEBOUNCE_MS) return
+        redirectTarget = null
+        val action = mappings.appRedirects[packageName] ?: return
+        if (action is ButtonMappingStore.Action.LaunchApp && action.packageName == packageName) return
+
         if (packageName == lastRedirectPackage && now - lastRedirectAt < REDIRECT_DEBOUNCE_MS) return
         lastRedirectPackage = packageName
         lastRedirectAt = now
 
-        // Send the offending app back before launching the replacement,
-        // otherwise it stays underneath on the back stack.
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        perform(action)
+        redirectTarget = when (action) {
+            is ButtonMappingStore.Action.LaunchApp -> action.packageName
+            ButtonMappingStore.Action.OpenFlauncher -> this.packageName
+            else -> null
+        }
+        // BACK is asynchronous: sending it before a launch can close the new
+        // target instead. Only use it when the requested action is to block.
+        if (action == ButtonMappingStore.Action.Block) performGlobalAction(GLOBAL_ACTION_BACK)
+        else perform(action)
     }
 
     override fun onInterrupt() {}
@@ -464,9 +519,9 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     /** Same channel as a captured key, flagged so the UI can tell them apart. */
-    private fun broadcastCapturedRawKey(code: Int, value: Int, device: String) {
+    private fun broadcastCapturedRawKey(code: Int, value: Int, device: String, scanCode: Int) {
         if (value != RAW_DOWN && value != RAW_UP) return
-        Log.d(TAG, "captured raw code=$code value=$value device=$device")
+        Log.d(TAG, "captured raw code=$code scanCode=$scanCode value=$value device=$device")
         val intent = Intent(ACTION_KEY_CAPTURED).apply {
             setPackage(packageName)
             putExtra(EXTRA_KEY_CODE, KeyEvent.KEYCODE_UNKNOWN)
@@ -475,6 +530,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
             putExtra(EXTRA_KEY_ACTION, if (value == RAW_DOWN) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP)
             putExtra(EXTRA_DEVICE, device)
             putExtra(EXTRA_RAW_CODE, code)
+            putExtra(EXTRA_RAW_SCAN_CODE, scanCode)
         }
         sendBroadcast(intent)
     }

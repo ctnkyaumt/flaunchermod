@@ -102,6 +102,9 @@ flutter {
 }
 
 dependencies {
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20231013"
+
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
 
     // Runs a helper process at shell privilege, which is what it takes to read

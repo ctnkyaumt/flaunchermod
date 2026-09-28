@@ -278,6 +278,9 @@ class MainActivity : FlutterActivity() {
                                     "rawCode" to intent.getIntExtra(
                                         FLauncherAccessibilityService.EXTRA_RAW_CODE, -1
                                     ),
+                                    "rawScanCode" to intent.getIntExtra(
+                                        FLauncherAccessibilityService.EXTRA_RAW_SCAN_CODE, 0
+                                    ),
                                 )
                             )
                         }

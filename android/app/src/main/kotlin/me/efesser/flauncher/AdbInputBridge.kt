@@ -28,6 +28,7 @@ import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -47,17 +48,13 @@ object AdbInputBridge {
 
     private const val TAG = "FLauncherAdb"
 
-    /** `getevent` prints `/dev/input/eventN: TYPE CODE VALUE`, all hex. */
-    private val EVENT_LINE = Regex("^(\\S+):\\s+([0-9a-fA-F]+)\\s+([0-9a-fA-F]+)\\s+([0-9a-fA-F]+)")
-
-    private const val EV_KEY = 0x01
-
     private const val LOOPBACK = "127.0.0.1"
 
     /** The port `adb tcpip 5555` opens. Nothing listens there by default. */
     private const val LEGACY_PORT = 5555
 
     private const val MDNS_TIMEOUT_MS = 7_000L
+    private const val CONNECT_TIMEOUT_MS = 15_000L
 
     private val RETRY_DELAYS_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
     private const val MAX_ATTEMPTS = 12
@@ -82,9 +79,13 @@ object AdbInputBridge {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    @Volatile
     private var listener: ShizukuInputBridge.RawKeyListener? = null
-    private var manager: AbsAdbConnectionManager? = null
+    private val connectionLock = Any()
+    @Volatile
     private var reader: Thread? = null
+    @Volatile
+    private var generation = 0
 
     @Volatile
     var state: State = State.DISCONNECTED
@@ -100,6 +101,7 @@ object AdbInputBridge {
 
     /** Retries so far; reset on every successful connection. */
     private var attempt = 0
+    private var pendingRetry: Runnable? = null
 
     /** Whether the device needs a pairing code before it will accept a key. */
     val pairingSupported: Boolean
@@ -124,59 +126,100 @@ object AdbInputBridge {
     /** Clears the backoff so a user pressing Connect gets an immediate try. */
     fun resetBackoff() {
         attempt = 0
-        handler.removeCallbacksAndMessages(null)
+        pendingRetry?.let { handler.removeCallbacks(it) }
+        pendingRetry = null
         if (state == State.FAILED) state = State.DISCONNECTED
     }
 
     fun start(context: Context, listener: ShizukuInputBridge.RawKeyListener?) {
         this.listener = listener
         if (state == State.CONNECTED || state == State.CONNECTING) return
+        pendingRetry?.let { handler.removeCallbacks(it) }
+        pendingRetry = null
         state = State.CONNECTING
         running = true
+        val session = ++generation
+        val appContext = context.applicationContext
 
-        thread(name = "adb-getevent", isDaemon = true) {
-            try {
-                val connection = AdbConnectionManager.getInstance(context)
-                connection.setHostAddress(LOOPBACK)
-                manager = connection
-
-                val connected = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // Wireless debugging picks a random port and announces it
-                    // over mDNS; there is no fixed one to guess.
-                    connection.autoConnect(context, MDNS_TIMEOUT_MS) ||
-                        connection.connect(LOOPBACK, LEGACY_PORT)
-                } else {
-                    // No mDNS before Android 11. adbd only listens on TCP once
-                    // someone has set service.adb.tcp.port, which is what
-                    // `adb tcpip 5555` does.
-                    connection.connect(LOOPBACK, LEGACY_PORT)
+        val worker = thread(name = "adb-getevent", isDaemon = true, start = false) {
+            // The manager is a singleton. Finish closing the previous session
+            // before a replacement reader can open another connection on it.
+            synchronized(connectionLock) {
+                if (!isCurrent(session)) return@synchronized
+                var connection: AbsAdbConnectionManager? = null
+                try {
+                    connection = AdbConnectionManager.getInstance(appContext)
+                    connection.setHostAddress(LOOPBACK)
+                    connection.setTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    connect(connection, appContext, session)
+                    if (!isCurrent(session)) return@synchronized
+                    handler.post {
+                        if (isCurrent(session)) {
+                            state = State.CONNECTED
+                            lastError = null
+                            attempt = 0
+                        }
+                    }
+                    Log.d(TAG, "Connected to local adbd")
+                    pump(connection, session)
+                } catch (e: Exception) {
+                    if (isCurrent(session)) {
+                        handler.post {
+                            if (isCurrent(session)) lastError = describe(e)
+                        }
+                        Log.w(TAG, "Could not read input over ADB", e)
+                    }
+                } finally {
+                    try {
+                        // close() also destroys the singleton's authentication
+                        // key; disconnect() keeps it usable for the next try.
+                        connection?.disconnect()
+                    } catch (e: Exception) {
+                        // Already gone.
+                    }
+                    if (reader === Thread.currentThread()) reader = null
+                    handler.post {
+                        if (isCurrent(session)) scheduleRetry(appContext, session)
+                    }
                 }
-
-                if (!connected) {
-                    throw IllegalStateException("adbd refused the connection")
-                }
-                state = State.CONNECTED
-                lastError = null
-                attempt = 0
-                Log.d(TAG, "Connected to local adbd")
-                pump(connection)
-                // pump() only returns when the stream ends, which means the
-                // connection dropped rather than that we are done.
-                if (running) scheduleRetry(context)
-            } catch (e: Exception) {
-                lastError = describe(e)
-                state = State.FAILED
-                Log.w(TAG, "Could not read input over ADB", e)
-                if (running) scheduleRetry(context)
             }
         }
+        reader = worker
+        worker.start()
+    }
+
+    private fun isCurrent(session: Int): Boolean = running && generation == session
+
+    private fun connect(connection: AbsAdbConnectionManager, context: Context, session: Int) {
+        // Many TVs expose only the legacy TCP port, even on Android 11+.
+        // libadb throws on an mDNS timeout instead of returning false, so it
+        // must not prevent the direct connection from being attempted.
+        val directError = try {
+            if (connection.isConnected || connection.connect(LOOPBACK, LEGACY_PORT)) return
+            IllegalStateException("adbd did not authorise the connection in time")
+        } catch (e: Exception) {
+            e
+        }
+        if (!isCurrent(session)) throw InterruptedException("ADB reader stopped")
+        connection.disconnect()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                if (connection.autoConnect(context, MDNS_TIMEOUT_MS)) return
+            } catch (e: Exception) {
+                if (!isCurrent(session)) throw e
+                // A discovery timeout carries no useful setup advice. Preserve
+                // the direct-port failure unless discovery found an auth issue.
+                if (e !is InterruptedException) throw e
+            }
+        }
+        throw directError
     }
 
     /**
      * Retries with a backoff. At boot the accessibility service is up before
      * adbd has opened its socket, so the first attempt usually loses the race.
      */
-    private fun scheduleRetry(context: Context) {
+    private fun scheduleRetry(context: Context, session: Int) {
         state = State.DISCONNECTED
         if (attempt >= MAX_ATTEMPTS) {
             state = State.FAILED
@@ -184,54 +227,52 @@ object AdbInputBridge {
         }
         val delay = RETRY_DELAYS_MS[attempt.coerceAtMost(RETRY_DELAYS_MS.lastIndex)]
         attempt++
-        val pending = listener
-        handler.postDelayed({
-            if (running) start(context.applicationContext, pending)
-        }, delay)
+        val retry = Runnable {
+            pendingRetry = null
+            if (isCurrent(session)) start(context.applicationContext, listener)
+        }
+        pendingRetry = retry
+        handler.postDelayed(retry, delay)
     }
 
-    private fun pump(connection: AbsAdbConnectionManager) {
+    private fun pump(connection: AbsAdbConnectionManager, session: Int) {
         // -q drops the device listing, leaving only the events themselves.
-        val stream = connection.openStream("shell:getevent -q")
-        reader = Thread.currentThread()
-        Log.d(TAG, "getevent stream open")
-        var seen = 0
-        BufferedReader(InputStreamReader(stream.openInputStream())).use { input ->
-            while (running) {
-                val line = input.readLine() ?: break
-                // The first handful verbatim, so an unexpected output format is
-                // obvious from a log rather than silently matching nothing.
-                if (seen < LOG_FIRST_LINES) {
-                    seen++
-                    Log.d(TAG, "getevent[$seen]: $line")
+        connection.openStream("shell:getevent -q").use { stream ->
+            Log.d(TAG, "getevent stream open")
+            var seen = 0
+            val decoder = RawKeyDecoder()
+            BufferedReader(InputStreamReader(stream.openInputStream())).use { input ->
+                while (isCurrent(session)) {
+                    val line = input.readLine() ?: break
+                    // The first handful verbatim makes unexpected formats clear.
+                    if (seen < LOG_FIRST_LINES) {
+                        seen++
+                        Log.d(TAG, "getevent[$seen]: $line")
+                    }
+                    val key = decoder.acceptLine(line) ?: continue
+                    Log.d(TAG, "raw key code=${key.code} scan=${key.scanCode} value=${key.value} device=${key.device}")
+                    val target = listener ?: continue
+                    handler.post {
+                        if (isCurrent(session) && listener === target) {
+                            target.onRawKey(key.code, key.value, key.device, key.scanCode)
+                        }
+                    }
                 }
-                val match = EVENT_LINE.find(line.trim()) ?: continue
-                val type = match.groupValues[2].toIntOrNull(16) ?: continue
-                if (type != EV_KEY) continue
-                val code = match.groupValues[3].toIntOrNull(16) ?: continue
-                val value = match.groupValues[4].toIntOrNull(16) ?: continue
-                val device = match.groupValues[1]
-                Log.d(TAG, "raw key code=$code value=$value device=$device")
-
-                val target = listener ?: continue
-                handler.post { target.onRawKey(code, value, device) }
             }
         }
         Log.d(TAG, "getevent stream ended")
-        state = State.DISCONNECTED
     }
 
     fun stop() {
         running = false
+        generation++
         listener = null
         attempt = 0
         handler.removeCallbacksAndMessages(null)
-        try {
-            manager?.close()
-        } catch (e: Exception) {
-            // Already gone.
-        }
-        manager = null
+        pendingRetry = null
+        // Interrupt reads/handshakes; the worker closes its stream and manager
+        // off the main thread, then lets any replacement session proceed.
+        reader?.interrupt()
         state = State.DISCONNECTED
     }
 }

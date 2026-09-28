@@ -83,6 +83,11 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                       label: Text("Map a button"),
                       onPressed: () => _addKeyMapping(context, service),
                     ),
+                    TextButton.icon(
+                      icon: Icon(Icons.bug_report_outlined),
+                      label: Text("Test remote buttons"),
+                      onPressed: () => _testButtons(context, service),
+                    ),
                     _hint(
                       context,
                       "Select a mapped button to add a double press or long press action. "
@@ -93,10 +98,10 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                     _sectionTitle(context, "App shortcut buttons"),
                     _hint(
                       context,
-                      "Netflix, YouTube and similar buttons open their app directly "
-                      "without sending a key press. Pick the app the button opens to "
-                      "send it somewhere else instead. Leave that app enabled — a "
-                      "disabled app never opens, so there is no launch to catch.",
+                      "Try Map a button for Netflix, YouTube and other app shortcuts first. "
+                      "If the button opens an app without a capturable key, redirect that "
+                      "app instead. This also redirects opening the app normally. Leave it "
+                      "enabled so there is a launch to catch.",
                     ),
                     ...service.appRedirects.map((redirect) => _redirectTile(context, service, redirect)),
                     TextButton.icon(
@@ -132,18 +137,15 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
         child: Text(text, style: Theme.of(context).textTheme.bodySmall),
       );
 
-  /// The Netflix and Prime buttons on most boxes never become key events at
-  /// all, so nothing above can catch them. Reading the kernel input devices
-  /// can, and that needs the shell privilege Shizuku hands out.
+  /// A shell input reader can observe buttons Android reserves for firmware.
   Widget _rawInputSection(BuildContext context, ButtonMappingService service) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _hint(
             context,
-            "Buttons that print nothing in the button test are handled by the firmware "
-            "and never reach an app. They can still be read straight from the kernel, "
-            "which needs shell privilege. Disable the app the button opens first — this "
-            "adds your action, it cannot take the original one away.",
+            "If a button produces no Android key in the test, a shell input reader may "
+            "still see it. Raw mappings add an action but cannot stop the original app "
+            "from opening. Disable that app only if you no longer need it.",
           ),
           _hint(context, _rawInputStatusLine(service.rawInputStatus)),
           if (!service.rawInputStatus.ready) ...[
@@ -156,11 +158,12 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
             _hint(
               context,
               service.rawInputStatus.pairingRequired
-                  ? "Otherwise, turn on Developer options > Wireless debugging, then pair "
-                      "below with the port and code Android shows. Nothing else needs "
-                      "installing."
-                  : "Otherwise, adbd has to be listening on TCP. This device is too old for "
-                      "wireless debugging, so run this from a computer after each reboot:\n\n"
+                  ? "If Wireless debugging is available in Developer options, pair with "
+                      "the port and code Android shows. Some TVs also support ordinary "
+                      "TCP debugging: run adb tcpip 5555 from a connected computer, then "
+                      "press Connect and accept the prompt on the TV."
+                  : "The debug bridge must be listening on TCP. Run this from a connected "
+                      "computer after a reboot if needed:\n\n"
                       "    adb tcpip 5555\n\n"
                       "Then press Connect and accept the prompt on screen. Android remembers "
                       "FLauncher's key, but deliberately does not keep the TCP listener open "
@@ -187,11 +190,6 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
               icon: Icon(Icons.add),
               label: Text("Map a firmware button"),
               onPressed: () => _addRawMapping(context, service),
-            ),
-            TextButton.icon(
-              icon: Icon(Icons.bug_report_outlined),
-              label: Text("Test remote buttons"),
-              onPressed: () => _testButtons(context, service),
             ),
           ],
         ],
@@ -298,6 +296,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     if (action != null && !identical(action, _clearAction)) {
       await service.setRawAction(
         code: code,
+        rawScanCode: captured["rawScanCode"] as int?,
         device: captured["device"] as String?,
         trigger: PressTrigger.single,
         action: action,
@@ -336,6 +335,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     }
     await service.setRawAction(
       code: mapping.code,
+      rawScanCode: mapping.rawScanCode,
       device: mapping.device,
       trigger: trigger,
       action: identical(action, _clearAction) ? null : action,
@@ -787,12 +787,14 @@ class _ButtonTestDialogState extends State<_ButtonTestDialog> {
     final action = event["keyAction"] == 0 ? "down" : "up";
     final device = (event["device"] as String?) ?? "";
     final rawCode = event["rawCode"];
+    final rawScanCode = event["rawScanCode"];
     final isRaw = rawCode is int && rawCode >= 0;
     setState(() {
       _lines.insert(
         0,
         isRaw
-            ? "$action  raw code $rawCode  ($device)"
+            ? "$action  raw code $rawCode"
+                "${rawScanCode is int && rawScanCode != 0 ? "  usage 0x${rawScanCode.toRadixString(16)}" : ""}  ($device)"
             : "$action  keyCode ${event["keyCode"]}  scanCode ${event["scanCode"]}"
                 "${device.isEmpty ? "" : "  ($device)"}",
       );
@@ -811,8 +813,8 @@ class _ButtonTestDialogState extends State<_ButtonTestDialog> {
           child: _lines.isEmpty
               ? Center(
                   child: Text(
-                    "Nothing yet. A button that prints nothing here is handled by "
-                    "the firmware and cannot be mapped by any app.",
+                    "Press a button. Android keys appear when accessibility can see them. "
+                    "Connect the firmware input reader to also show raw events.",
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -942,18 +944,26 @@ class _CaptureKeyDialog extends StatefulWidget {
 
 class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
   static const _timeout = Duration(seconds: 10);
+  late final ButtonCaptureSession _captureSession;
 
   @override
   void initState() {
     super.initState();
-    _capture();
-  }
-
-  Future<void> _capture() async {
-    final captured = await widget.service.captureNextKey(
+    _captureSession = widget.service.startKeyCapture(
       timeout: _timeout,
       source: widget.source,
     );
+    _capture();
+  }
+
+  @override
+  void dispose() {
+    _captureSession.cancel();
+    super.dispose();
+  }
+
+  Future<void> _capture() async {
+    final captured = await _captureSession.result;
     if (mounted) {
       Navigator.of(context).pop(captured);
     }
@@ -974,7 +984,7 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
                   ? "Nothing within ${_timeout.inSeconds} seconds means the reader is not "
                       "seeing this remote. Check the status line on the previous screen."
                   : "If nothing happens within ${_timeout.inSeconds} seconds, that button "
-                      "doesn't send a key press — try 'Map a firmware button' instead.",
+                      "was not captured. Check accessibility, or try 'Map a firmware button'.",
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

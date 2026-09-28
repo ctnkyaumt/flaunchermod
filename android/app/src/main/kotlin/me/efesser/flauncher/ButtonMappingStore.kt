@@ -133,6 +133,9 @@ object ButtonMappingStore {
         }
     }
 
+    /** MSC_SCAN distinguishes vendor buttons that all emit Linux KEY_UNKNOWN. */
+    data class RawKey(val code: Int, val scanCode: Int? = null)
+
     data class Mappings(
         val bindings: List<Binding> = emptyList(),
         val appRedirects: Map<String, Action> = emptyMap(),
@@ -141,8 +144,12 @@ object ButtonMappingStore {
          * Separate from [bindings] because these codes come from a different
          * namespace than Android key codes and the two must not be confused.
          */
-        val rawBindings: Map<Int, Binding> = emptyMap(),
+        val rawBindings: Map<RawKey, Binding> = emptyMap(),
     ) {
+        fun resolveRaw(code: Int, scanCode: Int): Binding? =
+            rawBindings[RawKey(code, scanCode.takeIf { it != 0 })]
+                ?: rawBindings[RawKey(code)]
+
         /**
          * Finds the binding for an incoming event.
          *
@@ -189,7 +196,7 @@ object ButtonMappingStore {
                 }
             }
 
-            val rawBindings = mutableMapOf<Int, Binding>()
+            val rawBindings = mutableMapOf<RawKey, Binding>()
             val rawArray = root.optJSONArray("rawMappings")
             if (rawArray != null) {
                 for (i in 0 until rawArray.length()) {
@@ -206,7 +213,8 @@ object ButtonMappingStore {
                         double = Action.fromJson(entry.optJSONObject("double")),
                         long = Action.fromJson(entry.optJSONObject("long")),
                     )
-                    if (binding.hasAny) rawBindings[code] = binding
+                    val rawScanCode = entry.optInt("rawScanCode", 0).takeIf { it != 0 }
+                    if (binding.hasAny) rawBindings[RawKey(code, rawScanCode)] = binding
                 }
             }
 

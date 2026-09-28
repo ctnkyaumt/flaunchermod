@@ -18,6 +18,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flauncher/flauncher_channel.dart';
@@ -307,10 +308,13 @@ class KeyMapping {
 
 /// A button identified by its Linux key code, read straight off `/dev/input`.
 ///
-/// These are the buttons that never reach an app as a key event, so the only
-/// place they exist is the kernel. Reading them needs the Shizuku helper.
+/// This also covers buttons Android handles before dispatching to apps.
+/// Reading them needs the shell input reader.
 class RawMapping {
   final int code;
+
+  /// HID usage reported in MSC_SCAN. Several vendor buttons may share code 240.
+  final int? rawScanCode;
 
   /// The `/dev/input` node it came from, shown to help tell remotes apart.
   final String? device;
@@ -321,11 +325,12 @@ class RawMapping {
 
   const RawMapping({
     required this.code,
+    int? rawScanCode,
     this.device,
     this.single,
     this.doublePress,
     this.long,
-  });
+  }) : rawScanCode = rawScanCode == 0 ? null : rawScanCode;
 
   bool get hasAny => single != null || doublePress != null || long != null;
 
@@ -342,6 +347,7 @@ class RawMapping {
 
   RawMapping withAction(PressTrigger trigger, ButtonAction? action) => RawMapping(
         code: code,
+        rawScanCode: rawScanCode,
         device: device,
         single: trigger == PressTrigger.single ? action : single,
         doublePress: trigger == PressTrigger.doublePress ? action : doublePress,
@@ -350,6 +356,7 @@ class RawMapping {
 
   Map<String, dynamic> toJson() => {
         "code": code,
+        if (rawScanCode != null) "rawScanCode": rawScanCode,
         if (device != null) "device": device,
         if (single != null) "single": single!.toJson(),
         if (doublePress != null) "double": doublePress!.toJson(),
@@ -368,6 +375,7 @@ class RawMapping {
 
     final mapping = RawMapping(
       code: code,
+      rawScanCode: json["rawScanCode"] is int ? json["rawScanCode"] as int : null,
       device: json["device"] as String?,
       single: action("single"),
       doublePress: action("double"),
@@ -376,7 +384,11 @@ class RawMapping {
     return mapping.hasAny ? mapping : null;
   }
 
-  String get displayName => "Raw button $code";
+  String get id => rawScanCode == null ? "$code" : "$code:$rawScanCode";
+
+  String get displayName => rawScanCode == null
+      ? "Raw button $code"
+      : "Raw button $code (usage 0x${rawScanCode!.toRadixString(16)})";
 
   String get summary {
     final parts = <String>[
@@ -415,6 +427,62 @@ bool isButtonCaptureEvent(Map<dynamic, dynamic> event, ButtonCaptureSource sourc
   }
 }
 
+/// Owns one capture attempt so closing an old dialog cannot stop a newer one.
+class ButtonCaptureSession {
+  final Future<void> Function() _disarm;
+  final _result = Completer<Map<String, dynamic>?>();
+  StreamSubscription<dynamic>? _subscription;
+  Timer? _timeout;
+  bool _finished = false;
+
+  ButtonCaptureSession._(this._disarm);
+
+  Future<Map<String, dynamic>?> get result => _result.future;
+
+  void _start(
+    Stream<dynamic> events,
+    Future<void> Function() arm,
+    Duration timeout,
+    ButtonCaptureSource source,
+  ) async {
+    try {
+      _subscription = events.listen(
+        (event) {
+          if (event is Map && isButtonCaptureEvent(event, source)) {
+            _finish(Map<String, dynamic>.from(event));
+          }
+        },
+        onError: (Object error) => _finish(null),
+        onDone: () => _finish(null),
+      );
+      _timeout = Timer(timeout, () => _finish(null));
+      await arm();
+    } catch (e) {
+      await _finish(null);
+    }
+  }
+
+  Future<void> cancel() => _finish(null);
+
+  Future<void> _finish(Map<String, dynamic>? event) async {
+    if (_finished) return;
+    _finished = true;
+    _timeout?.cancel();
+    // Queue disarming before waiting for stream cancellation. A replacement
+    // capture can then queue its arm after this stop, even during slow setup.
+    final disarming = _disarm().catchError((Object error) {
+      debugPrint("ButtonMappingService: could not stop capture - $error");
+    });
+    try {
+      await _subscription?.cancel();
+    } catch (e) {
+      debugPrint("ButtonMappingService: could not cancel capture stream - $e");
+    }
+    await disarming;
+    _result.complete(event);
+  }
+}
+
 /// Both routes to the shell privilege that reading `/dev/input` needs.
 class RawInputStatus {
   final ShizukuStatus shizuku;
@@ -424,8 +492,8 @@ class RawInputStatus {
   /// Last ADB failure, worth showing because the causes are all user-fixable.
   final String? adbError;
 
-  /// True from Android 11, where adbd wants a pairing code before it will
-  /// accept a new key.
+  /// Whether wireless-debugging pairing is offered as a setup option.
+  /// An authorised TCP connection can also work without pairing.
   final bool pairingRequired;
 
   const RawInputStatus({
@@ -472,9 +540,9 @@ class RawInputStatus {
   }
 }
 
-/// A button the firmware wires straight to an app launch — the Netflix, YouTube
-/// and Prime Video buttons on most TV remotes. These emit no key code at all,
-/// so they are caught by noticing the app come to the foreground.
+/// Fallback for app shortcut buttons whose key events cannot be intercepted.
+/// It redirects whenever the source app comes to the foreground, including
+/// when the user opens that app without its remote button.
 class AppRedirect {
   final String sourcePackage;
 
@@ -512,6 +580,10 @@ class AppRedirect {
 class ButtonMappingService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
   final FLauncherChannel _channel;
+  late final Stream<dynamic> _keyEvents = _channel.keyCaptureStream;
+  ButtonCaptureSession? _captureSession;
+  Future<void> _captureModeChanges = Future<void>.value();
+  bool _disposed = false;
 
   List<KeyMapping> _keyMappings = [];
   List<AppRedirect> _appRedirects = [];
@@ -535,6 +607,13 @@ class ButtonMappingService extends ChangeNotifier {
     _load();
     refreshServiceState();
     refreshRawInputStatus();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _captureSession?.cancel();
+    super.dispose();
   }
 
   void _load() {
@@ -574,11 +653,12 @@ class ButtonMappingService extends ChangeNotifier {
     // The service also watches the preferences file, but the broadcast makes
     // the reload immediate rather than dependent on listener delivery.
     await _channel.notifyButtonMappingsChanged();
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   Future<void> refreshServiceState() async {
     final enabled = await _channel.isButtonMapperEnabled();
+    if (_disposed) return;
     if (enabled != _serviceEnabled) {
       _serviceEnabled = enabled;
       notifyListeners();
@@ -592,6 +672,7 @@ class ButtonMappingService extends ChangeNotifier {
     } catch (e) {
       status = const RawInputStatus();
     }
+    if (_disposed) return;
     final changed = status.shizuku != _rawInputStatus.shizuku ||
         status.shizukuConnected != _rawInputStatus.shizukuConnected ||
         status.adb != _rawInputStatus.adb ||
@@ -641,12 +722,13 @@ class ButtonMappingService extends ChangeNotifier {
   /// channel call returns. Poll briefly so the page transitions from Connect
   /// to Map without requiring the user to leave and reopen it.
   Future<void> _waitForRawInput() async {
-    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    final deadline = DateTime.now().add(const Duration(seconds: 45));
     do {
+      if (_disposed) return;
       await refreshRawInputStatus();
-      if (_rawInputStatus.ready) return;
+      if (_disposed || _rawInputStatus.ready || _rawInputStatus.adb == AdbState.failed) return;
       await Future<void>.delayed(const Duration(milliseconds: 250));
-    } while (DateTime.now().isBefore(deadline));
+    } while (!_disposed && DateTime.now().isBefore(deadline));
   }
 
   /// Shows Shizuku's own consent dialog when permission is not held yet. The
@@ -673,13 +755,14 @@ class ButtonMappingService extends ChangeNotifier {
   /// nothing is left on it.
   Future<void> setRawAction({
     required int code,
+    int? rawScanCode,
     String? device,
     required PressTrigger trigger,
     required ButtonAction? action,
   }) async {
-    final index = _rawMappings.indexWhere((existing) => existing.code == code);
-    final updated = (index == -1 ? RawMapping(code: code, device: device) : _rawMappings[index])
-        .withAction(trigger, action);
+    final candidate = RawMapping(code: code, rawScanCode: rawScanCode, device: device);
+    final index = _rawMappings.indexWhere((existing) => existing.id == candidate.id);
+    final updated = (index == -1 ? candidate : _rawMappings[index]).withAction(trigger, action);
 
     final next = [..._rawMappings];
     if (index == -1) {
@@ -694,7 +777,7 @@ class ButtonMappingService extends ChangeNotifier {
   }
 
   Future<void> removeRawMapping(RawMapping mapping) async {
-    _rawMappings = _rawMappings.where((existing) => existing.code != mapping.code).toList();
+    _rawMappings = _rawMappings.where((existing) => existing.id != mapping.id).toList();
     await _persist();
   }
 
@@ -743,9 +826,30 @@ class ButtonMappingService extends ChangeNotifier {
 
   /// Every key event the accessibility service sees while capture mode is on.
   /// Used by the button test screen to show what a remote actually emits.
-  Stream<dynamic> get keyEvents => _channel.keyCaptureStream;
+  Stream<dynamic> get keyEvents => _keyEvents;
 
-  Future<void> setCaptureMode(bool enabled) => _channel.setKeyCaptureMode(enabled);
+  Future<void> setCaptureMode(bool enabled) {
+    final change = _captureModeChanges.then((_) => _channel.setKeyCaptureMode(enabled));
+    // A failed arm must not prevent its cleanup or the next capture attempt.
+    _captureModeChanges = change.catchError((Object error) {});
+    return change;
+  }
+
+  ButtonCaptureSession startKeyCapture({
+    Duration timeout = const Duration(seconds: 10),
+    ButtonCaptureSource source = ButtonCaptureSource.android,
+  }) {
+    _captureSession?.cancel();
+    late final ButtonCaptureSession session;
+    session = ButtonCaptureSession._(() {
+      if (!identical(_captureSession, session)) return Future<void>.value();
+      _captureSession = null;
+      return setCaptureMode(false);
+    });
+    _captureSession = session;
+    session._start(keyEvents, () => setCaptureMode(true), timeout, source);
+    return session;
+  }
 
   /// Puts the service into capture mode and completes with the first button
   /// pressed, or null if [timeout] elapses first.
@@ -755,28 +859,7 @@ class ButtonMappingService extends ChangeNotifier {
   Future<Map<String, dynamic>?> captureNextKey({
     Duration timeout = const Duration(seconds: 10),
     ButtonCaptureSource source = ButtonCaptureSource.android,
-  }) async {
-    // Subscribe before arming capture mode, otherwise a very fast press could
-    // land between the two and be lost. Only the press is interesting; the
-    // release carries the same identity.
-    final captured = _channel.keyCaptureStream
-        .where((event) => event is Map && isButtonCaptureEvent(event, source))
-        .first
-        .timeout(timeout);
-    await _channel.setKeyCaptureMode(true);
-    try {
-      final event = await captured;
-      if (event is Map) {
-        return Map<String, dynamic>.from(event);
-      }
-      return null;
-    } catch (e) {
-      // Timed out, or the stream closed without delivering anything.
-      return null;
-    } finally {
-      await _channel.setKeyCaptureMode(false);
-    }
-  }
+  }) => startKeyCapture(timeout: timeout, source: source).result;
 
   /// Binds [action] to one trigger of a button, leaving its other triggers
   /// alone. Passing a null action clears just that trigger, and the whole

@@ -54,3 +54,35 @@ distinguish another trigger.
 The app-launch redirect remains a fallback for firmware buttons when raw input
 is unavailable. It is intentionally described as a redirect, not true input
 interception.
+
+## TV verification and follow-up fixes (2026-09-27)
+
+The connected Android 11 TV had `0.0.4` / build 1001 installed, with the older
+`RemoteKeyAccessibilityService` and no raw reader. Commit `12694be` builds
+`0.0.5` and declares `FLauncherAccessibilityService`. APK signing certificates
+match; build 1002 allows updating without uninstalling or clearing app data.
+
+The user's Netflix-then-YouTube test produced:
+
+| Input path | Linux EV_KEY | MSC_SCAN | Release |
+| --- | --- | --- | --- |
+| MStar infrared receiver | `0x68` | `0x127` | No repeated MSC_SCAN |
+| Bluetooth TV remote | `0xf0` (KEY_UNKNOWN) | `0xc00a5` | MSC_SCAN repeated |
+
+Raw input now keeps MSC_SCAN per device and carries the held usage into releases
+that omit it. New mappings distinguish code plus usage; older code-only mappings
+remain a fallback. Neither factory app was installed on this TV, so app-window
+redirects cannot detect those buttons there.
+
+Other corrected failure modes: mDNS exceptions skipped the TCP 5555 fallback,
+cancelled capture dialogs kept swallowing buttons, second presses were timed by
+release instead of down, and redirect BACK events could close the replacement.
+Tests cover decoder frames, native mapping compatibility and Flutter capture
+sessions. Builds and tests run in GitHub Actions, not locally.
+
+Primary references:
+
+- [AOSP KeyboardInputMapper](https://android.googlesource.com/platform/frameworks/native/+/18c754e18499acce28e8be58846879075ade72a7/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp): MSC_SCAN/HID usage is separate from the Linux key code.
+- [Linux input event protocol](https://docs.kernel.org/input/event-codes.html): SYN packet boundaries, key down/up/repeat values and miscellaneous events.
+- [libadb 3.1.1 connection manager](https://github.com/MuntashirAkon/libadb-android/blob/3.1.1/libadb/src/main/java/io/github/muntashirakon/adb/AbsAdbConnectionManager.java): discovery timeout throws; `disconnect()` preserves the client identity while `close()` destroys it.
+- [Android AccessibilityService.onKeyEvent](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#onKeyEvent(android.view.KeyEvent)): filtering must keep down/up streams consistent.

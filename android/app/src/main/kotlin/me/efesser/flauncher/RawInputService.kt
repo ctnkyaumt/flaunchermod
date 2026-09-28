@@ -51,8 +51,6 @@ class RawInputService : IRawInputService.Stub() {
     companion object {
         private const val TAG = "FLauncherRawInput"
 
-        private const val EV_KEY = 0x01
-
         private val INPUT_DIRECTORY = File("/dev/input")
 
         /**
@@ -149,8 +147,9 @@ class RawInputService : IRawInputService.Stub() {
 
     private fun pump(stream: FileInputStream, path: String) {
         val buffer = ByteArray(EVENT_SIZE)
+        val decoder = RawKeyDecoder()
         try {
-            while (running) {
+            while (running && synchronized(streamLock) { streams[path] === stream }) {
                 var read = 0
                 while (read < EVENT_SIZE) {
                     val count = stream.read(buffer, read, EVENT_SIZE - read)
@@ -159,11 +158,17 @@ class RawInputService : IRawInputService.Stub() {
                 }
 
                 val wrapped = ByteBuffer.wrap(buffer).order(ByteOrder.nativeOrder())
-                if ((wrapped.getShort(TIME_SIZE).toInt() and 0xFFFF) != EV_KEY) continue
+                val type = wrapped.getShort(TIME_SIZE).toInt() and 0xFFFF
                 val code = wrapped.getShort(TIME_SIZE + 2).toInt() and 0xFFFF
                 val value = wrapped.getInt(TIME_SIZE + 4)
 
-                callback?.onRawKey(code, value, path)
+                val key = decoder.accept(path, type, code, value) ?: continue
+                // Ignore an old reader finishing after stop()/start().
+                synchronized(streamLock) {
+                    if (running && streams[path] === stream) {
+                        callback?.onRawKey(key.code, key.value, key.device, key.scanCode)
+                    }
+                }
             }
         } catch (e: Exception) {
             // Closed by stop(), the device went away, or the callback died.
