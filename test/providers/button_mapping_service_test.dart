@@ -397,10 +397,6 @@ void main() {
     });
     await tester.pump();
     await tester.pumpAndSettle();
-    if (find.text("Run what?").evaluate().isEmpty) {
-      debugPrint("Visible dialog texts: ${tester.widgetList<Text>(find.byType(Text)).map((w) => w.data).toList()}");
-      debugPrint("Capture modes: ${channel.captureModes}; listener: ${channel.events.hasListener}");
-    }
     expect(find.text("Run what?"), findsOneWidget);
     expect(find.text("Press a button"), findsNothing);
     start();
