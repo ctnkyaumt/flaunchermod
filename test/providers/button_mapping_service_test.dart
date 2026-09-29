@@ -327,12 +327,19 @@ void main() {
     await channel.events.close();
   }
 
+  VoidCallback mappingStart(WidgetTester tester, String label) => tester.widget<TextButton>(
+        find.ancestor(
+          of: find.text(label),
+          matching: find.byWidgetPredicate((widget) => widget is TextButton),
+        ),
+      ).onPressed!;
+
   testWidgets("repeated mapping activation opens one dialog and timeout keeps settings",
       (tester) async {
     final channel = _CaptureChannel();
     final service = await buildService(channel);
     await showNestedMappingPanel(tester, service);
-    final start = tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!;
+    final start = mappingStart(tester, "Map a button");
     start();
     start();
     await tester.pump();
@@ -357,7 +364,7 @@ void main() {
     final channel = _CaptureChannel()..nextDisarm = cleanup.future;
     final service = await buildService(channel);
     await showNestedMappingPanel(tester, service);
-    tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!();
+    mappingStart(tester, "Map a button")();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.binding.handlePopRoute();
@@ -374,9 +381,7 @@ void main() {
       ..statusReply = Future.value({"adb": "CONNECTED"});
     final service = await buildService(channel);
     await showNestedMappingPanel(tester, service);
-    final start = tester.widget<TextButton>(
-      find.widgetWithText(TextButton, "Map a firmware button"),
-    ).onPressed!;
+    final start = mappingStart(tester, "Map a firmware button");
     start();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -453,7 +458,7 @@ void main() {
     final channel = _CaptureChannel()..nextDisarm = cleanup.future;
     final service = await buildService(channel);
     await showNestedMappingPanel(tester, service);
-    tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!();
+    mappingStart(tester, "Map a button")();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump(const Duration(seconds: 11));
