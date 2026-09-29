@@ -412,11 +412,19 @@ void main() {
     mappingStart(tester, "Map a button")();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.sendKeyEvent(
-      LogicalKeyboardKey.goBack,
-      physicalKey: PhysicalKeyboardKey.browserBack,
-      platform: "android",
-    );
+    // Flutter 3.7's test keyboard has no physical mapping for Android Back.
+    // Send the wire event produced by a TV's KEYCODE_BACK instead.
+    for (final type in ["keydown", "keyup"]) {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        SystemChannels.keyEvent.name,
+        SystemChannels.keyEvent.codec.encodeMessage({
+          "type": type, "keymap": "android", "keyCode": 4, "scanCode": 0,
+          "metaState": 0, "flags": 0, "source": 257, "repeatCount": 0,
+          "deviceId": -1, "plainCodePoint": 0, "codePoint": 0,
+        }),
+        (_) {},
+      );
+    }
     await tester.pumpAndSettle();
     expect(find.text("Press a button"), findsNothing);
     expect(find.text("Button Mapping"), findsOneWidget);
