@@ -395,7 +395,12 @@ void main() {
       "keyAction": 1, "keyCode": 0, "rawCode": 104,
       "rawScanCode": 295, "device": "/dev/input/event0",
     });
+    await tester.pump();
     await tester.pumpAndSettle();
+    if (find.text("Run what?").evaluate().isEmpty) {
+      debugPrint("Visible dialog texts: ${tester.widgetList<Text>(find.byType(Text)).map((w) => w.data).toList()}");
+      debugPrint("Capture modes: ${channel.captureModes}; listener: ${channel.events.hasListener}");
+    }
     expect(find.text("Run what?"), findsOneWidget);
     expect(find.text("Press a button"), findsNothing);
     start();
