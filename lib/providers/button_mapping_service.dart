@@ -450,6 +450,7 @@ class ButtonCaptureSession {
     try {
       _subscription = events.listen(
         (event) {
+          debugPrint("Capture event: $event; source=$source; rawPress=$_rawPress; finished=$_finished");
           if (event is Map && event["captureCancelled"] == true) {
             _finish(null);
           } else if (event is Map && _rawPress != null) {
@@ -485,6 +486,7 @@ class ButtonCaptureSession {
   Future<void> cancel() => _finish(null);
 
   Future<void> _finish(Map<String, dynamic>? event) async {
+    debugPrint("Capture finish: $event; finished=$_finished");
     if (_finished) return;
     _finished = true;
     _timeout?.cancel();
@@ -500,6 +502,7 @@ class ButtonCaptureSession {
       debugPrint("ButtonMappingService: could not cancel capture stream - $e");
     }
     await disarming;
+    debugPrint("Capture completing: $event");
     _result.complete(event);
   }
 }
