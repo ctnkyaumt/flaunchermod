@@ -412,7 +412,11 @@ void main() {
     mappingStart(tester, "Map a button")();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.sendKeyEvent(LogicalKeyboardKey.goBack, platform: "android");
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.goBack,
+      physicalKey: PhysicalKeyboardKey.browserBack,
+      platform: "android",
+    );
     await tester.pumpAndSettle();
     expect(find.text("Press a button"), findsNothing);
     expect(find.text("Button Mapping"), findsOneWidget);
