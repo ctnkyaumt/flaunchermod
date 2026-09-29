@@ -24,6 +24,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import java.io.BufferedReader
@@ -55,9 +56,6 @@ object AdbInputBridge {
 
     private const val MDNS_TIMEOUT_MS = 7_000L
     private const val CONNECT_TIMEOUT_MS = 15_000L
-
-    private val RETRY_DELAYS_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
-    private const val MAX_ATTEMPTS = 12
 
     private const val LOG_FIRST_LINES = 12
 
@@ -99,8 +97,7 @@ object AdbInputBridge {
     @Volatile
     private var running = false
 
-    /** Retries so far; reset on every successful connection. */
-    private var attempt = 0
+    private val retryPolicy = AdbRetryPolicy()
     private var pendingRetry: Runnable? = null
 
     /** Whether the device needs a pairing code before it will accept a key. */
@@ -125,7 +122,7 @@ object AdbInputBridge {
      */
     /** Clears the backoff so a user pressing Connect gets an immediate try. */
     fun resetBackoff() {
-        attempt = 0
+        retryPolicy.reset()
         pendingRetry?.let { handler.removeCallbacks(it) }
         pendingRetry = null
         if (state == State.FAILED) state = State.DISCONNECTED
@@ -133,7 +130,7 @@ object AdbInputBridge {
 
     fun start(context: Context, listener: ShizukuInputBridge.RawKeyListener?) {
         this.listener = listener
-        if (state == State.CONNECTED || state == State.CONNECTING) return
+        if (state == State.CONNECTED || state == State.CONNECTING || state == State.FAILED) return
         pendingRetry?.let { handler.removeCallbacks(it) }
         pendingRetry = null
         state = State.CONNECTING
@@ -147,27 +144,45 @@ object AdbInputBridge {
             synchronized(connectionLock) {
                 if (!isCurrent(session)) return@synchronized
                 var connection: AbsAdbConnectionManager? = null
+                var connectedAt: Long? = null
+                var retryAllowed = true
                 try {
                     connection = AdbConnectionManager.getInstance(appContext)
                     connection.setHostAddress(LOOPBACK)
                     connection.setTimeout(CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                     connect(connection, appContext, session)
                     if (!isCurrent(session)) return@synchronized
-                    handler.post {
-                        if (isCurrent(session)) {
-                            state = State.CONNECTED
-                            lastError = null
-                            attempt = 0
-                        }
-                    }
                     Log.d(TAG, "Connected to local adbd")
-                    pump(connection, session)
+                    try {
+                        pump(connection, session) {
+                            connectedAt = SystemClock.elapsedRealtime()
+                            handler.post {
+                                if (isCurrent(session)) {
+                                    state = State.CONNECTED
+                                    lastError = null
+                                }
+                            }
+                        }
+                    } catch (e: RuntimeException) {
+                        // Reconnecting cannot repair a broken input reader. It
+                        // can, however, repeatedly reopen Android's auth dialog.
+                        retryAllowed = false
+                        throw e
+                    }
                 } catch (e: Exception) {
                     if (isCurrent(session)) {
                         handler.post {
                             if (isCurrent(session)) lastError = describe(e)
                         }
                         Log.w(TAG, "Could not read input over ADB", e)
+                    }
+                } catch (e: LinkageError) {
+                    retryAllowed = false
+                    if (isCurrent(session)) {
+                        handler.post {
+                            if (isCurrent(session)) lastError = e.message ?: e.javaClass.simpleName
+                        }
+                        Log.e(TAG, "ADB library is incompatible with this device", e)
                     }
                 } finally {
                     try {
@@ -176,10 +191,20 @@ object AdbInputBridge {
                         connection?.disconnect()
                     } catch (e: Exception) {
                         // Already gone.
+                    } catch (e: LinkageError) {
+                        retryAllowed = false
+                        Log.e(TAG, "ADB library failed during disconnect", e)
+                        handler.post {
+                            if (isCurrent(session)) lastError = e.message ?: e.javaClass.simpleName
+                        }
                     }
                     if (reader === Thread.currentThread()) reader = null
+                    val connectedForMs = connectedAt?.let { SystemClock.elapsedRealtime() - it } ?: 0L
                     handler.post {
-                        if (isCurrent(session)) scheduleRetry(appContext, session)
+                        if (isCurrent(session)) {
+                            if (retryAllowed) scheduleRetry(appContext, session, connectedForMs)
+                            else state = State.FAILED
+                        }
                     }
                 }
             }
@@ -219,14 +244,13 @@ object AdbInputBridge {
      * Retries with a backoff. At boot the accessibility service is up before
      * adbd has opened its socket, so the first attempt usually loses the race.
      */
-    private fun scheduleRetry(context: Context, session: Int) {
+    private fun scheduleRetry(context: Context, session: Int, connectedForMs: Long) {
         state = State.DISCONNECTED
-        if (attempt >= MAX_ATTEMPTS) {
+        val delay = retryPolicy.nextDelay(connectedForMs)
+        if (delay == null) {
             state = State.FAILED
             return
         }
-        val delay = RETRY_DELAYS_MS[attempt.coerceAtMost(RETRY_DELAYS_MS.lastIndex)]
-        attempt++
         val retry = Runnable {
             pendingRetry = null
             if (isCurrent(session)) start(context.applicationContext, listener)
@@ -235,10 +259,11 @@ object AdbInputBridge {
         handler.postDelayed(retry, delay)
     }
 
-    private fun pump(connection: AbsAdbConnectionManager, session: Int) {
+    private fun pump(connection: AbsAdbConnectionManager, session: Int, onStreamOpened: () -> Unit) {
         // -q drops the device listing, leaving only the events themselves.
         connection.openStream("shell:getevent -q").use { stream ->
             Log.d(TAG, "getevent stream open")
+            onStreamOpened()
             var seen = 0
             val decoder = RawKeyDecoder()
             BufferedReader(InputStreamReader(stream.openInputStream())).use { input ->
@@ -267,7 +292,7 @@ object AdbInputBridge {
         running = false
         generation++
         listener = null
-        attempt = 0
+        retryPolicy.reset()
         handler.removeCallbacksAndMessages(null)
         pendingRetry = null
         // Interrupt reads/handshakes; the worker closes its stream and manager

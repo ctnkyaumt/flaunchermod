@@ -57,6 +57,9 @@ jobs:
           # Explicitly point to the keystore file location might be needed depending on build.gradle setup
           # KEYSTORE_PATH: ${{ github.workspace }}/android/app/upload-keystore.jks 
           
+      - name: Check release APK bytecode
+        run: python3 tools/check_apk_bytecode.py build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+
       - name: Test native button input
         working-directory: android
         run: ./gradlew app:testReleaseUnitTest
