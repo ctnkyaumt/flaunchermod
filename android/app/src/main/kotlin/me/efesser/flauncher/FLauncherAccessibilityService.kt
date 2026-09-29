@@ -74,6 +74,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
         /** Broadcast back to the launcher with the button that was pressed. */
         const val ACTION_KEY_CAPTURED = "me.efesser.flauncher.KEY_CAPTURED"
+        const val EXTRA_CAPTURE_CANCELLED = "captureCancelled"
         const val EXTRA_KEY_CODE = "keyCode"
         const val EXTRA_SCAN_CODE = "scanCode"
         const val EXTRA_KEY_LABEL = "keyLabel"
@@ -100,6 +101,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
          * after this long as a backstop.
          */
         private const val CAPTURE_TIMEOUT_MS = 30_000L
+        private const val CAPTURE_BACK_SUPPRESSION_MS = 500L
 
         /**
          * Ignore a repeat of the same app-launch button within this window. The
@@ -115,6 +117,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
         private const val CAPTURE_SELECT_GRACE_MS = 1000L
         private val SELECT_KEY_CODES = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
         private val RAW_SELECT_CODES = setOf(28, 96, 352, 353) // ENTER, KPENTER, OK, SELECT
+        private const val RAW_BACK_CODE = 158
 
         /** `value` of a raw EV_KEY event. */
         private const val RAW_UP = 0
@@ -140,6 +143,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     private var mappings = ButtonMappingStore.Mappings()
     private var captureMode = false
     private var captureArmedAt = 0L
+    private var suppressBackUntil = 0L
 
     private var lastRedirectPackage: String? = null
     private var lastRedirectAt = 0L
@@ -161,7 +165,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     private val capturedKeysDown = mutableSetOf<String>()
     private var redirectTarget: String? = null
 
-    private val captureTimeout = Runnable { captureMode = false }
+    private val captureTimeout = Runnable { cancelCapture() }
 
     private val preferenceListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -235,6 +239,12 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * an ordinary key, on the same handler.
      */
     private fun onRawKey(code: Int, value: Int, device: String, scanCode: Int) {
+        if (code == RAW_BACK_CODE &&
+            (captureMode || SystemClock.elapsedRealtime() < suppressBackUntil)
+        ) {
+            if (value == RAW_DOWN) cancelCapture(suppressBack = true)
+            return
+        }
         if (captureMode) {
             // Ignore the tail of the OK press that opened the dialog.
             if (code in RAW_SELECT_CODES &&
@@ -300,6 +310,14 @@ class FLauncherAccessibilityService : AccessibilityService() {
         val identity = "android:${event.deviceId}:${event.keyCode}:${event.scanCode}"
         if (event.action == KeyEvent.ACTION_UP && capturedKeysDown.remove(identity)) {
             if (captureMode) handleCapture(event)
+            return true
+        }
+        // Raw Back may cancel first. Consume its Android copy so the same press
+        // cannot also close the settings page after the dialog has gone away.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK &&
+            SystemClock.elapsedRealtime() < suppressBackUntil
+        ) {
+            if (event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.add(identity)
             return true
         }
         if (captureMode) {
@@ -450,10 +468,12 @@ class FLauncherAccessibilityService : AccessibilityService() {
      * trigger its normal behaviour, and reports it to the launcher.
      */
     private fun handleCapture(event: KeyEvent): Boolean {
-        // Back has to keep working, otherwise the dialog that armed capture mode
-        // cannot be closed — capture swallows everything else. The cost is that
-        // Back itself cannot be mapped.
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) return false
+        // Cancel through the capture channel, consuming both edges so Flutter
+        // does not also pop the route underneath the capture dialog.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN) cancelCapture(suppressBack = true)
+            return true
+        }
 
         // Auto-repeat from a held button says nothing new.
         if (event.repeatCount > 0) return true
@@ -467,6 +487,20 @@ class FLauncherAccessibilityService : AccessibilityService() {
         // service can see, and some remote buttons only ever send a down.
         broadcastCapturedKey(event)
         return true
+    }
+
+    private fun cancelCapture(suppressBack: Boolean = false) {
+        if (!captureMode) return
+        captureMode = false
+        handler.removeCallbacks(captureTimeout)
+        cancelPressState()
+        if (suppressBack) {
+            suppressBackUntil = SystemClock.elapsedRealtime() + CAPTURE_BACK_SUPPRESSION_MS
+        }
+        sendBroadcast(Intent(ACTION_KEY_CAPTURED).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_CAPTURE_CANCELLED, true)
+        })
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {

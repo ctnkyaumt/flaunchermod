@@ -258,6 +258,9 @@ class MainActivity : FlutterActivity() {
                             if (intent?.action != FLauncherAccessibilityService.ACTION_KEY_CAPTURED) return
                             events.success(
                                 mapOf(
+                                    "captureCancelled" to intent.getBooleanExtra(
+                                        FLauncherAccessibilityService.EXTRA_CAPTURE_CANCELLED, false
+                                    ),
                                     "keyCode" to intent.getIntExtra(
                                         FLauncherAccessibilityService.EXTRA_KEY_CODE, -1
                                     ),
@@ -328,10 +331,19 @@ class MainActivity : FlutterActivity() {
                     "com.android.tv.settings.accessibility.AccessibilityActivity",
                 )
             ),
+            Intent(Settings.ACTION_SETTINGS).setComponent(
+                ComponentName("com.android.tv.settings", "com.android.tv.settings.MainSettings")
+            ),
             Intent(Settings.ACTION_SETTINGS),
         )
         for (intent in candidates) {
             try {
+                val activity = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                    ?.activityInfo ?: continue
+                // Google TV's placeholder starts successfully, then shows a
+                // no-handler toast. It must not stop the real settings fallback.
+                if (activity.packageName == "com.google.android.tv.frameworkpackagestubs") continue
+                intent.component = ComponentName(activity.packageName, activity.name)
                 startActivity(intent.addFlags(FLAG_ACTIVITY_NEW_TASK))
                 return true
             } catch (e: Exception) {

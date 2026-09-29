@@ -433,6 +433,8 @@ class ButtonCaptureSession {
   final _result = Completer<Map<String, dynamic>?>();
   StreamSubscription<dynamic>? _subscription;
   Timer? _timeout;
+  Timer? _rawReleaseTimeout;
+  Map<String, dynamic>? _rawPress;
   bool _finished = false;
 
   ButtonCaptureSession._(this._disarm);
@@ -448,8 +450,26 @@ class ButtonCaptureSession {
     try {
       _subscription = events.listen(
         (event) {
-          if (event is Map && isButtonCaptureEvent(event, source)) {
-            _finish(Map<String, dynamic>.from(event));
+          if (event is Map && event["captureCancelled"] == true) {
+            _finish(null);
+          } else if (event is Map && _rawPress != null) {
+            final pressed = _rawPress!;
+            if (event["keyAction"] == 1 && event["rawCode"] == pressed["rawCode"] &&
+                event["rawScanCode"] == pressed["rawScanCode"] &&
+                event["device"] == pressed["device"]) {
+              _finish(pressed);
+            }
+          } else if (event is Map && isButtonCaptureEvent(event, source)) {
+            final pressed = Map<String, dynamic>.from(event);
+            if (event["rawCode"] is int && event["rawCode"] >= 0) {
+              // Keep interception armed until this press ends. Its Android
+              // copy can otherwise activate the next dialog's focused option.
+              _rawPress = pressed;
+              // Some firmware never sends UP; still finish within half a second.
+              _rawReleaseTimeout = Timer(const Duration(milliseconds: 500), () => _finish(pressed));
+            } else {
+              _finish(pressed);
+            }
           }
         },
         onError: (Object error) => _finish(null),
@@ -468,6 +488,7 @@ class ButtonCaptureSession {
     if (_finished) return;
     _finished = true;
     _timeout?.cancel();
+    _rawReleaseTimeout?.cancel();
     // Queue disarming before waiting for stream cancellation. A replacement
     // capture can then queue its arm after this stop, even during slow setup.
     final disarming = _disarm().catchError((Object error) {

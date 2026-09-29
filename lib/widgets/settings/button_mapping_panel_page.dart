@@ -23,6 +23,7 @@ import 'dart:async';
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 /// Returned by the action picker to mean "unbind this trigger", which is
@@ -38,6 +39,18 @@ class ButtonMappingPanelPage extends StatefulWidget {
 }
 
 class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with WidgetsBindingObserver {
+  bool _mappingInProgress = false;
+
+  Future<void> _runMappingFlow(Future<void> Function() flow) async {
+    if (_mappingInProgress) return;
+    setState(() => _mappingInProgress = true);
+    try {
+      await flow();
+    } finally {
+      if (mounted) setState(() => _mappingInProgress = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -81,33 +94,13 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
                     TextButton.icon(
                       icon: Icon(Icons.add),
                       label: Text("Map a button"),
-                      onPressed: () => _addKeyMapping(context, service),
-                    ),
-                    TextButton.icon(
-                      icon: Icon(Icons.bug_report_outlined),
-                      label: Text("Test remote buttons"),
-                      onPressed: () => _testButtons(context, service),
+                      onPressed: () => _runMappingFlow(() => _addKeyMapping(context, service)),
                     ),
                     _hint(
                       context,
                       "Select a mapped button to add a double press or long press action. "
                       "A mapped button stops doing what it normally did, including for the "
                       "presses you leave unbound.",
-                    ),
-                    Divider(),
-                    _sectionTitle(context, "App shortcut buttons"),
-                    _hint(
-                      context,
-                      "Try Map a button for Netflix, YouTube and other app shortcuts first. "
-                      "If the button opens an app without a capturable key, redirect that "
-                      "app instead. This also redirects opening the app normally. Leave it "
-                      "enabled so there is a launch to catch.",
-                    ),
-                    ...service.appRedirects.map((redirect) => _redirectTile(context, service, redirect)),
-                    TextButton.icon(
-                      icon: Icon(Icons.add),
-                      label: Text("Redirect an app button"),
-                      onPressed: () => _addAppRedirect(context, service),
                     ),
                     Divider(),
                     _sectionTitle(context, "Firmware buttons"),
@@ -143,9 +136,8 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
         children: [
           _hint(
             context,
-            "If a button produces no Android key in the test, a shell input reader may "
-            "still see it. Raw mappings add an action but cannot stop the original app "
-            "from opening. Disable that app only if you no longer need it.",
+            "Use this for Netflix, YouTube and other buttons that 'Map a button' "
+            "cannot capture. The TV may also run the button's original action.",
           ),
           _hint(context, _rawInputStatusLine(service.rawInputStatus)),
           if (!service.rawInputStatus.ready) ...[
@@ -189,7 +181,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
             TextButton.icon(
               icon: Icon(Icons.add),
               label: Text("Map a firmware button"),
-              onPressed: () => _addRawMapping(context, service),
+              onPressed: () => _runMappingFlow(() => _addRawMapping(context, service)),
             ),
           ],
         ],
@@ -450,30 +442,6 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     );
   }
 
-  Widget _redirectTile(BuildContext context, ButtonMappingService service, AppRedirect redirect) => Card(
-        margin: EdgeInsets.only(bottom: 8),
-        child: EnsureVisible(
-          alignment: 0.5,
-          child: ListTile(
-            dense: true,
-            title: Text(redirect.displayName, style: Theme.of(context).textTheme.bodyMedium),
-            subtitle: Text(redirect.action.description, style: Theme.of(context).textTheme.bodySmall),
-            trailing: IconButton(
-              constraints: BoxConstraints(),
-              splashRadius: 20,
-              icon: Icon(Icons.delete_outline),
-              onPressed: () => service.removeAppRedirect(redirect.sourcePackage),
-            ),
-            onTap: () async {
-              final action = await _pickAction(context);
-              if (action != null && !identical(action, _clearAction)) {
-                await service.setAppRedirect(redirect.sourcePackage, redirect.sourceLabel, action);
-              }
-            },
-          ),
-        ),
-      );
-
   Future<void> _addKeyMapping(BuildContext context, ButtonMappingService service) async {
     if (!service.serviceEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -589,45 +557,6 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
     );
   }
 
-  Future<void> _testButtons(BuildContext context, ButtonMappingService service) async {
-    if (!service.serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Turn on the accessibility service first")),
-      );
-      return;
-    }
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _ButtonTestDialog(service: service),
-    );
-  }
-
-  Future<void> _addAppRedirect(BuildContext context, ButtonMappingService service) async {
-    final source = await _pickApplication(context, title: "Which app does the button open?");
-    if (source == null || !mounted) {
-      return;
-    }
-    // A redirect fires when the app comes to the foreground. A disabled app
-    // never gets that far, so the button does nothing and there is nothing to
-    // catch — the app has to be left enabled for this to work at all.
-    if (source.installed && !source.enabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "${source.name} is disabled, so its button opens nothing and there is no launch "
-            "to redirect. Re-enable it in Android settings and this will take over instead.",
-          ),
-          duration: Duration(seconds: 8),
-        ),
-      );
-    }
-    final action = await _pickAction(context);
-    if (action != null && !identical(action, _clearAction)) {
-      await service.setAppRedirect(source.packageName, source.name, action);
-    }
-  }
-
   /// Asks what should happen when the button fires.
   ///
   /// Returns [_clearAction] when the user chose to unbind the trigger, and null
@@ -739,107 +668,6 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
   }
 }
 
-/// Lists every key event the accessibility service can see.
-///
-/// The point is to answer one question: does a given remote button reach an
-/// app at all? Buttons the firmware handles internally — Home, Power, and on
-/// many boxes the Netflix and Prime buttons — never show up here, and no
-/// amount of mapping will catch them.
-class _ButtonTestDialog extends StatefulWidget {
-  final ButtonMappingService service;
-
-  const _ButtonTestDialog({required this.service});
-
-  @override
-  State<_ButtonTestDialog> createState() => _ButtonTestDialogState();
-}
-
-class _ButtonTestDialogState extends State<_ButtonTestDialog> {
-  final List<String> _lines = [];
-  StreamSubscription<dynamic>? _subscription;
-  Timer? _keepArmed;
-
-  @override
-  void initState() {
-    super.initState();
-    _subscription = widget.service.keyEvents.listen(_onEvent);
-    widget.service.setCaptureMode(true);
-    // The service disarms itself after 30s so a crashed dialog cannot leave the
-    // remote dead; keep telling it we are still here.
-    _keepArmed = Timer.periodic(
-      Duration(seconds: 15),
-      (_) => widget.service.setCaptureMode(true),
-    );
-  }
-
-  @override
-  void dispose() {
-    _keepArmed?.cancel();
-    _subscription?.cancel();
-    widget.service.setCaptureMode(false);
-    super.dispose();
-  }
-
-  void _onEvent(dynamic event) {
-    if (event is! Map) {
-      return;
-    }
-    final action = event["keyAction"] == 0 ? "down" : "up";
-    final device = (event["device"] as String?) ?? "";
-    final rawCode = event["rawCode"];
-    final rawScanCode = event["rawScanCode"];
-    final isRaw = rawCode is int && rawCode >= 0;
-    setState(() {
-      _lines.insert(
-        0,
-        isRaw
-            ? "$action  raw code $rawCode"
-                "${rawScanCode is int && rawScanCode != 0 ? "  usage 0x${rawScanCode.toRadixString(16)}" : ""}  ($device)"
-            : "$action  keyCode ${event["keyCode"]}  scanCode ${event["scanCode"]}"
-                "${device.isEmpty ? "" : "  ($device)"}",
-      );
-      if (_lines.length > 40) {
-        _lines.removeLast();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text("Press buttons on the remote"),
-        content: SizedBox(
-          width: 520,
-          height: 260,
-          child: _lines.isEmpty
-              ? Center(
-                  child: Text(
-                    "Press a button. Android keys appear when accessibility can see them. "
-                    "Connect the firmware input reader to also show raw events.",
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _lines.length,
-                  itemBuilder: (_, index) => Text(
-                    _lines[index],
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-        ),
-        actions: [
-          TextButton(
-            // Deliberately not autofocused. The OK press that opened this
-            // dialog repeats while held, and with Done under the cursor that
-            // turned into an open/close loop. Back closes it; so does this,
-            // once the user has moved to it.
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text("Done"),
-          ),
-        ],
-      );
-}
-
 /// A [SimpleDialog] row that can take focus on its own.
 ///
 /// [SimpleDialogOption] gained an `autofocus` parameter after the Flutter
@@ -945,6 +773,8 @@ class _CaptureKeyDialog extends StatefulWidget {
 class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
   static const _timeout = Duration(seconds: 10);
   late final ButtonCaptureSession _captureSession;
+  Timer? _deadline;
+  bool _closed = false;
 
   @override
   void initState() {
@@ -953,42 +783,81 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
       timeout: _timeout,
       source: widget.source,
     );
+    // The dialog must remain escapable even if native cleanup never replies.
+    _deadline = Timer(_timeout, () => _close(null));
     _capture();
   }
 
   @override
   void dispose() {
+    _closed = true;
+    _deadline?.cancel();
     _captureSession.cancel();
     super.dispose();
   }
 
   Future<void> _capture() async {
     final captured = await _captureSession.result;
-    if (mounted) {
+    _close(captured);
+  }
+
+  void _close(Map<String, dynamic>? captured) {
+    if (!mounted || _closed) return;
+    _closed = true;
+    _deadline?.cancel();
+    _captureSession.cancel();
+    final route = ModalRoute.of(context);
+    if (route == null) return;
+    if (route.isCurrent) {
       Navigator.of(context).pop(captured);
+    } else {
+      // Never pop a newer dialog from a stale capture completion.
+      route.navigator?.removeRoute(route);
     }
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: Text("Press a button"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text("Press the remote button you want to map."),
-            SizedBox(height: 8),
-            Text(
-              widget.source == ButtonCaptureSource.raw
-                  ? "Nothing within ${_timeout.inSeconds} seconds means the reader is not "
-                      "seeing this remote. Check the status line on the previous screen."
-                  : "If nothing happens within ${_timeout.inSeconds} seconds, that button "
-                      "was not captured. Check accessibility, or try 'Map a firmware button'.",
-              style: Theme.of(context).textTheme.bodySmall,
-              textAlign: TextAlign.center,
+  Widget build(BuildContext context) => WillPopScope(
+        onWillPop: () async {
+          _close(null);
+          return false;
+        },
+        child: Focus(
+          autofocus: true,
+          onKey: (_, event) {
+            if (event is RawKeyDownEvent &&
+                (event.logicalKey == LogicalKeyboardKey.escape ||
+                    event.logicalKey == LogicalKeyboardKey.gameButtonB)) {
+              _close(null);
+            }
+            // A capture dialog owns focus. Repeats must not activate the mapping
+            // button underneath it or play directional navigation sounds.
+            return KeyEventResult.handled;
+          },
+          child: AlertDialog(
+            title: Text("Press a button"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text("Press the remote button you want to map."),
+                SizedBox(height: 8),
+                Text(
+                  widget.source == ButtonCaptureSource.raw
+                      ? "Nothing within ${_timeout.inSeconds} seconds means the reader is not "
+                          "seeing this remote. Check the status line on the previous screen."
+                      : "If nothing happens within ${_timeout.inSeconds} seconds, that button "
+                          "was not captured. Check accessibility, or try 'Map a firmware button'.",
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
-          ],
+            actions: [
+              TextButton(onPressed: () => _close(null), child: Text("Cancel")),
+            ],
+          ),
         ),
       );
 }

@@ -24,6 +24,7 @@ import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/widgets/settings/button_mapping_panel_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -282,7 +283,7 @@ void main() {
     });
   });
 
-  testWidgets("button testing is available with accessibility and no raw reader", (tester) async {
+  testWidgets("mapping panel omits diagnostic and app redirect sections", (tester) async {
     final channel = _CaptureChannel();
     final service = await buildService(channel);
     await service.refreshServiceState();
@@ -293,16 +294,175 @@ void main() {
       ),
     );
     expect(service.rawInputStatus.ready, isFalse);
-    await tester.tap(find.text("Test remote buttons"));
-    await tester.pumpAndSettle();
-    expect(find.text("Press buttons on the remote"), findsOneWidget);
-    expect(channel.captureModes, [true]);
-    await tester.tap(find.text("Done"));
-    await tester.pumpAndSettle();
-    expect(channel.captureModes, [true, false]);
+    expect(find.text("Test remote buttons"), findsNothing);
+    expect(find.text("App shortcut buttons"), findsNothing);
+    expect(find.text("Redirect an app button"), findsNothing);
     await tester.pumpWidget(SizedBox());
     service.dispose();
     await channel.events.close();
+  });
+
+  Future<void> showNestedMappingPanel(WidgetTester tester, ButtonMappingService service) async {
+    await service.refreshServiceState();
+    await service.refreshRawInputStatus();
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ButtonMappingService>.value(
+        value: service,
+        child: MaterialApp(
+          home: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => Scaffold(body: ButtonMappingPanelPage()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  Future<void> disposeMappingPanel(WidgetTester tester, ButtonMappingService service,
+      _CaptureChannel channel) async {
+    await tester.pumpWidget(SizedBox());
+    service.dispose();
+    await channel.events.close();
+  }
+
+  testWidgets("repeated mapping activation opens one dialog and timeout keeps settings",
+      (tester) async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    final start = tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!;
+    start();
+    start();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text("Press a button"), findsOneWidget);
+    expect(channel.captureModes, [true]);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(find.text("Press a button"), findsOneWidget);
+    expect(channel.captureModes, [true]);
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+    expect(find.text("Press a button"), findsNothing);
+    expect(find.text("Button Mapping"), findsOneWidget);
+    expect(channel.captureModes, [true, false]);
+    await disposeMappingPanel(tester, service, channel);
+  });
+
+  testWidgets("Back exits capture even while native cleanup is stalled", (tester) async {
+    final cleanup = Completer<void>();
+    final channel = _CaptureChannel()..nextDisarm = cleanup.future;
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text("Press a button"), findsNothing);
+    expect(find.text("Button Mapping"), findsOneWidget);
+    cleanup.complete();
+    await tester.pump();
+    await disposeMappingPanel(tester, service, channel);
+  });
+
+  testWidgets("raw capture reaches action picker once and ignores reactivation", (tester) async {
+    final channel = _CaptureChannel()
+      ..statusReply = Future.value({"adb": "CONNECTED"});
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    final start = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, "Map a firmware button"),
+    ).onPressed!;
+    start();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    channel.events.add({
+      "keyAction": 0, "keyCode": 0, "rawCode": 104,
+      "rawScanCode": 295, "device": "/dev/input/event0",
+    });
+    await tester.pump();
+    expect(find.text("Press a button"), findsOneWidget);
+    channel.events.add({
+      "keyAction": 1, "keyCode": 0, "rawCode": 104,
+      "rawScanCode": 295, "device": "/dev/input/event0",
+    });
+    await tester.pumpAndSettle();
+    expect(find.text("Run what?"), findsOneWidget);
+    expect(find.text("Press a button"), findsNothing);
+    start();
+    await tester.pump();
+    expect(find.text("Run what?"), findsOneWidget);
+    expect(find.text("Press a button"), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text("Button Mapping"), findsOneWidget);
+    expect(service.rawMappings, isEmpty);
+    await disposeMappingPanel(tester, service, channel);
+  });
+
+  test("raw Back cancellation does not become a mapping", () async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    final capture = service.startKeyCapture(source: ButtonCaptureSource.raw);
+    await Future<void>.delayed(Duration.zero);
+    channel.events.add({"captureCancelled": true, "keyAction": 0, "rawCode": 158});
+    expect(await capture.result, isNull);
+    expect(channel.captureModes, [true, false]);
+    service.dispose();
+    await channel.events.close();
+  });
+
+  test("raw capture stays armed until the matching release", () async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    final capture = service.startKeyCapture(source: ButtonCaptureSource.raw);
+    await Future<void>.delayed(Duration.zero);
+    final down = <String, dynamic>{
+      "keyAction": 0, "rawCode": 240, "rawScanCode": 786597, "device": "remote",
+    };
+    channel.events.add(down);
+    channel.events.add({"keyAction": 1, "rawCode": 240, "rawScanCode": 786551, "device": "remote"});
+    await Future<void>.delayed(Duration.zero);
+    expect(channel.captureModes, [true]);
+    channel.events.add({...down, "keyAction": 1});
+    expect(await capture.result, down);
+    expect(channel.captureModes, [true, false]);
+    service.dispose();
+    await channel.events.close();
+  });
+
+  test("a raw button without release still completes", () async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    final capture = service.startKeyCapture(source: ButtonCaptureSource.raw);
+    await Future<void>.delayed(Duration.zero);
+    final down = <String, dynamic>{"keyAction": 0, "rawCode": 104, "rawScanCode": 295};
+    channel.events.add(down);
+    expect(await capture.result, down);
+    expect(channel.captureModes, [true, false]);
+    service.dispose();
+    await channel.events.close();
+  });
+
+  testWidgets("capture timeout closes its route while native cleanup is stalled", (tester) async {
+    final cleanup = Completer<void>();
+    final channel = _CaptureChannel()..nextDisarm = cleanup.future;
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    tester.widget<TextButton>(find.widgetWithText(TextButton, "Map a button")).onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+    expect(find.text("Press a button"), findsNothing);
+    expect(find.text("Button Mapping"), findsOneWidget);
+    cleanup.complete();
+    await tester.pump();
+    await disposeMappingPanel(tester, service, channel);
   });
 }
 
@@ -311,6 +471,7 @@ class _CaptureChannel extends FLauncherChannel {
   final captureModes = <bool>[];
   bool failNextArm = false;
   Future<void>? nextArm;
+  Future<void>? nextDisarm;
   Future<bool>? enabledReply;
   Future<Map<dynamic, dynamic>>? statusReply;
 
@@ -337,6 +498,11 @@ class _CaptureChannel extends FLauncherChannel {
     if (enabled && nextArm != null) {
       final pending = nextArm;
       nextArm = null;
+      await pending;
+    }
+    if (!enabled && nextDisarm != null) {
+      final pending = nextDisarm;
+      nextDisarm = null;
       await pending;
     }
   }
