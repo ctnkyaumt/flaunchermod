@@ -25,11 +25,14 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 ## Remap Netflix, YouTube and other app buttons
 
 Open **Settings > Button Mapping** and enable FLauncher's accessibility service.
-Use **Test remote buttons**, then **Map a button** if an Android key is shown.
-Choose the replacement app yourself in the action picker.
+On TVs without a direct accessibility screen, the settings button opens the TV's
+main Settings screen. Use **Map a button**, press the remote button, and choose
+the replacement app yourself in the action picker. Back or Cancel ends capture;
+capture also closes after ten seconds without a button.
 
-If only a raw event appears, connect the input reader and use **Map a firmware
-button**. On a TV already connected to a computer through ADB, press **Connect**
+If the button is not captured, connect the input reader and use **Map a firmware
+button** for Netflix, YouTube and other factory buttons. On a TV already connected
+to a computer through ADB, press **Connect**
 and accept FLauncher's debugging prompt. TCP ADB also works on Android 11+; a
 wireless-debugging pairing code is an alternative when supported. If necessary,
 run `adb tcpip 5555` from the computer again after a reboot.
@@ -37,9 +40,9 @@ run `adb tcpip 5555` from the computer again after a reboot.
 Raw mappings preserve the hardware usage code so Bluetooth factory buttons that
 all report `KEY_UNKNOWN` can have different actions. Raw reading observes the
 button; it cannot consume the firmware's original action. If that action still
-opens an app, disable that particular app in Android settings, or use **Redirect
-an app button** while keeping the original app installed and enabled. Redirects
-also apply when opening that original app manually.
+opens an app, disable that particular app in Android settings if you no longer
+need it. Existing app redirects from earlier versions remain supported, but the
+mapping screen no longer offers app redirects or a separate button test screen.
 
 When upgrading from the old `0.0.4` mapper, enable the new FLauncher accessibility
 service again. Existing launcher layout and other app data are kept by an update.

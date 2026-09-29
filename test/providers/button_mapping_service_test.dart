@@ -405,6 +405,21 @@ void main() {
     await disposeMappingPanel(tester, service, channel);
   });
 
+  testWidgets("Android Back key exits capture without a route-pop message", (tester) async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    mappingStart(tester, "Map a button")();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.sendKeyEvent(LogicalKeyboardKey.goBack, platform: "android");
+    await tester.pumpAndSettle();
+    expect(find.text("Press a button"), findsNothing);
+    expect(find.text("Button Mapping"), findsOneWidget);
+    expect(channel.captureModes, [true, false]);
+    await disposeMappingPanel(tester, service, channel);
+  });
+
   testWidgets("raw capture reaches action picker once and ignores reactivation", (tester) async {
     final channel = _CaptureChannel()
       ..statusReply = Future.value({"adb": "CONNECTED"});

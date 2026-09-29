@@ -483,7 +483,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
             // This is the OK press that opened the dialog, not a real answer.
             return true
         }
-        // Both edges are reported: the button test screen shows everything the
+        // Both edges are reported so capture can observe everything the
         // service can see, and some remote buttons only ever send a down.
         broadcastCapturedKey(event)
         return true

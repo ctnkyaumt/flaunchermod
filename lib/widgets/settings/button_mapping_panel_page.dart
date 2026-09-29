@@ -827,8 +827,11 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
         child: Focus(
           autofocus: true,
           onKey: (_, event) {
+            final data = event.data;
+            final androidBack = data is RawKeyEventDataAndroid && data.keyCode == 4;
             if (event is RawKeyDownEvent &&
-                (event.logicalKey == LogicalKeyboardKey.escape ||
+                (androidBack || event.logicalKey == LogicalKeyboardKey.goBack ||
+                    event.logicalKey == LogicalKeyboardKey.escape ||
                     event.logicalKey == LogicalKeyboardKey.gameButtonB)) {
               _close(null);
             }
