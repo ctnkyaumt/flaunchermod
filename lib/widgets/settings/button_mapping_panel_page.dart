@@ -280,6 +280,7 @@ class _ButtonMappingPanelPageState extends State<ButtonMappingPanelPage> with Wi
       return;
     }
     final code = captured["rawCode"];
+    debugPrint("Raw mapping capture returned: $captured; mounted=$mounted");
     if (code is! int || code < 0) {
       return;
     }
@@ -807,6 +808,7 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
     _deadline?.cancel();
     _captureSession.cancel();
     final route = ModalRoute.of(context);
+    debugPrint("Capture close: $captured; route=${route.runtimeType}; current=${route?.isCurrent}");
     if (route == null) return;
     if (route.isCurrent) {
       Navigator.of(context).pop(captured);
