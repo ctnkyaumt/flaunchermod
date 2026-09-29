@@ -376,6 +376,35 @@ void main() {
     await disposeMappingPanel(tester, service, channel);
   });
 
+  testWidgets("timeout beneath a newer route releases the mapping flow", (tester) async {
+    final channel = _CaptureChannel();
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    final start = mappingStart(tester, "Map a button");
+    start();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final navigator = Navigator.of(tester.element(find.byType(AlertDialog)));
+    navigator.push<void>(MaterialPageRoute<void>(
+      builder: (_) => Scaffold(body: Text("Newer page")),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 11));
+    await tester.pumpAndSettle();
+    expect(find.text("Newer page"), findsOneWidget);
+    expect(channel.captureModes, [true, false]);
+    navigator.pop();
+    await tester.pumpAndSettle();
+    start();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text("Press a button"), findsOneWidget);
+    expect(channel.captureModes, [true, false, true]);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await disposeMappingPanel(tester, service, channel);
+  });
+
   testWidgets("raw capture reaches action picker once and ignores reactivation", (tester) async {
     final channel = _CaptureChannel()
       ..statusReply = Future.value({"adb": "CONNECTED"});

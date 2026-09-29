@@ -812,6 +812,8 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
       Navigator.of(context).pop(captured);
     } else {
       // Never pop a newer dialog from a stale capture completion.
+      // Flutter 3.7's removeRoute does not resolve showDialog's future.
+      route.didComplete(null);
       route.navigator?.removeRoute(route);
     }
   }
