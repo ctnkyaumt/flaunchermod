@@ -66,10 +66,10 @@ void main() {
     await tester.pumpWidget(MultiProvider(
       providers: [
         Provider<FLauncherDatabase>.value(value: database),
-        Provider<SettingsService>.value(value: settings),
-        Provider<ButtonMappingService>.value(value: mappings),
-        Provider<WallpaperService>.value(value: wallpaper),
-        Provider<AppsService>.value(value: apps),
+        ChangeNotifierProvider<SettingsService>.value(value: settings),
+        ChangeNotifierProvider<ButtonMappingService>.value(value: mappings),
+        ChangeNotifierProvider<WallpaperService>.value(value: wallpaper),
+        ChangeNotifierProvider<AppsService>.value(value: apps),
       ],
       child: MaterialApp(home: BackupRestorePanelPage()),
     ));
