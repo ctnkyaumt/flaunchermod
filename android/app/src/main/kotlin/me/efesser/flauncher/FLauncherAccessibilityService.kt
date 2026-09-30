@@ -162,7 +162,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     private var awaitingSecondKey: String? = null
 
     // Keep both edges consumed if capture closes between a down and its up.
-    private val capturedKeysDown = mutableSetOf<String>()
+    private val captureKeys = CaptureKeyState()
     private var redirectTarget: String? = null
 
     private val captureTimeout = Runnable { cancelCapture() }
@@ -308,25 +308,24 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val identity = "android:${event.deviceId}:${event.keyCode}:${event.scanCode}"
-        if (event.action == KeyEvent.ACTION_UP && capturedKeysDown.remove(identity)) {
-            if (captureMode) handleCapture(event)
-            return true
+        val decision = captureKeys.onKey(identity, event.action, event.repeatCount, captureMode)
+        if (decision == CaptureKeyState.Decision.CONSUME) return true
+        if (captureMode && event.action == KeyEvent.ACTION_UP &&
+            decision == CaptureKeyState.Decision.PASS_THROUGH
+        ) {
+            // The opening OK DOWN already reached Flutter. Its UP must reach
+            // InputDispatcher too, or Android keeps synthesizing OK repeats.
+            return false
         }
         // Raw Back may cancel first. Consume its Android copy so the same press
         // cannot also close the settings page after the dialog has gone away.
         if (event.keyCode == KeyEvent.KEYCODE_BACK &&
             SystemClock.elapsedRealtime() < suppressBackUntil
         ) {
-            if (event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.add(identity)
+            if (event.action == KeyEvent.ACTION_DOWN) captureKeys.ownDown(identity, event.repeatCount)
             return true
         }
-        if (captureMode) {
-            val consumed = handleCapture(event)
-            if (consumed && event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.add(identity)
-            return consumed
-        }
-        if (identity in capturedKeysDown && event.repeatCount > 0) return true
-        if (event.action == KeyEvent.ACTION_DOWN) capturedKeysDown.remove(identity)
+        if (decision == CaptureKeyState.Decision.CAPTURE) return handleCapture(event)
 
         val binding = mappings.resolve(event.keyCode, event.scanCode)
             ?: return super.onKeyEvent(event)

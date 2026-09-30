@@ -80,9 +80,17 @@ release instead of down, and redirect BACK events could close the replacement.
 Tests cover decoder frames, native mapping compatibility and Flutter capture
 sessions. Builds and tests run in GitHub Actions, not locally.
 
+Capture also preserves the release of the OK press that opened its dialog.
+Swallowing that release after its down reached Android leaves dispatcher repeats
+running outside the accessibility filter. Those repeats selected the first action
+and first app automatically, then reopened capture. Unowned releases now pass
+through; fully captured presses keep both edges consumed, including after disarm.
+Native ownership tests and a Flutter test that opens capture with OK cover this.
+
 Primary references:
 
 - [AOSP KeyboardInputMapper](https://android.googlesource.com/platform/frameworks/native/+/18c754e18499acce28e8be58846879075ade72a7/services/inputflinger/reader/mapper/KeyboardInputMapper.cpp): MSC_SCAN/HID usage is separate from the Linux key code.
 - [Linux input event protocol](https://docs.kernel.org/input/event-codes.html): SYN packet boundaries, key down/up/repeat values and miscellaneous events.
 - [libadb 3.1.1 connection manager](https://github.com/MuntashirAkon/libadb-android/blob/3.1.1/libadb/src/main/java/io/github/muntashirakon/adb/AbsAdbConnectionManager.java): discovery timeout throws; `disconnect()` preserves the client identity while `close()` destroys it.
 - [Android AccessibilityService.onKeyEvent](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#onKeyEvent(android.view.KeyEvent)): filtering must keep down/up streams consistent.
+- [AOSP Android 11 InputDispatcher](https://android.googlesource.com/platform/frameworks/native/+/refs/tags/android-11.0.0_r1/services/inputflinger/dispatcher/InputDispatcher.cpp): input filtering precedes enqueue; dispatched releases reset repeat state, while synthesized repeats bypass the filter.

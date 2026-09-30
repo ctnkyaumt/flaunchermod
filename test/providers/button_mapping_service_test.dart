@@ -309,6 +309,10 @@ void main() {
       ChangeNotifierProvider<ButtonMappingService>.value(
         value: service,
         child: MaterialApp(
+          shortcuts: {
+            ...WidgetsApp.defaultShortcuts,
+            SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+          },
           home: Navigator(
             onGenerateRoute: (_) => MaterialPageRoute<void>(
               builder: (_) => Scaffold(body: ButtonMappingPanelPage()),
@@ -333,6 +337,19 @@ void main() {
           matching: find.byWidgetPredicate((widget) => widget is TextButton),
         ),
       ).onPressed!;
+
+  Future<void> sendAndroidKey(WidgetTester tester, String type, int keyCode,
+      {int scanCode = 0}) async {
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      SystemChannels.keyEvent.name,
+      SystemChannels.keyEvent.codec.encodeMessage({
+        "type": type, "keymap": "android", "keyCode": keyCode, "scanCode": scanCode,
+        "metaState": 0, "flags": 0, "source": 257, "repeatCount": 0,
+        "deviceId": -1, "plainCodePoint": 0, "codePoint": 0,
+      }),
+      (_) {},
+    );
+  }
 
   testWidgets("repeated mapping activation opens one dialog and timeout keeps settings",
       (tester) async {
@@ -415,15 +432,7 @@ void main() {
     // Flutter 3.7's test keyboard has no physical mapping for Android Back.
     // Send the wire event produced by a TV's KEYCODE_BACK instead.
     for (final type in ["keydown", "keyup"]) {
-      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-        SystemChannels.keyEvent.name,
-        SystemChannels.keyEvent.codec.encodeMessage({
-          "type": type, "keymap": "android", "keyCode": 4, "scanCode": 0,
-          "metaState": 0, "flags": 0, "source": 257, "repeatCount": 0,
-          "deviceId": -1, "plainCodePoint": 0, "codePoint": 0,
-        }),
-        (_) {},
-      );
+      await sendAndroidKey(tester, type, 4);
     }
     await tester.pumpAndSettle();
     expect(find.text("Press a button"), findsNothing);
@@ -463,6 +472,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text("Button Mapping"), findsOneWidget);
     expect(service.rawMappings, isEmpty);
+    await disposeMappingPanel(tester, service, channel);
+  });
+
+  testWidgets("opening OK release leaves capture armed and the chooser untouched", (tester) async {
+    final channel = _CaptureChannel()
+      ..statusReply = Future.value({"adb": "CONNECTED"});
+    final service = await buildService(channel);
+    await showNestedMappingPanel(tester, service);
+    Focus.of(tester.element(find.text("Map a firmware button"))).requestFocus();
+    await tester.pump();
+    await sendAndroidKey(tester, "keydown", 23, scanCode: 353);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text("Press a button"), findsOneWidget);
+    expect(RawKeyboard.instance.keysPressed, contains(LogicalKeyboardKey.select));
+    // Native filtering must forward this UP: its DOWN opened capture.
+    await sendAndroidKey(tester, "keyup", 23, scanCode: 353);
+    await tester.pump();
+    expect(RawKeyboard.instance.keysPressed, isEmpty);
+    expect(find.text("Press a button"), findsOneWidget);
+    expect(channel.captureModes, [true]);
+    final down = <String, dynamic>{
+      "keyAction": 0, "keyCode": 0, "rawCode": 104,
+      "rawScanCode": 295, "device": "/dev/input/event0",
+    };
+    channel.events.add(down);
+    channel.events.add({...down, "keyAction": 1});
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text("Run what?"), findsOneWidget);
+    expect(find.text("Open which app?"), findsNothing);
+    expect(service.rawMappings, isEmpty);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
     await disposeMappingPanel(tester, service, channel);
   });
 
