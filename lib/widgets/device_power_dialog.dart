@@ -17,6 +17,7 @@ class DevicePowerDialog extends StatefulWidget {
 }
 
 class _DevicePowerDialogState extends State<DevicePowerDialog> {
+  final _cancelFocus = FocusNode();
   bool _pending = false;
   bool _dismissed = false;
   String? _error;
@@ -49,6 +50,8 @@ class _DevicePowerDialogState extends State<DevicePowerDialog> {
       _error = null;
       _action = standby ? 'standby' : 'power menu';
     });
+    // The selected power button disappears while waiting; keep Close reachable.
+    _cancelFocus.requestFocus();
 
     String? error;
     try {
@@ -81,12 +84,13 @@ class _DevicePowerDialogState extends State<DevicePowerDialog> {
   @override
   void dispose() {
     ++_requestGeneration;
+    _cancelFocus.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Focus(
-        autofocus: true,
+        canRequestFocus: false,
         onKey: (_, event) {
           final androidBack = event.data is RawKeyEventDataAndroid &&
               (event.data as RawKeyEventDataAndroid).keyCode == 4;
@@ -107,7 +111,12 @@ class _DevicePowerDialogState extends State<DevicePowerDialog> {
                 )
               : Text(_error ?? 'Choose standby to turn off the screen, or open the system power menu.'),
           actions: [
-            TextButton(onPressed: _dismiss, child: Text(_pending ? 'CLOSE' : 'CANCEL')),
+            TextButton(
+              focusNode: _cancelFocus,
+              autofocus: true,
+              onPressed: _dismiss,
+              child: Text(_pending ? 'CLOSE' : 'CANCEL'),
+            ),
             if (!_pending) ...[
               TextButton(onPressed: () => _requestPower(standby: true), child: Text('STANDBY')),
               TextButton(onPressed: () => _requestPower(standby: false), child: Text('POWER MENU')),

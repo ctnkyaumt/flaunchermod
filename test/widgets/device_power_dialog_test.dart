@@ -12,6 +12,100 @@ void main() {
   setUp(() => TestWidgetsFlutterBinding.ensureInitialized());
   tearDown(() => _methodChannel.setMockMethodCallHandler(null));
 
+  testWidgets('Remote opening release keeps Cancel focused and OK dismisses it', (tester) async {
+    var requests = 0;
+    _methodChannel.setMockMethodCallHandler((call) async {
+      requests++;
+      return true;
+    });
+    await _openDialog(tester, remote: true);
+    _expectFocused(tester, 'CANCEL');
+    expect(RawKeyboard.instance.keysPressed, isEmpty);
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    expect(find.byType(DevicePowerDialog), findsNothing);
+    expect(requests, 0);
+    _expectFocused(tester, 'Power');
+  });
+
+  testWidgets('D-pad reaches every choice in both directions without leaving the dialog', (tester) async {
+    await _openDialog(tester, remote: true);
+    for (final label in ['STANDBY', 'POWER MENU']) {
+      await _pressRemoteKey(tester, 22);
+      _expectFocused(tester, label);
+    }
+    for (final label in ['STANDBY', 'CANCEL']) {
+      await _pressRemoteKey(tester, 21);
+      _expectFocused(tester, label);
+    }
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    expect(find.byType(DevicePowerDialog), findsNothing);
+  });
+
+  testWidgets('Remote Standby dispatches once and moves focus to Close while pending', (tester) async {
+    final request = Completer<bool>();
+    final methods = <String>[];
+    _methodChannel.setMockMethodCallHandler((call) async {
+      methods.add(call.method);
+      return request.future;
+    });
+    await _openDialog(tester, remote: true);
+    await _pressRemoteKey(tester, 22);
+    await _pressRemoteKey(tester, 23);
+    expect(methods, ['standbyDevice']);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    _expectFocused(tester, 'CLOSE');
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    request.complete(false);
+    await tester.pumpAndSettle();
+    expect(find.byType(DevicePowerDialog), findsNothing);
+    expect(methods, ['standbyDevice']);
+    _expectFocused(tester, 'Power');
+  });
+
+  testWidgets('Remote Power menu failure keeps Cancel and retry choices reachable', (tester) async {
+    final methods = <String>[];
+    _methodChannel.setMockMethodCallHandler((call) async {
+      methods.add(call.method);
+      return call.method == 'standbyDevice';
+    });
+    await _openDialog(tester, remote: true);
+    await _pressRemoteKey(tester, 22);
+    await _pressRemoteKey(tester, 22);
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    expect(methods, ['shutdownDevice']);
+    expect(find.text('Power request failed'), findsOneWidget);
+    _expectFocused(tester, 'CANCEL');
+    await _pressRemoteKey(tester, 22);
+    _expectFocused(tester, 'STANDBY');
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    expect(methods, ['shutdownDevice', 'standbyDevice']);
+    expect(find.byType(DevicePowerDialog), findsNothing);
+  });
+
+  testWidgets('Remote timeout returns focus to Cancel and ignores the late reply', (tester) async {
+    final request = Completer<bool>();
+    _methodChannel.setMockMethodCallHandler((call) async => request.future);
+    await _openDialog(tester, remote: true);
+    await _pressRemoteKey(tester, 22);
+    await _pressRemoteKey(tester, 22);
+    await _pressRemoteKey(tester, 23);
+    _expectFocused(tester, 'CLOSE');
+    await tester.pump(Duration(seconds: 11));
+    await tester.pumpAndSettle();
+    _expectFocused(tester, 'CANCEL');
+    request.complete(true);
+    await tester.pumpAndSettle();
+    _expectFocused(tester, 'CANCEL');
+    await _pressRemoteKey(tester, 23);
+    await tester.pumpAndSettle();
+    expect(find.byType(DevicePowerDialog), findsNothing);
+  });
+
   testWidgets('Power choices distinguish standby from the system menu', (tester) async {
     await _openDialog(tester);
     expect(find.text('STANDBY'), findsOneWidget);
@@ -167,13 +261,18 @@ void main() {
   });
 }
 
-Future<void> _openDialog(WidgetTester tester) async {
+Future<void> _openDialog(WidgetTester tester, {bool remote = false}) async {
   await tester.pumpWidget(MaterialApp(
+    shortcuts: {
+      ...WidgetsApp.defaultShortcuts,
+      SingleActivator(LogicalKeyboardKey.select): ActivateIntent(),
+    },
     home: Builder(
       builder: (context) => Scaffold(
         body: Column(children: [
           Text('Home'),
           TextButton(
+            autofocus: true,
             onPressed: () => showDialog<void>(
               context: context,
               barrierDismissible: false,
@@ -185,6 +284,36 @@ Future<void> _openDialog(WidgetTester tester) async {
       ),
     ),
   ));
-  await tester.tap(find.text('Power'));
   await tester.pumpAndSettle();
+  if (remote) {
+    // Opening OK's release arrives after focus has moved onto the dialog.
+    await _sendAndroidKey(tester, 'keydown', 23);
+    await tester.pumpAndSettle();
+    await _sendAndroidKey(tester, 'keyup', 23);
+  } else {
+    await tester.tap(find.text('Power'));
+  }
+  await tester.pumpAndSettle();
+}
+
+void _expectFocused(WidgetTester tester, String label) =>
+    expect(Focus.of(tester.element(find.text(label))).hasPrimaryFocus, isTrue, reason: '$label must own remote focus');
+
+Future<void> _pressRemoteKey(WidgetTester tester, int keyCode) async {
+  await _sendAndroidKey(tester, 'keydown', keyCode);
+  await tester.pump();
+  await _sendAndroidKey(tester, 'keyup', keyCode);
+  await tester.pump();
+}
+
+Future<void> _sendAndroidKey(WidgetTester tester, String type, int keyCode) async {
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.keyEvent.name,
+    SystemChannels.keyEvent.codec.encodeMessage({
+      'type': type, 'keymap': 'android', 'keyCode': keyCode, 'scanCode': keyCode == 23 ? 353 : 0,
+      'metaState': 0, 'flags': 0, 'source': 257, 'repeatCount': 0,
+      'deviceId': -1, 'plainCodePoint': 0, 'codePoint': 0,
+    }),
+    (_) {},
+  );
 }
