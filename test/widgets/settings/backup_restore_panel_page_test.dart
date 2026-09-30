@@ -81,6 +81,7 @@ void main() {
     await _pumpUntil(tester, () => find.text('Select Backup').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
     await tester.tap(find.text(name));
+    await _pumpUntil(tester, () => find.text('Restore Backup?').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
   }
 
@@ -126,15 +127,12 @@ void main() {
   }, timeout: Timeout(Duration(seconds: 30)));
 
   testWidgets('Restore needs confirmation and immediately refreshes the layout cache', (tester) async {
-    debugPrint('Backup confirmation test: writing file');
     const name = 'flauncher_backup_restore.json';
     await tester.runAsync(() async {
       await File('${documents.path}/$name').writeAsString(_backup('Restored'));
     });
-    debugPrint('Backup confirmation test: opening page');
     await open(tester);
     await select(tester, name);
-    debugPrint('Backup confirmation test: first confirmation visible');
     expect(find.text('Restore Backup?'), findsOneWidget);
     expect(apps.categoriesWithApps.any((item) => item.category.name == 'Original'), isTrue);
     expect(settings.use24HourTimeFormat, isTrue);
@@ -144,11 +142,9 @@ void main() {
     expect(settings.use24HourTimeFormat, isTrue);
 
     await select(tester, name);
-    debugPrint('Backup confirmation test: restoring');
     await tester.tap(find.text('Restore'));
     await _pumpUntil(tester, () => find.text('Restore completed successfully').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
-    debugPrint('Backup confirmation test: restore completed');
 
     expect(apps.categoriesWithApps.map((item) => item.category.name), ['Restored']);
     expect(settings.use24HourTimeFormat, isFalse);
@@ -174,6 +170,10 @@ void main() {
 }
 
 Future<void> _startPicker(WidgetTester tester, {bool repeated = false}) async {
+  await _pumpUntil(tester, () {
+    final finder = find.widgetWithText(ListTile, 'Restore from Backup');
+    return finder.evaluate().isNotEmpty && tester.widget<ListTile>(finder).onTap != null;
+  });
   final tile = tester.widget<ListTile>(find.widgetWithText(ListTile, 'Restore from Backup'));
   await tester.runAsync(() async {
     tile.onTap!();
