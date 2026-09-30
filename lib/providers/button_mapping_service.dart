@@ -666,16 +666,88 @@ class ButtonMappingService extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    final payload = jsonEncode({
-      "keyMappings": _keyMappings.map((mapping) => mapping.toJson()).toList(),
-      "appRedirects": _appRedirects.map((redirect) => redirect.toJson()).toList(),
-      "rawMappings": _rawMappings.map((mapping) => mapping.toJson()).toList(),
-    });
-    await _sharedPreferences.setString(_buttonMappingsKey, payload);
+    final payload = jsonEncode(exportMappings());
+    if (!await _sharedPreferences.setString(_buttonMappingsKey, payload)) {
+      throw StateError("Unable to save button mappings");
+    }
     // The service also watches the preferences file, but the broadcast makes
     // the reload immediate rather than dependent on listener delivery.
     await _channel.notifyButtonMappingsChanged();
     if (!_disposed) notifyListeners();
+  }
+
+  Map<String, dynamic> exportMappings() => {
+      "keyMappings": _keyMappings.map((mapping) => mapping.toJson()).toList(),
+      "appRedirects": _appRedirects.map((redirect) => redirect.toJson()).toList(),
+      "rawMappings": _rawMappings.map((mapping) => mapping.toJson()).toList(),
+    };
+
+  static void validateBackupMappings(Map<String, dynamic> data) {
+    void validateAction(dynamic value) {
+      if (value == null) return;
+      if (value is! Map<String, dynamic> ||
+          (value["packageName"] != null && value["packageName"] is! String) ||
+          (value["label"] != null && value["label"] is! String)) {
+        throw FormatException("Invalid button action");
+      }
+      final action = ButtonAction.fromJson(value);
+      if (action == null ||
+          (action.type == ButtonActionType.launchApp && (action.packageName?.isEmpty ?? true))) {
+        throw FormatException("Invalid button action");
+      }
+    }
+
+    for (final key in ["keyMappings", "appRedirects", "rawMappings"]) {
+      final entries = data[key];
+      if (entries is! List) throw FormatException("Missing button mapping list: $key");
+      final identities = <String>{};
+      for (final entry in entries) {
+        if (entry is! Map<String, dynamic>) throw FormatException("Invalid button mapping");
+        for (final field in ["scanCode", "rawScanCode"]) {
+          final value = entry[field];
+          if (value != null && (value is! int || value < 0)) {
+            throw FormatException("Invalid button scan code");
+          }
+        }
+        for (final field in ["device", "keyLabel", "sourceLabel"]) {
+          if (entry[field] != null && entry[field] is! String) {
+            throw FormatException("Invalid button label");
+          }
+        }
+        for (final field in ["single", "double", "long", "action"]) {
+          validateAction(entry[field]);
+        }
+        String? identity;
+        if (key == "keyMappings") {
+          final code = entry["keyCode"];
+          final mode = entry["matchMode"];
+          if (code is! int || code < 0 || (mode != null && mode != "keyCode" && mode != "scanCode")) {
+            throw FormatException("Invalid Android key mapping");
+          }
+          identity = KeyMapping.fromJson(entry)?.id;
+        } else if (key == "rawMappings") {
+          final code = entry["code"];
+          if (code is! int || code < 0) throw FormatException("Invalid raw key mapping");
+          identity = RawMapping.fromJson(entry)?.id;
+        } else {
+          identity = AppRedirect.fromJson(entry)?.sourcePackage;
+        }
+        if (identity == null || !identities.add(identity)) {
+          throw FormatException("Invalid or duplicate button mapping");
+        }
+      }
+    }
+  }
+
+  Future<void> restoreMappings(Map<String, dynamic> data) async {
+    validateBackupMappings(data);
+    _keyMappings = (data["keyMappings"] as List)
+        .map((entry) => KeyMapping.fromJson(entry as Map<String, dynamic>)!).toList();
+    _appRedirects = (data["appRedirects"] as List)
+        .map((entry) => AppRedirect.fromJson(entry as Map<String, dynamic>)!).toList();
+    _rawMappings = (data["rawMappings"] as List)
+        .map((entry) => RawMapping.fromJson(entry as Map<String, dynamic>)!).toList();
+    await _persist();
   }
 
   Future<void> refreshServiceState() async {

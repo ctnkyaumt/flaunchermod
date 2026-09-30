@@ -90,6 +90,9 @@ class FLauncherChannel {
 
   Future<bool> requestAllFilesAccess() async => (await _methodChannel.invokeMethod('requestAllFilesAccess')) ?? false;
 
+  Future<String?> saveBackupToDownloads(String path) async =>
+      await _methodChannel.invokeMethod<String>('saveBackupToDownloads', path);
+
   Future<List<dynamic>> listBackupJsonInDownloads() async =>
       (await _methodChannel.invokeListMethod('listBackupJsonInDownloads')) ?? <dynamic>[];
 

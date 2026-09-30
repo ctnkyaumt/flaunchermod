@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version to release (must match pubspec.yaml)'
+        description: 'Release version without build number (must match pubspec.yaml)'
         required: true
       post_release_version:
-        description: 'Next development version after releasing (optional)'
+        description: 'Next development version, with optional increasing build number'
         required: false
 
 permissions:
@@ -24,15 +24,61 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
-      - name: Ensure release version matches pubspec.yaml
+      - name: Validate release and next development versions
+        id: versions
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          POST_RELEASE_VERSION: ${{ inputs.post_release_version }}
+          RELEASE_REF: ${{ github.ref }}
         run: |
-          CURRENT_VERSION=$(grep ^version pubspec.yaml | sed -E 's/^version: //')
-          RELEASE_VERSION="${{ inputs.release_version }}"
-          echo "pubspec.yaml version: $CURRENT_VERSION"
-          if [ "$CURRENT_VERSION" != "$RELEASE_VERSION" ]; then
-            echo "Provided release_version ($RELEASE_VERSION) does not match pubspec.yaml ($CURRENT_VERSION)."
-            exit 1
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          semantic = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
+          current_line = re.search(r'^version:\s*(\S+)\s*$', Path('pubspec.yaml').read_text(), re.MULTILINE)
+          current = re.fullmatch(semantic + r'\+([1-9][0-9]*)', current_line[1] if current_line else '')
+          release = re.fullmatch(semantic, os.environ['RELEASE_VERSION'])
+          if current is None or release is None or current.groups()[:3] != release.groups():
+              raise SystemExit('release_version must be the semantic version from pubspec.yaml, without +build.')
+          if not os.environ['RELEASE_REF'].startswith('refs/heads/'):
+              raise SystemExit('Dispatch releases from a branch so the development version can be pushed.')
+
+          current_base = tuple(map(int, current.groups()[:3]))
+          current_build = int(current[4])
+          requested_next = os.environ['POST_RELEASE_VERSION']
+          if requested_next:
+              next_match = re.fullmatch(semantic + r'(?:\+([1-9][0-9]*))?', requested_next)
+              if next_match is None:
+                  raise SystemExit('post_release_version must be major.minor.patch with an optional +build.')
+              next_base = tuple(map(int, next_match.groups()[:3]))
+              next_build = int(next_match[4]) if next_match[4] else current_build + 1
+          else:
+              next_base = (*current_base[:2], current_base[2] + 1)
+              next_build = current_build + 1
+          if next_base <= current_base or next_build <= current_build:
+              raise SystemExit('The next development version and build number must both increase.')
+          next_version = '.'.join(map(str, next_base)) + f'+{next_build}'
+          print(f'Releasing {current_line[1]}; next development version: {next_version}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'next_version={next_version}\n')
+          PY
+
+      - name: Ensure release tag identifies the dispatched commit
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          TAG="v$RELEASE_VERSION"
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            TAG_SHA=$(git rev-parse "refs/tags/$TAG^{commit}")
+            if [ "$TAG_SHA" != "$RELEASE_SHA" ]; then
+              echo "Existing tag $TAG identifies a different commit."
+              exit 1
+            fi
           fi
 
       - name: Decode keystore
@@ -56,6 +102,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Test settings, backup, button mapping, and device power
+        run: >-
+          flutter test
+          test/providers/backup_service_test.dart
+          test/providers/apps_restore_test.dart
+          test/providers/settings_service_test.dart
+          test/providers/wallpaper_service_test.dart
+          test/providers/button_mapping_service_test.dart
+          test/widgets/device_power_dialog_test.dart
+          test/widgets/settings/backup_restore_panel_page_test.dart
+
       - name: Build release APKs (armeabi-v7a & arm64-v8a)
         env:
           KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
@@ -73,6 +130,14 @@ jobs:
           python3 tools/check_apk_bytecode.py build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           python3 tools/check_apk_bytecode.py build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
+      - name: Test native button input
+        working-directory: android
+        run: ./gradlew app:testReleaseUnitTest
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -85,6 +150,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.release_version }}
+          target_commitish: ${{ github.sha }}
           name: v${{ inputs.release_version }}
           body: |
             Automated release for version ${{ inputs.release_version }}.
@@ -93,29 +159,16 @@ jobs:
             build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           generate_release_notes: true
 
-      - name: Determine next version
-        id: next_version
-        run: |
-          if [ -n "${{ inputs.post_release_version }}" ]; then
-            NEXT_VERSION="${{ inputs.post_release_version }}"
-          else
-            VERSION="${{ inputs.release_version }}"
-            BASE="${VERSION%%+*}"
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
-            PATCH=${PATCH:-0}
-            NEXT_PATCH=$((PATCH + 1))
-            NEXT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH"
-          fi
-          echo "Next version: $NEXT_VERSION"
-          echo "value=$NEXT_VERSION" >> $GITHUB_OUTPUT
-
       - name: Bump pubspec.yaml version
+        env:
+          NEXT_VERSION: ${{ steps.versions.outputs.next_version }}
         run: |
-          NEXT_VERSION="${{ steps.next_version.outputs.value }}"
           sed -i "s/^version: .*/version: $NEXT_VERSION/" pubspec.yaml
 
       - name: Commit version bump
         id: commit_bump
+        env:
+          NEXT_VERSION: ${{ steps.versions.outputs.next_version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -124,13 +177,15 @@ jobs:
             echo "No changes to commit."
             echo "committed=false" >> $GITHUB_OUTPUT
           else
-            git commit -m "chore: bump version to ${{ steps.next_version.outputs.value }}"
+            git commit -m "chore: bump version to $NEXT_VERSION"
             echo "committed=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Push changes
         if: steps.commit_bump.outputs.committed == 'true'
-        run: git push origin HEAD:${{ github.ref }}
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: git push origin "HEAD:$RELEASE_REF"
 
       - name: Clean up keystore
         if: always()

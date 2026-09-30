@@ -20,7 +20,7 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
       the app shortcut buttons (Netflix, YouTube, ...). Home and Power are handled
       by Android itself and cannot be remapped. See the
       [input architecture notes](docs/button-mapping-reference-analysis.md).
-- [x] Backup/restore (local only)
+- [x] Backup/restore settings, layout, button mappings and wallpaper (local only)
 - [ ] Force stop app
 
 ## Remap Netflix, YouTube and other app buttons
@@ -59,6 +59,19 @@ A regular launcher cannot directly shut down Android without system permission.
 The power menu uses Android's supported accessibility action rather than hidden
 APIs or root commands. Firmware still controls whether the TV stays off after
 shutdown. See [Android's global actions](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#GLOBAL_ACTION_POWER_DIALOG).
+
+## Backup and restore
+
+Settings > Backup & Restore saves a JSON backup to Downloads on Android 10+,
+with app-private storage as a fallback. Restore lists both locations; Browse
+opens a document picker for backups copied from another device. Restore requires
+confirmation and validates the entire file before changing data. Version 1
+backups still work and leave existing button mappings and wallpaper alone.
+
+Version 2 includes remote mappings, wallpaper and weather settings. Android
+accessibility/storage permissions and ADB credentials are device-specific and
+are not exported. Missing apps stay hidden with their category assignments;
+installation is optional. Backups are limited to 32 MiB.
 
 ## Screenshots
 |--|--|--|--|

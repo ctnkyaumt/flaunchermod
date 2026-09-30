@@ -182,62 +182,71 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Map<String, dynamic> exportSettings() => {
+        "use24HourTimeFormat": use24HourTimeFormat,
+        "appHighlightAnimationEnabled": appHighlightAnimationEnabled,
+        "gradientUuid": gradientUuid,
+        "unsplashAuthor": unsplashAuthor,
+        "weather": {
+          "enabled": weatherEnabled,
+          "lat": weatherLatitude,
+          "lon": weatherLongitude,
+          "locationName": weatherLocationName,
+          "showDetails": weatherShowDetails,
+          "showCity": weatherShowCity,
+          "units": weatherUnits == WeatherUnits.us ? "us" : "si",
+          "refreshInterval": weatherRefreshIntervalMinutes,
+        },
+      };
+
   Future<void> restoreSettings(Map<String, dynamic> data) async {
-    try {
-      if (data.containsKey("use24HourTimeFormat")) {
-        final val = data["use24HourTimeFormat"];
-        if (val is bool) await _sharedPreferences.setBool(_use24HourTimeFormatKey, val);
-      }
-      if (data.containsKey("appHighlightAnimationEnabled")) {
-        final val = data["appHighlightAnimationEnabled"];
-        if (val is bool) await _sharedPreferences.setBool(_appHighlightAnimationEnabledKey, val);
-      }
-      if (data.containsKey("gradientUuid")) {
-        final val = data["gradientUuid"];
-        if (val is String) await _sharedPreferences.setString(_gradientUuidKey, val);
-      }
-      
-      if (data.containsKey("weather")) {
-        final w = data["weather"];
-        if (w is Map<String, dynamic>) {
-          if (w.containsKey("enabled")) {
-             final val = w["enabled"];
-             if (val is bool) await _sharedPreferences.setBool(_weatherEnabledKey, val);
-          }
-          if (w.containsKey("lat")) {
-             final val = w["lat"];
-             if (val is double) await _sharedPreferences.setDouble(_weatherLatitudeKey, val);
-          }
-          if (w.containsKey("lon")) {
-             final val = w["lon"];
-             if (val is double) await _sharedPreferences.setDouble(_weatherLongitudeKey, val);
-          }
-          if (w.containsKey("locationName")) {
-             final val = w["locationName"];
-             if (val is String) await _sharedPreferences.setString(_weatherLocationNameKey, val);
-          }
-          if (w.containsKey("showDetails")) {
-             final val = w["showDetails"];
-             if (val is bool) await _sharedPreferences.setBool(_weatherShowDetailsKey, val);
-          }
-          if (w.containsKey("showCity")) {
-             final val = w["showCity"];
-             if (val is bool) await _sharedPreferences.setBool(_weatherShowCityKey, val);
-          }
-          if (w.containsKey("units")) {
-             final val = w["units"];
-             if (val is String) await _sharedPreferences.setString(_weatherUnitsKey, val);
-          }
-          if (w.containsKey("refreshInterval")) {
-             final val = w["refreshInterval"];
-             if (val is int) await _sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, val);
-          }
+    Future<void> write(Future<bool> result) async {
+      if (!await result) throw StateError("Unable to save restored settings");
+    }
+    Future<void> restoreValues(Map<String, dynamic> source, Map<String, String> keys) async {
+      for (final entry in keys.entries) {
+        if (!source.containsKey(entry.key)) continue;
+        final value = source[entry.key];
+        if (value == null) {
+          await write(_sharedPreferences.remove(entry.value));
+        } else if (value is bool) {
+          await write(_sharedPreferences.setBool(entry.value, value));
+        } else if (value is String) {
+          await write(_sharedPreferences.setString(entry.value, value));
+        } else if (value is num) {
+          await write(_sharedPreferences.setDouble(entry.value, value.toDouble()));
         }
       }
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Error restoring settings: $e");
-      // Don't rethrow, just log and continue, as partial settings restore is better than none
     }
+    await restoreValues(data, {
+      "use24HourTimeFormat": _use24HourTimeFormatKey,
+      "appHighlightAnimationEnabled": _appHighlightAnimationEnabledKey,
+      "gradientUuid": _gradientUuidKey,
+      "unsplashAuthor": _unsplashAuthorKey,
+    });
+    final weather = data["weather"];
+    if (weather is Map<String, dynamic>) {
+      await restoreValues(weather, {
+        "enabled": _weatherEnabledKey,
+        "lat": _weatherLatitudeKey,
+        "lon": _weatherLongitudeKey,
+        "locationName": _weatherLocationNameKey,
+        "showDetails": _weatherShowDetailsKey,
+        "showCity": _weatherShowCityKey,
+      });
+      final units = weather["units"];
+      if (units == 'us' || units == 'WeatherUnits.us') {
+        await write(_sharedPreferences.setString(_weatherUnitsKey, 'us'));
+      } else if (units == 'si' || units == 'WeatherUnits.si') {
+        await write(_sharedPreferences.setString(_weatherUnitsKey, 'si'));
+      }
+      final minutes = weather["refreshInterval"];
+      if (minutes is int) {
+        final clamped = minutes.clamp(15, 120);
+        final normalized = (clamped / 15).round() * 15;
+        await write(_sharedPreferences.setInt(_weatherRefreshIntervalMinutesKey, normalized));
+      }
+    }
+    notifyListeners();
   }
 }

@@ -273,6 +273,9 @@ class AppsService extends ChangeNotifier {
 
       final uninstalledApplications = <String>[];
       for (final packageName in appsRemovedFromSystem) {
+        final existing = existingAppsByPackageName[packageName]!;
+        // Restored, not-yet-installed apps keep their saved category positions.
+        if (existing.hidden && existing.version.isEmpty) continue;
         if (!(await _fLauncherChannel.applicationExists(packageName))) {
           uninstalledApplications.add(packageName);
         }
@@ -290,6 +293,12 @@ class AppsService extends ChangeNotifier {
   }
 
   Future<void> launchApp(App app) => _fLauncherChannel.launchApp(app.packageName);
+
+  Future<void> reloadAfterRestore() async {
+    _categories = await _database.listCategoriesWithVisibleApps();
+    _applications = await _database.listApplications();
+    notifyListeners();
+  }
 
   Future<void> openAppInfo(App app) => _fLauncherChannel.openAppInfo(app.packageName);
 

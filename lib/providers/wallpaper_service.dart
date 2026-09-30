@@ -36,6 +36,8 @@ class WallpaperService extends ChangeNotifier {
   late SettingsService _settingsService;
 
   late final File _wallpaperFile;
+  late final Future<void> _ready;
+  Object? _initializationError;
   Uint8List? _wallpaper;
 
   Uint8List? get wallpaperBytes => _wallpaper;
@@ -49,7 +51,7 @@ class WallpaperService extends ChangeNotifier {
 
   WallpaperService(this._imagePicker, this._fLauncherChannel, this._unsplashService) {
     debugPrint("WallpaperService: Initializing");
-    _init();
+    _ready = _init();
   }
 
   Future<void> _init() async {
@@ -64,11 +66,13 @@ class WallpaperService extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
+      _initializationError = e;
       debugPrint("WallpaperService: Error initializing - $e");
     }
   }
 
   Future<void> pickWallpaper() async {
+    await _ready;
     if (!await _fLauncherChannel.checkForGetContentAvailability()) {
       throw NoFileExplorerException();
     }
@@ -83,6 +87,7 @@ class WallpaperService extends ChangeNotifier {
   }
 
   Future<void> randomFromUnsplash(String query) async {
+    await _ready;
     if (_unsplashService == null) {
       debugPrint("WallpaperService: UnsplashService not available");
       return;
@@ -110,6 +115,7 @@ class WallpaperService extends ChangeNotifier {
   }
 
   Future<void> setFromUnsplash(Photo photo) async {
+    await _ready;
     if (_unsplashService == null) {
       debugPrint("WallpaperService: UnsplashService not available");
       return;
@@ -124,12 +130,37 @@ class WallpaperService extends ChangeNotifier {
   }
 
   Future<void> setGradient(FLauncherGradient fLauncherGradient) async {
+    await _ready;
     if (await _wallpaperFile.exists()) {
       await _wallpaperFile.delete();
     }
     _wallpaper = null;
-    _settingsService.setUnsplashAuthor(null);
-    _settingsService.setGradientUuid(fLauncherGradient.uuid);
+    await _settingsService.setUnsplashAuthor(null);
+    await _settingsService.setGradientUuid(fLauncherGradient.uuid);
+    notifyListeners();
+  }
+
+  Future<Uint8List?> exportWallpaper() async {
+    await _ready;
+    if (_initializationError != null) throw StateError("Unable to load wallpaper: $_initializationError");
+    return _wallpaper;
+  }
+
+  Future<void> restoreWallpaper(Uint8List? bytes) async {
+    await _ready;
+    if (_initializationError != null) throw StateError("Unable to load wallpaper: $_initializationError");
+    if (bytes == null) {
+      if (await _wallpaperFile.exists()) await _wallpaperFile.delete();
+    } else {
+      final temporary = File("${_wallpaperFile.path}.restore");
+      try {
+        await temporary.writeAsBytes(bytes, flush: true);
+        await temporary.rename(_wallpaperFile.path);
+      } finally {
+        if (await temporary.exists()) await temporary.delete();
+      }
+    }
+    _wallpaper = bytes;
     notifyListeners();
   }
 }

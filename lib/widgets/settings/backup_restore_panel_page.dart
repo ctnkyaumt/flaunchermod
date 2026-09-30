@@ -2,13 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flauncher/database.dart';
+import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/backup_service.dart';
+import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
-import 'package:flauncher/widgets/focus_keyboard_listener.dart';
+import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -20,83 +21,41 @@ class BackupRestorePanelPage extends StatefulWidget {
 }
 
 class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
+  static const _browse = Object();
+  bool _busy = false;
   bool _loading = false;
   String? _status;
 
-  @override
-  void initState() {
-    super.initState();
+  FLauncherChannel get _channel => context.read<AppsService>().fLauncherChannel;
+
+  BackupService _service() => BackupService(
+    context.read<FLauncherDatabase>(),
+    context.read<SettingsService>(),
+    buttonMappings: context.read<ButtonMappingService>(),
+    wallpaper: context.read<WallpaperService>(),
+    channel: _channel,
+  );
+
+  void _start(String status) {
+    setState(() {
+      _busy = true;
+      _loading = true;
+      _status = status;
+    });
   }
 
-  Future<void> _requestPermissions() async {
-    try {
-      final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
-      final hasAllFiles = await channel.hasAllFilesAccess();
-      if (!hasAllFiles) {
-        if (!mounted) return;
-        final openButtonFocus = FocusNode();
-        await showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) {
-            Future<void> openAllFilesSettings() async {
-              final opened = await channel.requestAllFilesAccess();
-              if (context.mounted) {
-                Navigator.of(context).pop();
-              }
-              if (!opened && mounted) {
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  SnackBar(content: Text("Unable to open storage permission settings")),
-                );
-              }
-            }
+  void _finish() {
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _loading = false;
+      _status = null;
+    });
+  }
 
-            return FocusTraversalGroup(
-              child: FocusScope(
-                autofocus: true,
-                child: FocusKeyboardListener(
-                  onPressed: (key) {
-                    if (key == LogicalKeyboardKey.select ||
-                        key == LogicalKeyboardKey.enter ||
-                        key == LogicalKeyboardKey.gameButtonA) {
-                      openAllFilesSettings();
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
-                  builder: (context) => Builder(
-                    builder: (dialogContext) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) async {
-                        await Future.delayed(Duration(milliseconds: 100));
-                        if (!openButtonFocus.canRequestFocus) return;
-                        FocusScope.of(dialogContext).requestFocus(openButtonFocus);
-                      });
-                      return AlertDialog(
-                        title: Text("Storage permission required"),
-                        content: Text("This app requires full storage access to restore from a backup."),
-                        actions: [
-                          OutlinedButton(
-                            focusNode: openButtonFocus,
-                            autofocus: true,
-                            onPressed: openAllFilesSettings,
-                            child: Text("Open"),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-        openButtonFocus.dispose();
-        return;
-      }
-      await channel.requestStoragePermission();
-    } catch (e) {
-      debugPrint("Failed to request storage permission: $e");
-    }
+  void _showError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $error")));
   }
 
   @override
@@ -123,13 +82,15 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
                   leading: Icon(Icons.save),
                   title: Text("Create Backup"),
                   subtitle: Text("Save settings, layout, and app list to file"),
-                  onTap: _createBackup,
+                  enabled: !_busy,
+                  onTap: _busy ? null : _createBackup,
                 ),
                 ListTile(
                   leading: Icon(Icons.restore),
                   title: Text("Restore from Backup"),
                   subtitle: Text("Restore from a previously saved file"),
-                  onTap: _pickBackupFile,
+                  enabled: !_busy,
+                  onTap: _busy ? null : _pickBackupFile,
                 ),
               ],
             ),
@@ -137,274 +98,235 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   }
 
   Future<void> _createBackup() async {
-    setState(() {
-      _loading = true;
-      _status = "Creating backup...";
-    });
-
+    if (_busy || !mounted) return;
+    _start("Creating backup...");
     try {
-      final db = Provider.of<FLauncherDatabase>(context, listen: false);
-      final settings = Provider.of<SettingsService>(context, listen: false);
-      final service = BackupService(db, settings);
-      final file = await service.createBackup();
-
-      setState(() {
-        _loading = false;
-      });
-
+      final location = await _service().saveBackup();
+      if (!mounted) return;
+      setState(() { _loading = false; });
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text("Backup Created"),
-          content: Text("Backup saved to:\n${file.path}"),
+          content: Text("Backup saved to:\n$location"),
           actions: [
             TextButton(
+              autofocus: true,
               child: Text("OK"),
               onPressed: () => Navigator.pop(ctx),
             ),
           ],
         ),
       );
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    } catch (error) {
+      _showError(error);
+    } finally {
+      _finish();
     }
   }
 
-  Future<void> _pickBackupFile() async {
-    await _requestPermissions();
-    await Future.delayed(Duration(milliseconds: 500));
+  Future<List<_BackupEntry>> _listBackups() async {
+    final entries = <String, _BackupEntry>{};
+    void add(_BackupEntry entry) {
+      if (!entry.name.startsWith("flauncher_backup_") || !entry.name.endsWith(".json")) return;
+      final existing = entries[entry.name];
+      if (existing == null || entry.modified.isAfter(existing.modified)) entries[entry.name] = entry;
+    }
 
     if (Platform.isAndroid) {
       try {
-        final channel = Provider.of<AppsService>(context, listen: false).fLauncherChannel;
-        final rawItems = await channel.listBackupJsonInDownloads();
-        final dedupedByName = <String, Map<dynamic, dynamic>>{};
-        for (final raw in rawItems) {
-          if (raw is! Map) continue;
-          final item = Map<dynamic, dynamic>.from(raw);
-          final name = item["name"]?.toString();
-          if (name == null || name.isEmpty) continue;
+        final items = await _channel.listBackupJsonInDownloads();
+        if (!mounted) return [];
+        for (final item in items) {
+          if (item is! Map) continue;
+          final name = item["name"];
+          final uri = item["uri"];
+          if (name is! String || uri is! String || uri.isEmpty) continue;
           final modified = item["modified"];
-          final modifiedMs = modified is int ? modified : int.tryParse(modified?.toString() ?? "");
-          final existing = dedupedByName[name];
-          if (existing == null) {
-            dedupedByName[name] = item;
-            continue;
-          }
-          final existingModified = existing["modified"];
-          final existingMs = existingModified is int
-              ? existingModified
-              : int.tryParse(existingModified?.toString() ?? "");
-          if (modifiedMs != null && (existingMs == null || modifiedMs > existingMs)) {
-            dedupedByName[name] = item;
-          }
+          final milliseconds = modified is int ? modified : int.tryParse(modified?.toString() ?? "") ?? 0;
+          add(_BackupEntry(name: name, modified: DateTime.fromMillisecondsSinceEpoch(milliseconds), uri: uri));
         }
-        final items = dedupedByName.values.toList()
-          ..sort((a, b) {
-            final am = a["modified"];
-            final bm = b["modified"];
-            final ams = am is int ? am : int.tryParse(am?.toString() ?? "") ?? 0;
-            final bms = bm is int ? bm : int.tryParse(bm?.toString() ?? "") ?? 0;
-            return bms.compareTo(ams);
-          });
-        if (items.isNotEmpty) {
-          final picked = await showDialog<Map<dynamic, dynamic>>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text("Select Backup"),
-              content: Container(
-                width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: items.length,
-                  itemBuilder: (c, i) {
-                    final item = items[i];
-                    final name = item["name"]?.toString() ?? "backup.json";
-                    final modified = item["modified"];
-                    final subtitle = modified is int
-                        ? DateTime.fromMillisecondsSinceEpoch(modified).toString()
-                        : "";
-                    return ListTile(
-                      title: Text(name),
-                      subtitle: Text(subtitle),
-                      onTap: () => Navigator.pop(ctx, item),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-
-          if (picked != null) {
-            final uri = picked["uri"]?.toString();
-            if (uri != null && uri.isNotEmpty) {
-              final content = await channel.readContentUri(uri);
-              if (content != null && content.isNotEmpty) {
-                await _restoreBackupContent(content);
-                return;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint("Error listing backups: $e");
+      } catch (error) {
+        debugPrint("Error listing Downloads backups: $error");
       }
     }
 
-    // List files
-    List<File> files = [];
-    final seenKeys = <String>{};
-    
-    // Check multiple possible locations
     final locations = <Directory?>[];
-    if (Platform.isAndroid) {
-      locations.add(Directory("/storage/emulated/0/Download"));
-      locations.add(Directory("/storage/emulated/0/Downloads"));
-      locations.add(Directory("/storage/self/primary/Download"));
-      locations.add(Directory("/storage/self/primary/Downloads"));
-      locations.add(Directory("/sdcard/Download"));
-      locations.add(Directory("/sdcard/Downloads"));
-      locations.add(await getExternalStorageDirectory());
+    try {
+      locations.add(await getApplicationDocumentsDirectory());
+    } catch (error) {
+      debugPrint("Error finding private backups: $error");
     }
-    locations.add(await getApplicationDocumentsDirectory());
-
-    for (var dir in locations) {
-      if (dir != null && await dir.exists()) {
-        try {
-          final dirFiles = dir.listSync()
-            .whereType<File>()
-            .where((f) => f.path.contains("flauncher_backup_") && f.path.endsWith(".json"))
-            .toList();
-          for (final f in dirFiles) {
-            final p = f.path;
-            final lastSlash = p.lastIndexOf('/');
-            final lastBackslash = p.lastIndexOf('\\');
-            final lastSep = lastSlash > lastBackslash ? lastSlash : lastBackslash;
-            final baseName = lastSep >= 0 ? p.substring(lastSep + 1) : p;
-            final key = baseName;
-            if (seenKeys.add(key)) {
-              files.add(f);
-            }
-          }
-        } catch (e) {
-          debugPrint("Error listing files in ${dir.path}: $e");
-        }
+    if (!mounted) return [];
+    if (Platform.isAndroid) {
+      locations.addAll([
+        Directory("/storage/emulated/0/Download"),
+        Directory("/storage/emulated/0/Downloads"),
+        Directory("/storage/self/primary/Download"),
+        Directory("/storage/self/primary/Downloads"),
+        Directory("/sdcard/Download"),
+        Directory("/sdcard/Downloads"),
+      ]);
+      try {
+        locations.add(await getExternalStorageDirectory());
+      } catch (error) {
+        debugPrint("Error finding external backups: $error");
+      }
+    } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      try {
+        locations.add(await getDownloadsDirectory());
+      } catch (error) {
+        debugPrint("Error finding Downloads directory: $error");
       }
     }
-
-    // Sort by date desc
-    files.sort((a, b) => b.statSync().modified.compareTo(a.statSync().modified));
-
-    if (files.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("No backups found")));
-      return;
+    if (!mounted) return [];
+    final scanned = <String>{};
+    for (final directory in locations) {
+      if (directory == null || !scanned.add(directory.path)) continue;
+      try {
+        await for (final entity in directory.list(followLinks: false)) {
+          if (!mounted) return [];
+          if (entity is! File) continue;
+          final name = entity.uri.pathSegments.last;
+          if (!name.startsWith("flauncher_backup_") || !name.endsWith(".json")) continue;
+          try {
+            final stat = await entity.stat();
+            if (!mounted) return [];
+            add(_BackupEntry(name: name, modified: stat.modified, file: entity));
+          } catch (error) {
+            debugPrint("Error reading backup metadata: $error");
+          }
+        }
+      } catch (error) {
+        debugPrint("Error listing files in ${directory.path}: $error");
+      }
     }
+    return entries.values.toList()..sort((a, b) => b.modified.compareTo(a.modified));
+  }
 
-    final file = await showDialog<File>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("Select Backup"),
-        content: Container(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: files.length,
-            itemBuilder: (c, i) {
-              final f = files[i];
-              final name = f.path.split("/").last;
-              return ListTile(
-                title: Text(name),
-                subtitle: Text(f.statSync().modified.toString()),
-                onTap: () => Navigator.pop(ctx, f),
-              );
-            },
+  Future<void> _pickBackupFile() async {
+    if (_busy || !mounted) return;
+    _start("Finding backups...");
+    try {
+      final entries = await _listBackups();
+      if (!mounted) return;
+      setState(() { _loading = false; });
+      final picked = await showDialog<Object>(
+        context: context,
+        builder: (ctx) => FocusTraversalGroup(
+          child: AlertDialog(
+            title: Text("Select Backup"),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: entries.isEmpty
+                  ? Text("No backups found")
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: entries.length,
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        return ListTile(
+                          title: Text(entry.name),
+                          subtitle: Text(entry.modified.toString()),
+                          onTap: () => Navigator.pop(ctx, entry),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                autofocus: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: Text("Cancel"),
+              ),
+              if (Platform.isAndroid) TextButton.icon(
+                icon: Icon(Icons.folder_open),
+                label: Text("Browse"),
+                onPressed: () => Navigator.pop(ctx, _browse),
+              ),
+            ],
           ),
+        ),
+      );
+      if (!mounted || picked == null) return;
+      if (identical(picked, _browse)) {
+        final content = await _channel.pickBackupJson();
+        if (!mounted || content == null) return;
+        await _restoreBackup(content: content);
+      } else if (picked is _BackupEntry) {
+        if (picked.file != null) {
+          await _restoreBackup(file: picked.file);
+        } else if (picked.uri != null) {
+          final content = await _channel.readContentUri(picked.uri!);
+          if (!mounted) return;
+          if (content == null) throw FormatException("Unable to read backup");
+          await _restoreBackup(content: content);
+        }
+      }
+    } catch (error) {
+      _showError(error);
+    } finally {
+      _finish();
+    }
+  }
+
+  Future<void> _restoreBackup({File? file, String? content}) async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => FocusTraversalGroup(
+        child: AlertDialog(
+          title: Text("Restore Backup?"),
+          content: Text("This will replace your current layout and saved settings, including button mappings and wallpaper when present."),
+          actions: [
+            TextButton(
+              autofocus: true,
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text("Restore"),
+            ),
+          ],
         ),
       ),
     );
-
-    if (file != null) {
-      _restoreBackup(file);
-    }
-  }
-
-  Future<void> _restoreBackupContent(String content) async {
+    if (!mounted || confirmed != true) return;
     setState(() {
       _loading = true;
       _status = "Restoring backup...";
     });
-
-    try {
-      final db = Provider.of<FLauncherDatabase>(context, listen: false);
-      final settings = Provider.of<SettingsService>(context, listen: false);
-      final service = BackupService(db, settings);
-      final missingApps = await service.restoreBackupFromContent(content);
-
-      setState(() {
-        _loading = false;
-      });
-      
-      if (missingApps.isNotEmpty) {
-        _installMissingApps(missingApps);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Restore completed successfully")));
-      }
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-  }
-
-  Future<void> _restoreBackup(File file) async {
-    setState(() {
-      _loading = true;
-      _status = "Restoring backup...";
-    });
-
-    try {
-      final db = Provider.of<FLauncherDatabase>(context, listen: false);
-      final settings = Provider.of<SettingsService>(context, listen: false);
-      final service = BackupService(db, settings);
-      final missingApps = await service.restoreBackup(file);
-
-      setState(() {
-        _loading = false;
-      });
-      
-      if (missingApps.isNotEmpty) {
-        _installMissingApps(missingApps);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Restore completed successfully")));
-      }
-    } catch (e) {
-      setState(() {
-        _loading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    final service = _service();
+    final missingApps = file != null
+        ? await service.restoreBackup(file)
+        : await service.restoreBackupFromContent(content!);
+    if (!mounted) return;
+    await context.read<AppsService>().reloadAfterRestore();
+    if (!mounted) return;
+    setState(() { _loading = false; });
+    if (missingApps.isNotEmpty) {
+      await _installMissingApps(missingApps);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Restore completed successfully")));
     }
   }
 
   Future<void> _installMissingApps(List<AppSpec> apps) async {
-    final installService = Provider.of<AppInstallService>(context, listen: false);
-    final appsService = Provider.of<AppsService>(context, listen: false);
-    await installService.checkAndRequestPermission();
-    
+    final installService = context.read<AppInstallService>();
+    final appsService = context.read<AppsService>();
     for (var i = 0; i < apps.length; i++) {
+      if (!mounted) return;
       final app = apps[i];
-      
       final shouldInstall = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
-          title: Text("Restore App (${i+1}/${apps.length})"),
+          title: Text("Restore App (${i + 1}/${apps.length})"),
           content: Text("Do you want to install ${app.name}?"),
           actions: [
             TextButton(
+              autofocus: true,
               child: Text("Skip"),
               onPressed: () => Navigator.pop(ctx, false),
             ),
@@ -415,33 +337,34 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
           ],
         ),
       );
-
+      if (!mounted) return;
       if (shouldInstall == true) {
-        installService.startInstall(app);
-        
-        await showDialog(
+        await installService.checkAndRequestPermission();
+        if (!mounted) return;
+        unawaited(installService.startInstall(app));
+        await showDialog<void>(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => _InstallProgressDialog(
-            app: app, 
+            app: app,
             packageStream: appsService.packageAddedStream,
           ),
         );
-      } else {
-        // User skipped installation, remove from database so it doesn't show up
-         try {
-           final db = Provider.of<FLauncherDatabase>(context, listen: false);
-           if (app.packageName != null) {
-             await db.deleteApps([app.packageName!]);
-           }
-         } catch (e) {
-           debugPrint("Error removing skipped app ${app.packageName}: $e");
-         }
+        if (!mounted) return;
       }
     }
-    
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("App restoration completed")));
   }
+}
+
+class _BackupEntry {
+  final String name;
+  final DateTime modified;
+  final File? file;
+  final String? uri;
+
+  _BackupEntry({required this.name, required this.modified, this.file, this.uri});
 }
 
 class _InstallProgressDialog extends StatefulWidget {
@@ -456,29 +379,25 @@ class _InstallProgressDialog extends StatefulWidget {
 
 class _InstallProgressDialogState extends State<_InstallProgressDialog> {
   StreamSubscription? _subscription;
+  Timer? _closeTimer;
   bool _installed = false;
 
   @override
   void initState() {
     super.initState();
     _subscription = widget.packageStream.listen((packageName) {
-      if (packageName == widget.app.packageName) {
-        setState(() {
-          _installed = true;
-        });
-        // Auto-close after a brief delay to let user see "Installed!"
-        Future.delayed(Duration(milliseconds: 1500), () {
-          if (mounted) {
-            Navigator.of(context).pop();
-          }
-        });
-      }
+      if (!mounted || _installed || packageName != widget.app.packageName) return;
+      setState(() { _installed = true; });
+      _closeTimer = Timer(Duration(milliseconds: 1500), () {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) Navigator.of(context).pop();
+      });
     });
   }
 
   @override
   void dispose() {
     _subscription?.cancel();
+    _closeTimer?.cancel();
     super.dispose();
   }
 
@@ -499,6 +418,7 @@ class _InstallProgressDialogState extends State<_InstallProgressDialog> {
           ),
           actions: [
             TextButton(
+              autofocus: true,
               child: Text(_installed ? "Next" : "Done"),
               onPressed: () => Navigator.pop(context),
             ),

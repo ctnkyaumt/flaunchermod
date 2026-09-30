@@ -18,7 +18,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'package:drift/drift.dart';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flauncher/gradients.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flauncher/unsplash_service.dart';
@@ -27,15 +29,25 @@ import 'package:image_picker/image_picker.dart';
 import 'package:mockito/mockito.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:transparent_image/transparent_image.dart';
 
 import '../mocks.mocks.dart';
 
 void main() {
-  late final _MockPathProviderPlatform pathProviderPlatform;
-  setUpAll(() {
-    pathProviderPlatform = _MockPathProviderPlatform();
-    when(pathProviderPlatform.getApplicationDocumentsPath()).thenAnswer((_) => Future.value("."));
+  late Directory directory;
+  late PathProviderPlatform previousPathProvider;
+  setUp(() async {
+    final workingDirectory = Directory("temp_work");
+    await workingDirectory.create(recursive: true);
+    directory = await workingDirectory.createTemp("wallpaper_tests_");
+    previousPathProvider = PathProviderPlatform.instance;
+    final pathProviderPlatform = _MockPathProviderPlatform();
+    when(pathProviderPlatform.getApplicationDocumentsPath()).thenAnswer((_) async => directory.path);
     PathProviderPlatform.instance = pathProviderPlatform;
+  });
+  tearDown(() async {
+    PathProviderPlatform.instance = previousPathProvider;
+    if (await directory.exists()) await directory.delete(recursive: true);
   });
 
   group("pickWallpaper", () {
@@ -49,7 +61,8 @@ void main() {
       when(fLauncherChannel.checkForGetContentAvailability()).thenAnswer((_) => Future.value(true));
       final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, MockUnsplashService())
         ..settingsService = settingsService;
-      await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+      addTearDown(wallpaperService.dispose);
+      await wallpaperService.exportWallpaper();
 
       await wallpaperService.pickWallpaper();
 
@@ -62,7 +75,8 @@ void main() {
       final fLauncherChannel = MockFLauncherChannel();
       when(fLauncherChannel.checkForGetContentAvailability()).thenAnswer((_) => Future.value(false));
       final wallpaperService = WallpaperService(_MockImagePicker(), fLauncherChannel, MockUnsplashService());
-      await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+      addTearDown(wallpaperService.dispose);
+      await wallpaperService.exportWallpaper();
 
       expect(() async => await wallpaperService.pickWallpaper(), throwsA(isInstanceOf<NoFileExplorerException>()));
     });
@@ -84,7 +98,8 @@ void main() {
     when(unsplashService.downloadPhoto(photo)).thenAnswer((_) => Future.value(Uint8List.fromList([0x01])));
     final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService)
       ..settingsService = settingsService;
-    await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+    addTearDown(wallpaperService.dispose);
+    await wallpaperService.exportWallpaper();
 
     await wallpaperService.randomFromUnsplash("test");
 
@@ -106,7 +121,8 @@ void main() {
     );
     when(unsplashService.searchPhotos("test")).thenAnswer((_) => Future.value([photo]));
     final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService);
-    await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+    addTearDown(wallpaperService.dispose);
+    await wallpaperService.exportWallpaper();
 
     final photos = await wallpaperService.searchFromUnsplash("test");
 
@@ -128,7 +144,8 @@ void main() {
     when(unsplashService.downloadPhoto(photo)).thenAnswer((_) => Future.value(Uint8List.fromList([0x01])));
     final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService)
       ..settingsService = settingsService;
-    await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+    addTearDown(wallpaperService.dispose);
+    await wallpaperService.exportWallpaper();
 
     await wallpaperService.setFromUnsplash(photo);
 
@@ -144,7 +161,8 @@ void main() {
     final settingsService = MockSettingsService();
     final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService)
       ..settingsService = settingsService;
-    await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+    addTearDown(wallpaperService.dispose);
+    await wallpaperService.exportWallpaper();
 
     await wallpaperService.setGradient(FLauncherGradients.greatWhale);
 
@@ -162,11 +180,12 @@ void main() {
       when(settingsService.gradientUuid).thenReturn(null);
       final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService)
         ..settingsService = settingsService;
-      await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+      addTearDown(wallpaperService.dispose);
+      await wallpaperService.exportWallpaper();
 
       final gradient = wallpaperService.gradient;
 
-      expect(gradient, FLauncherGradients.greatWhale);
+      expect(gradient, FLauncherGradients.charcoalDepths);
     });
 
     test("with uuid from settings", () async {
@@ -177,11 +196,56 @@ void main() {
       when(settingsService.gradientUuid).thenReturn(FLauncherGradients.grassShampoo.uuid);
       final wallpaperService = WallpaperService(imagePicker, fLauncherChannel, unsplashService)
         ..settingsService = settingsService;
-      await untilCalled(pathProviderPlatform.getApplicationDocumentsPath());
+      addTearDown(wallpaperService.dispose);
+      await wallpaperService.exportWallpaper();
 
       final gradient = wallpaperService.gradient;
 
       expect(gradient, FLauncherGradients.grassShampoo);
+    });
+  });
+
+  group("wallpaper backup", () {
+    WallpaperService buildService() {
+      final service = WallpaperService(_MockImagePicker(), MockFLauncherChannel(), null);
+      addTearDown(service.dispose);
+      return service;
+    }
+
+    test("export waits for initialization and reads the saved image", () async {
+      await File("${directory.path}/wallpaper").writeAsBytes(kTransparentImage);
+      final service = buildService();
+
+      expect(await service.exportWallpaper(), orderedEquals(kTransparentImage));
+      expect(service.wallpaperBytes, orderedEquals(kTransparentImage));
+    });
+
+    test("restore replaces the file and the next service reloads it", () async {
+      await File("${directory.path}/wallpaper").writeAsBytes([0x01]);
+      final service = buildService();
+      await service.exportWallpaper();
+      var notifications = 0;
+      service.addListener(() => notifications++);
+
+      await service.restoreWallpaper(kTransparentImage);
+
+      expect(await service.exportWallpaper(), orderedEquals(kTransparentImage));
+      expect(await File("${directory.path}/wallpaper").readAsBytes(), orderedEquals(kTransparentImage));
+      expect(await File("${directory.path}/wallpaper.restore").exists(), isFalse);
+      expect(notifications, 1);
+      expect(await buildService().exportWallpaper(), orderedEquals(kTransparentImage));
+    });
+
+    test("restoring no image deletes the file and stays cleared after reload", () async {
+      final service = buildService();
+      await service.restoreWallpaper(kTransparentImage);
+
+      await service.restoreWallpaper(null);
+
+      expect(await service.exportWallpaper(), isNull);
+      expect(service.wallpaperBytes, isNull);
+      expect(await File("${directory.path}/wallpaper").exists(), isFalse);
+      expect(await buildService().exportWallpaper(), isNull);
     });
   });
 }

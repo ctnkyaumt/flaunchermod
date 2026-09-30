@@ -36,8 +36,16 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
-      - name: Test button mapping and device power
-        run: flutter test test/providers/button_mapping_service_test.dart test/widgets/device_power_dialog_test.dart
+      - name: Test settings, backup, button mapping, and device power
+        run: >-
+          flutter test
+          test/providers/backup_service_test.dart
+          test/providers/apps_restore_test.dart
+          test/providers/settings_service_test.dart
+          test/providers/wallpaper_service_test.dart
+          test/providers/button_mapping_service_test.dart
+          test/widgets/device_power_dialog_test.dart
+          test/widgets/settings/backup_restore_panel_page_test.dart
 
       # Extract version from pubspec.yaml
       - name: Extract version

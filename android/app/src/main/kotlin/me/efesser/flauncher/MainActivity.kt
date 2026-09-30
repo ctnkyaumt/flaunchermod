@@ -32,6 +32,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.app.Activity
 import android.content.ContentUris
+import android.content.ContentValues
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -58,13 +59,17 @@ import androidx.core.content.FileProvider
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
+import java.io.IOException
+import java.io.InputStream
 import java.io.Serializable
+import java.nio.ByteBuffer
 
 private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
 private const val KEY_CAPTURE_EVENT_CHANNEL = "me.efesser.flauncher/key_capture_event"
 private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
+private const val MAX_BACKUP_JSON_BYTES = 32 * 1024 * 1024
 
 class MainActivity : FlutterActivity() {
     val launcherAppsCallbacks = ArrayList<LauncherApps.Callback>()
@@ -130,6 +135,7 @@ class MainActivity : FlutterActivity() {
                     }
                     "hasAllFilesAccess" -> result.success(hasAllFilesAccess())
                     "requestAllFilesAccess" -> result.success(requestAllFilesAccess())
+                    "saveBackupToDownloads" -> result.success(saveBackupToDownloads(call.arguments as String))
                     "listBackupJsonInDownloads" -> result.success(listBackupJsonInDownloads())
                     "readContentUri" -> result.success(readContentUri(call.arguments as String))
                     "pickBackupJson" -> {
@@ -137,13 +143,18 @@ class MainActivity : FlutterActivity() {
                             result.error("busy", "A document picker is already active", null)
                         } else {
                             pickBackupJsonResult = result
-                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                                addCategory(Intent.CATEGORY_OPENABLE)
-                                type = "*/*"
-                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/*"))
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            try {
+                                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "*/*"
+                                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/*"))
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                startActivityForResult(intent, PICK_BACKUP_JSON_REQUEST_CODE)
+                            } catch (e: Exception) {
+                                pickBackupJsonResult = null
+                                throw e
                             }
-                            startActivityForResult(intent, PICK_BACKUP_JSON_REQUEST_CODE)
                         }
                     }
                     "shareFile" -> {
@@ -426,9 +437,7 @@ class MainActivity : FlutterActivity() {
                             pending.success(null)
                             return
                         }
-                        val bytes = input.readBytes()
-                        val text = bytes.toString(Charsets.UTF_8)
-                        pending.success(text)
+                        pending.success(readBackupJson(input))
                     }
                 } catch (e: Exception) {
                     pending.error("read_error", e.message, null)
@@ -481,14 +490,58 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun saveBackupToDownloads(filePath: String): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+
+        val file = File(filePath).canonicalFile
+        val privateDirectory = File(applicationInfo.dataDir).canonicalFile
+        require(file.path.startsWith(privateDirectory.path + File.separator) && file.isFile) {
+            "Backup source must be an app-private file"
+        }
+        require(file.name.startsWith("flauncher_backup_") && file.name.endsWith(".json")) {
+            "Invalid backup filename"
+        }
+        require(file.length() <= MAX_BACKUP_JSON_BYTES) { "Backup exceeds 32 MiB" }
+
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/json")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(collection, values)
+            ?: throw IOException("Unable to create backup in Downloads")
+        try {
+            contentResolver.openOutputStream(uri, "w").use { output ->
+                if (output == null) throw IOException("Unable to write backup in Downloads")
+                FileInputStream(file).use { input -> input.copyTo(output) }
+            }
+            val published = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            if (contentResolver.update(uri, published, null, null) != 1) {
+                throw IOException("Unable to publish backup in Downloads")
+            }
+            val displayName = contentResolver.query(
+                uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: file.name
+            return "${Environment.DIRECTORY_DOWNLOADS}/$displayName"
+        } catch (e: Exception) {
+            try {
+                contentResolver.delete(uri, null, null)
+            } catch (cleanupError: Exception) {
+                android.util.Log.w("FLauncher", "Unable to remove incomplete backup", cleanupError)
+            }
+            throw e
+        }
+    }
+
     private fun listBackupJsonInDownloads(): List<Map<String, Any?>> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return emptyList()
         val results = mutableListOf<Map<String, Any?>>()
         return try {
-            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            } else {
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI
-            }
+            val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
             val projection = arrayOf(
                 MediaStore.MediaColumns._ID,
@@ -531,12 +584,25 @@ class MainActivity : FlutterActivity() {
             val uri = Uri.parse(uriString)
             contentResolver.openInputStream(uri).use { input ->
                 if (input == null) return null
-                val bytes = input.readBytes()
-                bytes.toString(Charsets.UTF_8)
+                readBackupJson(input)
             }
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun readBackupJson(input: InputStream): String {
+        val bytes = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (bytes.size() > MAX_BACKUP_JSON_BYTES - count) {
+                throw IOException("Backup exceeds 32 MiB")
+            }
+            bytes.write(buffer, 0, count)
+        }
+        return Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes.toByteArray())).toString()
     }
 
     /**

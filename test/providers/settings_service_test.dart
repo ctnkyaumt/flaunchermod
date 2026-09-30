@@ -25,7 +25,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_platfor
 
 void main() {
   setUp(() {
-    SharedPreferencesStorePlatform.instance = InMemorySharedPreferencesStore.empty();
+    SharedPreferences.setMockInitialValues({});
   });
 
   Future<SettingsService> buildSettingsService() async =>
@@ -121,4 +121,81 @@ void main() {
       expect(settingsService.use24HourTimeFormat, isFalse);
     });
   });
+
+  group("settings backup", () {
+    test("exports portable weather units", () async {
+      final settingsService = await buildSettingsService();
+      await settingsService.setWeatherUnits(WeatherUnits.us);
+
+      final weather = settingsService.exportSettings()["weather"] as Map<String, dynamic>;
+
+      expect(weather["units"], "us");
+      expect(weather["lat"], isNull);
+      expect(settingsService.exportSettings()["gradientUuid"], isNull);
+    });
+
+    for (final units in [WeatherUnits.us, WeatherUnits.si]) {
+      test("restores legacy $units units", () async {
+        final settingsService = await buildSettingsService();
+
+        await settingsService.restoreSettings({"weather": {"units": units.toString()}});
+
+        expect(settingsService.weatherUnits, units);
+        final preferences = await SharedPreferences.getInstance();
+        expect(preferences.getString("weather_units"), units == WeatherUnits.us ? "us" : "si");
+      });
+    }
+
+    test("restores integer coordinates as doubles", () async {
+      final settingsService = await buildSettingsService();
+
+      await settingsService.restoreSettings({"weather": {"lat": 51, "lon": -2}});
+
+      expect(settingsService.weatherLatitude, 51.0);
+      expect(settingsService.weatherLongitude, -2.0);
+    });
+
+    test("null metadata clears the previous gradient, author, and weather location", () async {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString("gradient_uuid", "old-gradient");
+      await preferences.setString("unsplash_author", "old-author");
+      await preferences.setString("weather_location_name", "old-city");
+      await preferences.setDouble("weather_latitude", 51.0);
+      await preferences.setDouble("weather_longitude", -2.0);
+      final settingsService = SettingsService(preferences);
+
+      await settingsService.restoreSettings({
+        "gradientUuid": null,
+        "unsplashAuthor": null,
+        "weather": {"lat": null, "lon": null, "locationName": null},
+      });
+
+      expect(settingsService.gradientUuid, isNull);
+      expect(settingsService.unsplashAuthor, isNull);
+      expect(settingsService.weatherLocationName, isNull);
+      expect(settingsService.weatherLatitude, isNull);
+      expect(settingsService.weatherLongitude, isNull);
+      for (final key in ["gradient_uuid", "unsplash_author", "weather_location_name",
+        "weather_latitude", "weather_longitude"]) {
+        expect(preferences.containsKey(key), isFalse);
+      }
+    });
+
+    test("a rejected preference write fails restore", () async {
+      SharedPreferencesStorePlatform.instance = _RejectingPreferencesStore();
+      final settingsService = await buildSettingsService();
+
+      await expectLater(
+        settingsService.restoreSettings({"use24HourTimeFormat": false}),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+}
+
+class _RejectingPreferencesStore extends InMemorySharedPreferencesStore {
+  _RejectingPreferencesStore() : super.empty();
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async => false;
 }
