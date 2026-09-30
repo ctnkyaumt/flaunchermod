@@ -15,6 +15,7 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [x] Navigation sound feedback
 - [x] HDMI inputs page/section
 - [x] Weather widget
+- [x] Device power menu and standby through the enabled accessibility service
 - [x] Button mapper integrated (under settings) — remaps remote buttons, including
       the app shortcut buttons (Netflix, YouTube, ...). Home and Power are handled
       by Android itself and cannot be remapped. See the
@@ -46,6 +47,18 @@ mapping screen no longer offers app redirects or a separate button test screen.
 
 When upgrading from the old `0.0.4` mapper, enable the new FLauncher accessibility
 service again. Existing launcher layout and other app data are kept by an update.
+
+## Device power
+
+The top power button offers **Standby** and **Power menu**. Enable FLauncher's
+accessibility service in Button Mapping first. Standby turns off the screen;
+Power menu opens Android's own shutdown options. Requests can be closed with
+Back or Cancel and time out if the device does not respond.
+
+A regular launcher cannot directly shut down Android without system permission.
+The power menu uses Android's supported accessibility action rather than hidden
+APIs or root commands. Firmware still controls whether the TV stays off after
+shutdown. See [Android's global actions](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#GLOBAL_ACTION_POWER_DIALOG).
 
 ## Screenshots
 |--|--|--|--|

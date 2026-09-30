@@ -50,11 +50,14 @@ class FLauncherChannel {
 
   Future<void> startAmbientMode() async => await _methodChannel.invokeMethod("startAmbientMode");
 
-  /// Shutdown the device
-  /// 
-  /// This method attempts to properly shutdown the device using various methods
-  /// including MediaTek specific APIs when available
-  Future<bool> shutdownDevice() async => await _methodChannel.invokeMethod("shutdownDevice");
+  /// Opens the system's power menu or shutdown confirmation.
+  /// True means the request was accepted, not that the device powered off.
+  Future<bool> shutdownDevice() async =>
+      (await _methodChannel.invokeMethod<bool>('shutdownDevice')) ?? false;
+
+  /// Turns off the screen without shutting down Android.
+  Future<bool> standbyDevice() async =>
+      (await _methodChannel.invokeMethod<bool>('standbyDevice')) ?? false;
 
   void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) =>
       _eventChannel.receiveBroadcastStream().listen((event) => listener(event));

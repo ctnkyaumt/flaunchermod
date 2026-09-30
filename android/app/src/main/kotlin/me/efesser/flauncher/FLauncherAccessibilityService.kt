@@ -61,6 +61,28 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "FLauncherA11y"
+        private var connectedService: FLauncherAccessibilityService? = null
+
+        /** Opens the firmware's own power menu without privileged shutdown APIs. */
+        fun showPowerDialog(): Boolean {
+            return try {
+                connectedService?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_POWER_DIALOG) ?: false
+            } catch (e: Exception) {
+                Log.w(TAG, "Power menu request failed", e)
+                false
+            }
+        }
+
+        /** Android's supported screen-lock action also sends the TV to standby. */
+        fun standbyDevice(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+            return try {
+                connectedService?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN) ?: false
+            } catch (e: Exception) {
+                Log.w(TAG, "Standby request failed", e)
+                false
+            }
+        }
 
         /** Sent by the launcher after it edits the mapping table. */
         const val ACTION_RELOAD_MAPPINGS = "me.efesser.flauncher.RELOAD_MAPPINGS"
@@ -196,6 +218,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        connectedService = this
         ensureKeyFilteringRequested()
         reloadMappings()
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
@@ -283,6 +306,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        if (connectedService === this) connectedService = null
         ShizukuInputBridge.stop()
         AdbInputBridge.stop()
         cancelPressState()
@@ -294,6 +318,11 @@ class FLauncherAccessibilityService : AccessibilityService() {
             // Never registered; nothing to do.
         }
         return super.onUnbind(intent)
+    }
+
+    override fun onDestroy() {
+        if (connectedService === this) connectedService = null
+        super.onDestroy()
     }
 
     private fun reloadMappings() {
