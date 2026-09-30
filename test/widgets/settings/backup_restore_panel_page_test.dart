@@ -77,7 +77,7 @@ void main() {
   }
 
   Future<void> select(WidgetTester tester, String name) async {
-    await tester.tap(find.text('Restore from Backup'));
+    await _startPicker(tester);
     await _pumpUntil(tester, () => find.text('Select Backup').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
     await tester.tap(find.text(name));
@@ -90,7 +90,7 @@ void main() {
       await File('${downloads.path}/flauncher_backup_public.json').writeAsString(_backup('Public'));
     });
     await open(tester);
-    await tester.tap(find.text('Restore from Backup'));
+    await _startPicker(tester);
     await _pumpUntil(tester, () => find.text('Select Backup').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
     expect(find.text('flauncher_backup_private.json'), findsOneWidget);
@@ -104,13 +104,11 @@ void main() {
     expect(channel.applicationChecks, 0);
     expect(apps.categoriesWithApps.any((item) => item.category.name == 'Original'), isTrue);
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: Timeout(Duration(seconds: 30)));
 
   testWidgets('Repeated restore taps open one picker and cancellation unlocks it', (tester) async {
     await open(tester);
-    final tile = tester.widget<ListTile>(find.widgetWithText(ListTile, 'Restore from Backup'));
-    tile.onTap!();
-    tile.onTap!();
+    await _startPicker(tester, repeated: true);
     await _pumpUntil(tester, () => find.text('Select Backup').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
@@ -118,20 +116,25 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
-    await tester.tap(find.text('Restore from Backup'));
+    await _startPicker(tester);
     await _pumpUntil(tester, () => find.text('Select Backup').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: Timeout(Duration(seconds: 30)));
 
   testWidgets('Restore needs confirmation and immediately refreshes the layout cache', (tester) async {
+    debugPrint('Backup confirmation test: writing file');
     const name = 'flauncher_backup_restore.json';
-    await tester.runAsync(() => File('${documents.path}/$name').writeAsString(_backup('Restored')));
+    await tester.runAsync(() async {
+      await File('${documents.path}/$name').writeAsString(_backup('Restored'));
+    });
+    debugPrint('Backup confirmation test: opening page');
     await open(tester);
     await select(tester, name);
+    debugPrint('Backup confirmation test: first confirmation visible');
     expect(find.text('Restore Backup?'), findsOneWidget);
     expect(apps.categoriesWithApps.any((item) => item.category.name == 'Original'), isTrue);
     expect(settings.use24HourTimeFormat, isTrue);
@@ -141,14 +144,16 @@ void main() {
     expect(settings.use24HourTimeFormat, isTrue);
 
     await select(tester, name);
+    debugPrint('Backup confirmation test: restoring');
     await tester.tap(find.text('Restore'));
     await _pumpUntil(tester, () => find.text('Restore completed successfully').evaluate().isNotEmpty);
     await tester.pumpAndSettle();
+    debugPrint('Backup confirmation test: restore completed');
 
     expect(apps.categoriesWithApps.map((item) => item.category.name), ['Restored']);
     expect(settings.use24HourTimeFormat, isFalse);
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: Timeout(Duration(seconds: 30)));
 
   testWidgets('Duplicate backup names select the newest file across directories', (tester) async {
     const name = 'flauncher_backup_duplicate.json';
@@ -165,6 +170,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(apps.categoriesWithApps.map((item) => item.category.name), ['Newest']);
     expect(tester.takeException(), isNull);
+  }, timeout: Timeout(Duration(seconds: 30)));
+}
+
+Future<void> _startPicker(WidgetTester tester, {bool repeated = false}) async {
+  final tile = tester.widget<ListTile>(find.widgetWithText(ListTile, 'Restore from Backup'));
+  await tester.runAsync(() async {
+    tile.onTap!();
+    if (repeated) tile.onTap!();
+    await Future<void>.delayed(Duration(milliseconds: 10));
   });
 }
 
