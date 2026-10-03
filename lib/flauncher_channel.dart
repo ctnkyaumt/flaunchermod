@@ -48,6 +48,7 @@ class FLauncherChannel {
     required String action,
     required String submitLabel,
     required bool allowEmpty,
+    required Map<String, int> colors,
   }) async =>
       await _methodChannel.invokeMethod<String>('showSystemTextInput', {
         'title': title,
@@ -56,6 +57,7 @@ class FLauncherChannel {
         'action': action,
         'submitLabel': submitLabel,
         'allowEmpty': allowEmpty,
+        'colors': colors,
       });
 
   Future<void> openAppInfo(String packageName) async => await _methodChannel.invokeMethod('openAppInfo', packageName);

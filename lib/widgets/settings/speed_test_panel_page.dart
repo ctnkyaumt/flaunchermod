@@ -30,6 +30,7 @@ class SpeedTestPanelPage extends StatefulWidget {
 class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBindingObserver {
   late final SpeedTestService _service = widget.service ?? SpeedTestService();
   final _actionFocus = FocusNode();
+  bool _backPressed = false;
 
   @override
   void initState() {
@@ -39,7 +40,10 @@ class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBin
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) _service.cancel();
+    if (state != AppLifecycleState.resumed) {
+      _backPressed = false;
+      _service.cancel();
+    }
   }
 
   @override
@@ -66,8 +70,16 @@ class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBin
                 (event.data is RawKeyEventDataAndroid &&
                     (event.data as RawKeyEventDataAndroid).keyCode == 4)) {
               if (event is RawKeyDownEvent) {
-                _service.cancel();
-                Navigator.of(context).maybePop();
+                // Keep focus here until release so repeats and Android's
+                // Back-up cannot reach the settings route behind this page.
+                _backPressed = true;
+              } else if (event is RawKeyUpEvent) {
+                final wasPressed = _backPressed;
+                _backPressed = false;
+                if (wasPressed && ModalRoute.of(context)?.isCurrent == true) {
+                  _service.cancel();
+                  Navigator.of(context).maybePop();
+                }
               }
               return KeyEventResult.handled;
             }

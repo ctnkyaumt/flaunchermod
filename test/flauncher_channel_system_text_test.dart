@@ -29,6 +29,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('me.efesser.flauncher/method');
   final launcher = FLauncherChannel();
+  const colors = {
+    'background': 0xFF022544, 'foreground': 0xFFFFFFFF, 'secondary': 0x99FFFFFF,
+    'focus': 0x1FFFFFFF, 'selection': 0xFF045CA7, 'cursor': 0xFFFFFFFF,
+  };
 
   tearDown(() => channel.setMockMethodCallHandler(null));
 
@@ -42,6 +46,7 @@ void main() {
     final text = await launcher.showSystemTextInput(
       title: 'Search for city', initialValue: 'Old city', fieldLabel: 'City or place',
       action: 'search', submitLabel: 'SEARCH', allowEmpty: false,
+      colors: colors,
     );
 
     expect(text, 'Москва');
@@ -49,6 +54,7 @@ void main() {
     expect(received!.arguments, {
       'title': 'Search for city', 'initialValue': 'Old city', 'fieldLabel': 'City or place',
       'action': 'search', 'submitLabel': 'SEARCH', 'allowEmpty': false,
+      'colors': colors,
     });
   });
 
@@ -61,6 +67,7 @@ void main() {
     expect(await launcher.showSystemTextInput(
       title: 'Location display name', initialValue: '', fieldLabel: 'Name',
       action: 'done', submitLabel: 'SAVE', allowEmpty: true,
+      colors: colors,
     ), '');
   });
 
@@ -71,6 +78,7 @@ void main() {
     final editing = launcher.showSystemTextInput(
       title: 'Search for city', initialValue: '', fieldLabel: 'City or place',
       action: 'search', submitLabel: 'SEARCH', allowEmpty: false,
+      colors: colors,
     ).then((value) {
       finished = true;
       return value;
@@ -88,6 +96,7 @@ void main() {
     await expectLater(launcher.showSystemTextInput(
       title: 'Search for city', initialValue: '', fieldLabel: 'City or place',
       action: 'search', submitLabel: 'SEARCH', allowEmpty: false,
+      colors: colors,
     ), throwsA(isA<PlatformException>().having((error) => error.code, 'code', 'busy')));
   });
 }

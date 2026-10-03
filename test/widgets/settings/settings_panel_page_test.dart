@@ -24,6 +24,7 @@ import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
+import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/settings/settings_panel_page.dart';
 import 'package:flauncher/widgets/settings/speed_test_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
@@ -152,6 +153,58 @@ void main() {
     expect(find.byType(FLauncherAboutDialog), findsOneWidget);
     expect(find.text("originally by efesser (30 May 2021)\nctnkyaumt 2026"), findsOneWidget);
   });
+
+  for (final repeats in [0, 3]) {
+    testWidgets('Speed Test Back returns once to the real Settings dialog ($repeats repeats)', (tester) async {
+      final settingsService = MockSettingsService();
+      final appsService = MockAppsService();
+      when(settingsService.use24HourTimeFormat).thenReturn(false);
+      when(settingsService.appHighlightAnimationEnabled).thenReturn(true);
+      await _pumpWidgetWithProviders(tester, settingsService, appsService, panelDialog: true);
+      await tester.tap(find.text('Open settings'));
+      await tester.pumpAndSettle();
+      await _activate(tester, 'Speed Test');
+      await tester.pumpAndSettle();
+
+      expect(await _androidBack(tester, 'keydown'), isTrue);
+      // Physical remotes can hold Back past the route animation duration.
+      await tester.pump(const Duration(milliseconds: 700));
+      for (var i = 1; i <= repeats; i++) {
+        expect(await _androidBack(tester, 'keydown', repeatCount: i), isTrue);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Start test'), findsOneWidget);
+      expect(await _androidBack(tester, 'keyup'), isTrue,
+          reason: 'Android must not redispatch Back-up to Settings');
+      await tester.pumpAndSettle();
+      expect(find.byType(SpeedTestPanelPage), findsNothing);
+      expect(find.byType(SettingsPanel), findsOneWidget);
+      expect(find.text('Backup & Restore'), findsOneWidget);
+
+      // A separate fresh press still closes Settings through Android's Back.
+      await _androidBack(tester, 'keydown');
+      final handled = await _androidBack(tester, 'keyup');
+      if (!handled) await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPanel), findsNothing);
+      expect(find.text('Open settings'), findsOneWidget);
+    });
+  }
+}
+
+Future<bool> _androidBack(WidgetTester tester, String type, {int repeatCount = 0}) async {
+  bool? handled;
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    SystemChannels.keyEvent.name,
+    SystemChannels.keyEvent.codec.encodeMessage({
+      'type': type, 'keymap': 'android', 'keyCode': 4, 'scanCode': 158,
+      'metaState': 0, 'flags': 0, 'source': 257, 'repeatCount': repeatCount,
+      'deviceId': 1, 'plainCodePoint': 0, 'codePoint': 0,
+    }),
+    (reply) => handled = (SystemChannels.keyEvent.codec.decodeMessage(reply) as Map)['handled'] as bool,
+  );
+  await tester.pump();
+  return handled!;
 }
 
 Future<void> _activate(WidgetTester tester, String label) async {
@@ -165,8 +218,9 @@ Future<void> _activate(WidgetTester tester, String label) async {
 Future<void> _pumpWidgetWithProviders(
   WidgetTester tester,
   SettingsService settingsService,
-  AppsService appsService,
-) async {
+  AppsService appsService, {
+  bool panelDialog = false,
+}) async {
   await tester.pumpWidget(
     MultiProvider(
       providers: [
@@ -180,7 +234,14 @@ Future<void> _pumpWidgetWithProviders(
           WallpaperPanelPage.routeName: (_) => Container(key: Key("WallpaperPanelPage")),
           ApplicationsPanelPage.routeName: (_) => Container(key: Key("ApplicationsPanelPage")),
         },
-        home: Material(child: SettingsPanelPage()),
+        home: panelDialog
+            ? Builder(builder: (context) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => showDialog<void>(context: context, builder: (_) => const SettingsPanel()),
+                    child: const Text('Open settings'),
+                  ),
+                ))
+            : Material(child: SettingsPanelPage()),
       ),
     ),
   );

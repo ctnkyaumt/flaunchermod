@@ -56,6 +56,9 @@ class SystemKeyboardDialog extends StatefulWidget {
     // A native editor lets the TV's IME own remote navigation. Flutter's
     // EditableText otherwise receives D-pad keys intended for the keyboard.
     if (Platform.isAndroid) {
+      final theme = Theme.of(context);
+      final foreground = theme.colorScheme.onSurface;
+      final buttonFocus = theme.textButtonTheme.style?.overlayColor?.resolve({MaterialState.focused});
       return FLauncherChannel().showSystemTextInput(
         title: title,
         initialValue: initialValue,
@@ -63,6 +66,17 @@ class SystemKeyboardDialog extends StatefulWidget {
         action: textInputAction == TextInputAction.search ? 'search' : 'done',
         submitLabel: submitLabel,
         allowEmpty: allowEmpty,
+        colors: {
+          // Use the same surface as RightPanelDialog rather than Android's
+          // activity theme, which can be light even while FLauncher is dark.
+          // ignore: deprecated_member_use
+          'background': theme.backgroundColor.value,
+          'foreground': foreground.value,
+          'secondary': theme.hintColor.value,
+          'focus': (buttonFocus ?? theme.focusColor).value,
+          'selection': (theme.textSelectionTheme.selectionColor ?? theme.colorScheme.primary).value,
+          'cursor': (theme.textSelectionTheme.cursorColor ?? foreground).value,
+        },
       );
     }
     return showDialog<String>(

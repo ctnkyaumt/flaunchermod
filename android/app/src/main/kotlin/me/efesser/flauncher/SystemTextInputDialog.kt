@@ -24,10 +24,17 @@ package me.efesser.flauncher
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.os.Build
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.WindowManager
+import android.view.ContextThemeWrapper
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -61,8 +68,13 @@ class SystemTextInputDialog(private val activity: Activity) {
         require(action == "search" || action == "done") { "Unsupported editor action" }
         val submitLabel = arguments["submitLabel"] as String
         val allowEmpty = arguments["allowEmpty"] as Boolean
+        val colors = arguments["colors"] as Map<*, *>
+        fun color(name: String) = (colors[name] as Number).toInt()
+        val foreground = color("foreground")
+        val secondary = color("secondary")
+        val dialogContext = ContextThemeWrapper(activity, R.style.SystemTextInputDialogTheme)
         val actionId = if (action == "search") EditorInfo.IME_ACTION_SEARCH else EditorInfo.IME_ACTION_DONE
-        val input = object : EditText(activity) {
+        val input = object : EditText(dialogContext) {
             override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
                 super.onWindowFocusChanged(hasWindowFocus)
                 if (hasWindowFocus) post { showKeyboard(this) }
@@ -75,19 +87,37 @@ class SystemTextInputDialog(private val activity: Activity) {
             setText(initialValue)
             setSelection(text.length)
             isFocusableInTouchMode = true
+            setTextColor(foreground)
+            setHintTextColor(secondary)
+            highlightColor = color("selection")
+            backgroundTintList = ColorStateList(
+                arrayOf(intArrayOf(android.R.attr.state_focused), intArrayOf()),
+                intArrayOf(foreground, secondary),
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                textCursorDrawable = textCursorDrawable?.mutate()?.apply { setTint(color("cursor")) }
+            }
         }
         val padding = (24 * activity.resources.displayMetrics.density).toInt()
-        val content = LinearLayout(activity).apply {
+        val content = LinearLayout(dialogContext).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(padding, padding / 2, padding, 0)
-            addView(TextView(activity).apply { text = fieldLabel })
+            addView(TextView(dialogContext).apply {
+                text = fieldLabel
+                setTextColor(foreground)
+            })
             addView(input, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ))
         }
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle(title)
+        val dialog = AlertDialog.Builder(dialogContext)
+            .setCustomTitle(TextView(dialogContext).apply {
+                text = title
+                textSize = 20f
+                setTextColor(foreground)
+                setPadding(padding, padding, padding, padding / 2)
+            })
             .setView(content)
             .setNegativeButton("CANCEL", null)
             .setPositiveButton(submitLabel, null)
@@ -119,6 +149,26 @@ class SystemTextInputDialog(private val activity: Activity) {
         })
         dialog.setOnDismissListener { finish(entry, null) }
         dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(GradientDrawable().apply {
+                setColor(color("background"))
+                cornerRadius = 4 * activity.resources.displayMetrics.density
+            })
+            val buttonText = ColorStateList(
+                arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+                intArrayOf(secondary, foreground),
+            )
+            for (buttonId in listOf(AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_POSITIVE)) {
+                dialog.getButton(buttonId).apply {
+                    setTextColor(buttonText)
+                    // Match Flutter's button overlay while retaining native
+                    // focus/activation, so D-pad navigation stays with the IME.
+                    background = StateListDrawable().apply {
+                        addState(intArrayOf(android.R.attr.state_focused), ColorDrawable(color("focus")))
+                        addState(intArrayOf(android.R.attr.state_pressed), ColorDrawable(color("focus")))
+                        addState(intArrayOf(), ColorDrawable(Color.TRANSPARENT))
+                    }
+                }
+            }
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { finish(entry, null) }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).apply {
                 isEnabled = allowEmpty || input.text.toString().trim().isNotEmpty()
