@@ -106,6 +106,29 @@ void main() {
     expect(service.isRunning, isFalse);
   });
 
+  test('Default download chunks fit the public server request limit', () async {
+    final normal = respond;
+    respond = (request) async {
+      final size = int.parse(request.uri.queryParameters['bytes']!);
+      if (request.method == 'GET' && size > 10000000) {
+        request.response.statusCode = 403;
+        await request.response.close();
+      } else {
+        await normal(request);
+      }
+    };
+    service.dispose();
+    service = SpeedTestService(
+      endpoint: Uri.parse('http://127.0.0.1:${server.port}/'),
+      phaseDuration: const Duration(seconds: 2),
+      downloadLimit: 16 * 1024 * 1024,
+      uploadLimit: 64 * 1024,
+    );
+    await service.start();
+    expect(service.phase, SpeedTestPhase.complete);
+    expect(requestedDownload, [8 * 1024 * 1024, 8 * 1024 * 1024]);
+  });
+
   test('Times out stalled headers and permits retry', () async {
     final normal = respond;
     respond = (_) async {};

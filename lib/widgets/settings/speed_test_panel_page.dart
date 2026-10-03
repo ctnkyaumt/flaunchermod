@@ -193,7 +193,7 @@ class _SpeedDial extends StatelessWidget {
             Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color)),
             const SizedBox(height: 8),
             SizedBox(
-              height: 112,
+              height: 140,
               width: 140,
               child: CustomPaint(
                 painter: _DialPainter(value ?? 0, color, active),

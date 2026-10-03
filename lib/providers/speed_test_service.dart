@@ -38,7 +38,8 @@ class SpeedTestService extends ChangeNotifier {
     this.latencyDuration = const Duration(seconds: 12),
     this.downloadLimit = 128 * 1024 * 1024,
     this.uploadLimit = 64 * 1024 * 1024,
-    this.downloadChunk = 16 * 1024 * 1024,
+    // The public endpoint rejects download requests larger than 10 MB.
+    this.downloadChunk = 8 * 1024 * 1024,
     this.uploadChunk = 256 * 1024,
   }) : endpoint = endpoint ?? Uri.https('speed.cloudflare.com', '/');
 
@@ -110,6 +111,7 @@ class SpeedTestService extends ChangeNotifier {
       // Cancellation already updates the UI and invalidates this run.
     } catch (e) {
       if (_current(run)) {
+        debugPrint('Speed Test failed: $e');
         phase = SpeedTestPhase.failed;
         liveMbps = 0;
         error = e is TimeoutException || latencyExpired
