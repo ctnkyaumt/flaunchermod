@@ -85,8 +85,8 @@ Cloudflare receives the TV's IP address. Results are estimates for that server,
 not a guarantee of ISP speed; faster connections can reach the data cap early.
 The launcher does not submit results or run tests in the background.
 
-Weather city search uses your selected Android system keyboard. Press OK in the
-city field, type a location, then select the keyboard's Search action.
+Weather city search and Location display name use your selected Android system
+keyboard. Press OK to type, then Search for a city or Save the display name.
 
 ## Screenshots
 |--|--|--|--|

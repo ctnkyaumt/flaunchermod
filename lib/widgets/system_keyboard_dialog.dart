@@ -22,15 +22,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// Edits a city query through the device's installed keyboard.
+/// Edits weather text through the device's installed keyboard.
 class SystemKeyboardDialog extends StatefulWidget {
-  const SystemKeyboardDialog({Key? key, required this.initialValue}) : super(key: key);
+  const SystemKeyboardDialog({
+    Key? key,
+    required this.initialValue,
+    this.title = 'Search for city',
+    this.fieldLabel = 'City or place',
+    this.textInputAction = TextInputAction.search,
+    this.submitLabel = 'SEARCH',
+    this.allowEmpty = false,
+  }) : super(key: key);
 
   final String initialValue;
+  final String title;
+  final String fieldLabel;
+  final TextInputAction textInputAction;
+  final String submitLabel;
+  final bool allowEmpty;
 
-  static Future<String?> show(BuildContext context, {required String initialValue}) => showDialog<String>(
+  static Future<String?> show(
+    BuildContext context, {
+    required String initialValue,
+    String title = 'Search for city',
+    String fieldLabel = 'City or place',
+    TextInputAction textInputAction = TextInputAction.search,
+    String submitLabel = 'SEARCH',
+    bool allowEmpty = false,
+  }) => showDialog<String>(
         context: context,
-        builder: (_) => SystemKeyboardDialog(initialValue: initialValue),
+        builder: (_) => SystemKeyboardDialog(
+          initialValue: initialValue,
+          title: title,
+          fieldLabel: fieldLabel,
+          textInputAction: textInputAction,
+          submitLabel: submitLabel,
+          allowEmpty: allowEmpty,
+        ),
       );
 
   @override
@@ -66,7 +94,7 @@ class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
 
   void _submit([String? _]) {
     final query = _controller.text.trim();
-    if (query.isNotEmpty) _dismiss(query);
+    if (widget.allowEmpty || query.isNotEmpty) _dismiss(query);
   }
 
   KeyEventResult _onKey(FocusNode _, RawKeyEvent event) {
@@ -109,7 +137,7 @@ class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
         child: AlertDialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           scrollable: true,
-          title: const Text('Search for city'),
+          title: Text(widget.title),
           content: SizedBox(
             width: 420,
             child: TextField(
@@ -118,9 +146,9 @@ class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
               autofocus: true,
               maxLines: 1,
               keyboardType: TextInputType.text,
-              textInputAction: TextInputAction.search,
+              textInputAction: widget.textInputAction,
               autocorrect: false,
-              decoration: const InputDecoration(labelText: 'City or place'),
+              decoration: InputDecoration(labelText: widget.fieldLabel),
               onChanged: (_) => setState(() {}),
               onSubmitted: _submit,
             ),
@@ -128,8 +156,8 @@ class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
           actions: [
             TextButton(onPressed: () => _dismiss(null), child: const Text('CANCEL')),
             TextButton(
-              onPressed: _controller.text.trim().isEmpty ? null : _submit,
-              child: const Text('SEARCH'),
+              onPressed: !widget.allowEmpty && _controller.text.trim().isEmpty ? null : _submit,
+              child: Text(widget.submitLabel),
             ),
           ],
         ),

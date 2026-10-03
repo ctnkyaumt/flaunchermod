@@ -42,7 +42,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
 
   bool _useCitySearch = true;
   bool _busy = false;
-  bool _editingCity = false;
+  bool _editingLocation = false;
 
   @override
   void initState() {
@@ -375,31 +375,36 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
   }
 
   Future<void> _editCity(BuildContext context, SettingsService settings) async {
-    if (_editingCity || _busy || !mounted || !settings.weatherEnabled) return;
-    _editingCity = true;
+    if (_editingLocation || _busy || !mounted || !settings.weatherEnabled) return;
+    _editingLocation = true;
     try {
       final next = await SystemKeyboardDialog.show(context, initialValue: _cityDraft);
       if (next == null || !mounted) return;
       setState(() => _cityDraft = next);
       await _applyCity(context, settings, next);
     } finally {
-      _editingCity = false;
+      _editingLocation = false;
     }
   }
 
   Future<void> _editLocationName(BuildContext context, SettingsService settings) async {
-    final next = await TvKeyboardDialog.show(
-      context,
-      title: 'Location display name',
-      initialValue: settings.weatherLocationName ?? '',
-      layout: TvKeyboardLayout.text,
-    );
-
-    if (next == null) {
-      return;
+    if (_editingLocation || _busy || !mounted || !settings.weatherEnabled) return;
+    _editingLocation = true;
+    try {
+      final next = await SystemKeyboardDialog.show(
+        context,
+        title: 'Location display name',
+        fieldLabel: 'Display name',
+        initialValue: settings.weatherLocationName ?? '',
+        textInputAction: TextInputAction.done,
+        submitLabel: 'SAVE',
+        allowEmpty: true,
+      );
+      if (next == null || !mounted) return;
+      await settings.setWeatherLocationName(next);
+    } finally {
+      _editingLocation = false;
     }
-
-    await settings.setWeatherLocationName(next);
   }
 
   Future<void> _editLatitude(BuildContext context, SettingsService settings) async {

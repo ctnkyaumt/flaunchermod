@@ -210,6 +210,76 @@ void main() {
     await tester.tap(find.text('CANCEL'));
     await tester.pumpAndSettle();
   });
+
+  testWidgets('Display name opens a prefilled system editor and Done saves only the name', (tester) async {
+    await _pumpWeather(tester, settings, weather);
+    await _openDisplayName(tester);
+    expect(find.byType(TvKeyboardDialog), findsNothing);
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    expect(tester.testTextInput.setClientArgs!['inputAction'], 'TextInputAction.done');
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'Saved place');
+    await tester.enterText(find.byType(TextField), '  Home  ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.byType(SystemKeyboardDialog), findsNothing);
+    expect(settings.weatherLocationName, 'Home');
+    expect(settings.weatherLatitude, 10);
+    expect(settings.weatherLongitude, 20);
+    expect(settings.weatherEnabled, isTrue);
+    expect(weather.queries, isEmpty);
+  });
+
+  testWidgets('Display name Cancel and Android Back preserve the saved text', (tester) async {
+    await _pumpWeather(tester, settings, weather);
+    await _openDisplayName(tester);
+    await tester.enterText(find.byType(TextField), 'Cancelled name');
+    await tester.tap(find.text('CANCEL'));
+    await tester.pumpAndSettle();
+    expect(settings.weatherLocationName, 'Saved place');
+    await _openDisplayName(tester);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'Saved place');
+    await tester.enterText(find.byType(TextField), 'Back name');
+    await _pressRemoteKey(tester, 4);
+    await tester.pumpAndSettle();
+    expect(settings.weatherLocationName, 'Saved place');
+    expect(settings.weatherLatitude, 10);
+    expect(settings.weatherLongitude, 20);
+    expect(weather.queries, isEmpty);
+  });
+
+  testWidgets('Display name Save allows clearing the name without clearing coordinates', (tester) async {
+    await _pumpWeather(tester, settings, weather);
+    await _openDisplayName(tester);
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.text('SAVE'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SystemKeyboardDialog), findsNothing);
+    expect(settings.weatherLocationName, isNull);
+    expect(settings.weatherLatitude, 10);
+    expect(settings.weatherLongitude, 20);
+    expect(weather.queries, isEmpty);
+  });
+
+  testWidgets('Display name and city share a guard against overlapping editors', (tester) async {
+    await _pumpWeather(tester, settings, weather);
+    final editName = tester.widget<TextButton>(_displayNameButton).onPressed!;
+    final editCity = tester.widget<TextButton>(_cityButton).onPressed!;
+    editName();
+    editName();
+    editCity();
+    await tester.pumpAndSettle();
+    expect(find.byType(SystemKeyboardDialog), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'Saved place');
+    await tester.tap(find.text('CANCEL'));
+    await tester.pumpAndSettle();
+    await _openCity(tester);
+    expect(find.byType(SystemKeyboardDialog), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
+    await tester.tap(find.text('CANCEL'));
+    await tester.pumpAndSettle();
+    expect(weather.queries, isEmpty);
+  });
 }
 
 class _WeatherService extends WeatherService {
@@ -237,6 +307,7 @@ class _KeyboardInsets implements WindowPadding {
 }
 
 final _cityButton = find.widgetWithText(TextButton, 'Search for city');
+final _displayNameButton = find.widgetWithText(TextButton, 'Location display name');
 
 Future<void> _pumpWeather(WidgetTester tester, SettingsService settings, WeatherService weather) async {
   await tester.pumpWidget(MultiProvider(
@@ -257,6 +328,11 @@ Future<void> _pumpWeather(WidgetTester tester, SettingsService settings, Weather
 
 Future<void> _openCity(WidgetTester tester) async {
   await tester.tap(_cityButton);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openDisplayName(WidgetTester tester) async {
+  await tester.tap(_displayNameButton);
   await tester.pumpAndSettle();
 }
 
