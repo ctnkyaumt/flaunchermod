@@ -1,8 +1,9 @@
 /*
  * FLaunchermod
- * Copyright (C)
- * 2026 - ctnkyaumt
- * Forked from: 2021  Étienne Fesser
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
+ * Copyright (C) 2021 Étienne Fesser
+ * Copyright (C) 2026 ctnkyaumt
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +29,7 @@ import 'package:flauncher/widgets/settings/backup_restore_panel_page.dart';
 import 'package:flauncher/widgets/settings/button_mapping_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
 import 'package:flauncher/widgets/settings/weather_panel_page.dart';
+import 'package:flauncher/widgets/settings/speed_test_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -95,6 +97,19 @@ class SettingsPanelPage extends StatelessWidget {
                   ],
                 ),
                 onPressed: () => Navigator.of(context).pushNamed(WeatherPanelPage.routeName),
+              ),
+              EnsureVisible(
+                alignment: 0.5,
+                child: TextButton(
+                  child: Row(
+                    children: [
+                      Icon(Icons.speed),
+                      Container(width: 8),
+                      Text("Speed Test", style: Theme.of(context).textTheme.bodyMedium),
+                    ],
+                  ),
+                  onPressed: () => Navigator.of(context).pushNamed(SpeedTestPanelPage.routeName),
+                ),
               ),
               TextButton(
                 child: Row(

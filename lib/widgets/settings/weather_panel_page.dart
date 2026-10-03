@@ -1,6 +1,28 @@
+/*
+ * FLaunchermod
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
+ * Copyright (C) 2021 Étienne Fesser
+ * Copyright (C) 2026 ctnkyaumt
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
+import 'package:flauncher/widgets/system_keyboard_dialog.dart';
 import 'package:flauncher/widgets/tv_keyboard_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,6 +42,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
 
   bool _useCitySearch = true;
   bool _busy = false;
+  bool _editingCity = false;
 
   @override
   void initState() {
@@ -104,7 +127,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
 
   Widget _citySearch(BuildContext context, SettingsService settings) {
     final currentName = settings.weatherLocationName ?? '';
-    final display = currentName.isNotEmpty ? currentName : (_cityDraft.isNotEmpty ? _cityDraft : '');
+    final display = _cityDraft.isNotEmpty ? _cityDraft : currentName;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: FocusKeyboardListener(
@@ -126,7 +149,7 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
                 title: 'Search for city',
                 value: display,
                 placeholder: 'Press OK to type',
-                onPressed: () => _editCity(context),
+                onPressed: () => _editCity(context, settings),
               ),
             ),
             const SizedBox(width: 8),
@@ -169,13 +192,14 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
 
   Future<void> _applyCity(BuildContext context, SettingsService settings, String city) async {
     final trimmed = city.trim();
-    if (trimmed.isEmpty) {
+    if (trimmed.isEmpty || _busy || !mounted || !settings.weatherEnabled) {
       return;
     }
 
     setState(() => _busy = true);
     try {
-      final coords = await context.read<WeatherService>().geocodeCity(trimmed);
+      final coords = await context.read<WeatherService>().geocodeCity(trimmed).timeout(const Duration(seconds: 15));
+      if (!mounted) return;
       if (coords == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Unable to find location. Please try again.')),
@@ -186,11 +210,12 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
       await settings.setWeatherCoordinates(latitude: coords['latitude'], longitude: coords['longitude']);
       await settings.setWeatherLocationName(trimmed);
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Cannot determine location: $e')),
       );
     } finally {
-      setState(() => _busy = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -349,21 +374,17 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     );
   }
 
-  Future<void> _editCity(BuildContext context) async {
-    final next = await TvKeyboardDialog.show(
-      context,
-      title: 'Search for city',
-      initialValue: _cityDraft,
-      layout: TvKeyboardLayout.text,
-    );
-
-    if (next == null) {
-      return;
+  Future<void> _editCity(BuildContext context, SettingsService settings) async {
+    if (_editingCity || _busy || !mounted || !settings.weatherEnabled) return;
+    _editingCity = true;
+    try {
+      final next = await SystemKeyboardDialog.show(context, initialValue: _cityDraft);
+      if (next == null || !mounted) return;
+      setState(() => _cityDraft = next);
+      await _applyCity(context, settings, next);
+    } finally {
+      _editingCity = false;
     }
-
-    setState(() {
-      _cityDraft = next;
-    });
   }
 
   Future<void> _editLocationName(BuildContext context, SettingsService settings) async {

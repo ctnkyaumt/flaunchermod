@@ -1,8 +1,9 @@
 /*
  * FLaunchermod
- * Copyright (C)
- * 2026 - ctnkyaumt
- * Forked from: 2021  Étienne Fesser
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
+ * Copyright (C) 2021 Étienne Fesser
+ * Copyright (C) 2026 ctnkyaumt
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +28,7 @@ import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/backup_restore_panel_page.dart';
 import 'package:flauncher/widgets/settings/button_mapping_panel_page.dart';
 import 'package:flauncher/widgets/settings/weather_panel_page.dart';
+import 'package:flauncher/widgets/settings/speed_test_panel_page.dart';
 import 'package:flauncher/widgets/settings/settings_panel_page.dart';
 import 'package:flauncher/widgets/settings/unsplash_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
@@ -66,6 +68,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     return MaterialPageRoute(builder: (_) => GradientPanelPage());
                   case WeatherPanelPage.routeName:
                     return MaterialPageRoute(builder: (_) => WeatherPanelPage());
+                  case SpeedTestPanelPage.routeName:
+                    return MaterialPageRoute(builder: (_) => SpeedTestPanelPage());
                   case ApplicationsPanelPage.routeName:
                     return MaterialPageRoute(builder: (_) => ApplicationsPanelPage());
                   case CategoriesPanelPage.routeName:

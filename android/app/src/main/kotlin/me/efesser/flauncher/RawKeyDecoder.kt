@@ -1,5 +1,7 @@
 /*
  * FLaunchermod
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
  * Copyright (C) 2026 - ctnkyaumt
  * SPDX-License-Identifier: GPL-3.0-or-later
  */

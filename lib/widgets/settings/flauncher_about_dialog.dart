@@ -1,8 +1,9 @@
 /*
  * FLaunchermod
- * Copyright (C)
- * 2026 - ctnkyaumt
- * Forked from: 2021  Étienne Fesser
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
+ * Copyright (C) 2021 Étienne Fesser
+ * Copyright (C) 2026 ctnkyaumt
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,7 +38,7 @@ class FLauncherAboutDialog extends StatelessWidget {
       applicationName: packageInfo.appName,
       applicationVersion: "${packageInfo.version} (${packageInfo.buildNumber})",
       applicationIcon: Image.asset("assets/logo.png", height: 72),
-      applicationLegalese: "© 2021 Étienne Fesser",
+      applicationLegalese: "originally by efesser (30 May 2021)\nctnkyaumt 2026",
       children: [
         SizedBox(height: 24),
         RichText(
@@ -45,10 +46,10 @@ class FLauncherAboutDialog extends StatelessWidget {
             style: textStyle,
             children: [
               TextSpan(
-                text: "FLauncher is an open-source alternative launcher for Android TV.\n"
+                text: "FLaunchermod is an open-source alternative launcher for Android TV.\n"
                     "Source code available at ",
               ),
-              TextSpan(text: "https://gitlab.com/etiennf01/flauncher", style: underlined),
+              TextSpan(text: "https://github.com/ctnkyaumt/flaunchermod", style: underlined),
               TextSpan(text: ".\n\n"),
               TextSpan(text: "Logo by Katie "),
               TextSpan(text: "@fureturoe", style: underlined),

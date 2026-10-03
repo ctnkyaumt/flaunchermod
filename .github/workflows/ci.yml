@@ -46,6 +46,10 @@ jobs:
           test/providers/button_mapping_service_test.dart
           test/widgets/device_power_dialog_test.dart
           test/widgets/settings/backup_restore_panel_page_test.dart
+          test/providers/speed_test_service_test.dart
+          test/widgets/settings/speed_test_panel_page_test.dart
+          test/widgets/settings/weather_panel_page_test.dart
+          test/widgets/settings/settings_panel_page_test.dart
 
       # Extract version from pubspec.yaml
       - name: Extract version

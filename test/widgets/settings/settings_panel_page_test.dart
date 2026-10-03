@@ -1,8 +1,9 @@
 /*
  * FLaunchermod
- * Copyright (C)
- * 2026 - ctnkyaumt
- * Forked from: 2021  Étienne Fesser
+ * originally by efesser (30 May 2021)
+ * ctnkyaumt 2026
+ * Copyright (C) 2021 Étienne Fesser
+ * Copyright (C) 2026 ctnkyaumt
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +25,7 @@ import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
 import 'package:flauncher/widgets/settings/settings_panel_page.dart';
+import 'package:flauncher/widgets/settings/speed_test_panel_page.dart';
 import 'package:flauncher/widgets/settings/wallpaper_panel_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -55,8 +57,7 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "Applications");
     await tester.pumpAndSettle();
     expect(find.byKey(Key("ApplicationsPanelPage")), findsOneWidget);
   });
@@ -71,9 +72,7 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "Categories");
     await tester.pumpAndSettle();
     expect(find.byKey(Key("CategoriesPanelPage")), findsOneWidget);
   });
@@ -88,10 +87,7 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "Wallpaper");
     await tester.pumpAndSettle();
     expect(find.byKey(Key("WallpaperPanelPage")), findsOneWidget);
   });
@@ -106,11 +102,7 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "Android settings");
     await tester.pumpAndSettle();
     verify(appsService.openSettings());
   });
@@ -125,14 +117,23 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "Use 24-hour time format");
     await tester.pumpAndSettle();
     verify(settingsService.setUse24HourTimeFormat(true));
+  });
+
+  testWidgets("'Speed Test' opens the speed test menu", (tester) async {
+    final settingsService = MockSettingsService();
+    final appsService = MockAppsService();
+    when(appsService.categoriesWithApps).thenReturn([]);
+    when(appsService.applications).thenReturn([]);
+    when(settingsService.use24HourTimeFormat).thenReturn(false);
+    when(settingsService.appHighlightAnimationEnabled).thenReturn(true);
+    await _pumpWidgetWithProviders(tester, settingsService, appsService);
+    await _activate(tester, "Speed Test");
+    await tester.pumpAndSettle();
+    expect(find.byType(SpeedTestPanelPage), findsOneWidget);
+    expect(find.text("Start test"), findsOneWidget);
   });
 
   testWidgets("'About FLauncher' opens about dialog", (tester) async {
@@ -146,19 +147,19 @@ void main() {
 
     await _pumpWidgetWithProviders(tester, settingsService, appsService);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await _activate(tester, "About FLauncher");
     await tester.pumpAndSettle();
     expect(find.byType(FLauncherAboutDialog), findsOneWidget);
+    expect(find.text("originally by efesser (30 May 2021)\nctnkyaumt 2026"), findsOneWidget);
   });
+}
+
+Future<void> _activate(WidgetTester tester, String label) async {
+  final target = find.text(label);
+  await tester.ensureVisible(target);
+  Focus.of(tester.element(target)).requestFocus();
+  await tester.pump();
+  await tester.sendKeyEvent(LogicalKeyboardKey.enter);
 }
 
 Future<void> _pumpWidgetWithProviders(
@@ -174,6 +175,7 @@ Future<void> _pumpWidgetWithProviders(
       ],
       builder: (_, __) => MaterialApp(
         routes: {
+          SpeedTestPanelPage.routeName: (_) => const SpeedTestPanelPage(),
           CategoriesPanelPage.routeName: (_) => Container(key: Key("CategoriesPanelPage")),
           WallpaperPanelPage.routeName: (_) => Container(key: Key("WallpaperPanelPage")),
           ApplicationsPanelPage.routeName: (_) => Container(key: Key("ApplicationsPanelPage")),

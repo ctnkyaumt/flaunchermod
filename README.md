@@ -1,5 +1,6 @@
-# FLauncher
-FLauncher is an open-source alternative launcher for Android TV, built with [Flutter](https://flutter.dev).
+# FLaunchermod
+FLaunchermod is an open-source alternative launcher for Android TV, built with [Flutter](https://flutter.dev).
+Originally by efesser ([30 May 2021, first upstream tag](https://gitlab.com/flauncher/flauncher/-/tags/0.1.0)); ctnkyaumt 2026.
 
 ## Features
 - [x] No ads
@@ -15,6 +16,7 @@ FLauncher is an open-source alternative launcher for Android TV, built with [Flu
 - [x] Navigation sound feedback
 - [x] HDMI inputs page/section
 - [x] Weather widget
+- [x] Speed Test with download/upload dials and HTTPS latency
 - [x] Device power menu and standby through the enabled accessibility service
 - [x] Button mapper integrated (under settings) — remaps remote buttons, including
       the app shortcut buttons (Netflix, YouTube, ...). Home and Power are handled
@@ -72,6 +74,19 @@ Version 2 includes remote mappings, wallpaper and weather settings. Android
 accessibility/storage permissions and ADB credentials are device-specific and
 are not exported. Missing apps stay hidden with their category assignments;
 installation is optional. Backups are limited to 32 MiB.
+
+## Speed Test
+
+Settings > Speed Test measures download, upload and HTTPS latency against
+[Cloudflare's test endpoints](https://github.com/cloudflare/speedtest). Start with
+the remote's OK button; Cancel, Back or leaving the app stops network traffic.
+Tests normally take about 25 seconds and send/receive up to 192 MiB of test data.
+Cloudflare receives the TV's IP address. Results are estimates for that server,
+not a guarantee of ISP speed; faster connections can reach the data cap early.
+The launcher does not submit results or run tests in the background.
+
+Weather city search uses your selected Android system keyboard. Press OK in the
+city field, type a location, then select the keyboard's Search action.
 
 ## Screenshots
 |--|--|--|--|

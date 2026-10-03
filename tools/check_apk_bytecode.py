@@ -1,3 +1,5 @@
+# originally by efesser (30 May 2021)
+# ctnkyaumt 2026
 """Reject monitor calls known to crash ART when emitted as invoke-interface."""
 
 import argparse
