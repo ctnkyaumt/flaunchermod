@@ -143,7 +143,7 @@ void main() {
     await tester.pump();
     expect(weather.queries, ['London']);
     edit();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(SystemKeyboardDialog), findsNothing);
     result.complete({'latitude': 51.5, 'longitude': -0.12});
     await tester.pumpAndSettle();
