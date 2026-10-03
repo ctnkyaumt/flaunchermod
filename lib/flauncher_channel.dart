@@ -40,6 +40,24 @@ class FLauncherChannel {
 
   Future<void> openWifiSettings() async => await _methodChannel.invokeMethod('openWifiSettings');
 
+  /// Opens an Android editor using the installed keyboard; null means cancelled.
+  Future<String?> showSystemTextInput({
+    required String title,
+    required String initialValue,
+    required String fieldLabel,
+    required String action,
+    required String submitLabel,
+    required bool allowEmpty,
+  }) async =>
+      await _methodChannel.invokeMethod<String>('showSystemTextInput', {
+        'title': title,
+        'initialValue': initialValue,
+        'fieldLabel': fieldLabel,
+        'action': action,
+        'submitLabel': submitLabel,
+        'allowEmpty': allowEmpty,
+      });
+
   Future<void> openAppInfo(String packageName) async => await _methodChannel.invokeMethod('openAppInfo', packageName);
 
   Future<void> uninstallApp(String packageName) async => await _methodChannel.invokeMethod('uninstallApp', packageName);

@@ -19,6 +19,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:io';
+
+import 'package:flauncher/flauncher_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -49,7 +52,20 @@ class SystemKeyboardDialog extends StatefulWidget {
     TextInputAction textInputAction = TextInputAction.search,
     String submitLabel = 'SEARCH',
     bool allowEmpty = false,
-  }) => showDialog<String>(
+  }) {
+    // A native editor lets the TV's IME own remote navigation. Flutter's
+    // EditableText otherwise receives D-pad keys intended for the keyboard.
+    if (Platform.isAndroid) {
+      return FLauncherChannel().showSystemTextInput(
+        title: title,
+        initialValue: initialValue,
+        fieldLabel: fieldLabel,
+        action: textInputAction == TextInputAction.search ? 'search' : 'done',
+        submitLabel: submitLabel,
+        allowEmpty: allowEmpty,
+      );
+    }
+    return showDialog<String>(
         context: context,
         builder: (_) => SystemKeyboardDialog(
           initialValue: initialValue,
@@ -60,6 +76,7 @@ class SystemKeyboardDialog extends StatefulWidget {
           allowEmpty: allowEmpty,
         ),
       );
+  }
 
   @override
   State<SystemKeyboardDialog> createState() => _SystemKeyboardDialogState();

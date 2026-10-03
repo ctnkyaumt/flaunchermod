@@ -78,6 +78,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pickBackupJsonResult: MethodChannel.Result? = null
     private var keyCaptureReceiver: BroadcastReceiver? = null
+    private val systemTextInputDialog by lazy { SystemTextInputDialog(this) }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -89,6 +90,7 @@ class MainActivity : FlutterActivity() {
                     "launchApp" -> result.success(launchApp(call.arguments as String))
                     "openSettings" -> result.success(openSettings())
                     "openWifiSettings" -> result.success(openWifiSettings())
+                    "showSystemTextInput" -> systemTextInputDialog.show(call.arguments as Map<*, *>, result)
                     "openAppInfo" -> result.success(openAppInfo(call.arguments as String))
                     "uninstallApp" -> result.success(uninstallApp(call.arguments as String))
                     "isDefaultLauncher" -> result.success(isDefaultLauncher())
@@ -628,7 +630,13 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onStop() {
+        systemTextInputDialog.cancel()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        systemTextInputDialog.cancel()
         try {
             rikka.shizuku.Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener)
         } catch (e: Exception) {

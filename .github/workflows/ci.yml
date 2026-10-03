@@ -50,6 +50,7 @@ jobs:
           test/widgets/settings/speed_test_panel_page_test.dart
           test/widgets/settings/weather_panel_page_test.dart
           test/widgets/settings/settings_panel_page_test.dart
+          test/flauncher_channel_system_text_test.dart
 
       # Extract version from pubspec.yaml
       - name: Extract version
