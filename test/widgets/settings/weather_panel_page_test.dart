@@ -136,6 +136,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SystemKeyboardDialog), findsOneWidget);
     await tester.enterText(find.byType(TextField), 'London');
+    await tester.pump();
     final submit = tester.widget<TextButton>(find.widgetWithText(TextButton, 'SEARCH')).onPressed!;
     submit();
     submit();
