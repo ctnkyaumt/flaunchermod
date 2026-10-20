@@ -162,7 +162,8 @@ void main() {
     expect(tester.getCenter(find.text('SCART')).dx, greaterThan(tester.getCenter(find.text('AV')).dx));
     expect(tester.getCenter(find.text('SCART')).dx, lessThan(tester.getCenter(find.text('YPbPr')).dx));
     expect(tester.getCenter(find.text('SCART')).dy, tester.getCenter(find.text('AV')).dy);
-    expect(tester.getCenter(find.text('HDMI 4')).dy, tester.getCenter(find.text('HDMI 1')).dy);
+    // HDMI 1 is focused and scaled, so compare with an unfocused HDMI card.
+    expect(tester.getCenter(find.text('HDMI 4')).dy, tester.getCenter(find.text('HDMI 2')).dy);
 
     await _sendEvent(tester, {'action': 'INPUT_REMOVED', 'inputId': _vga});
     await _sendEvent(tester, {'action': 'INPUT_REMOVED', 'inputId': _hdmi4});
@@ -203,6 +204,11 @@ Future<List<MethodCall>> _pump(
     ChangeNotifierProvider<SettingsService>.value(
       value: settingsService,
       child: MaterialApp(
+        // Same OK-key mapping as FLauncherApp.
+        shortcuts: {
+          ...WidgetsApp.defaultShortcuts,
+          const SingleActivator(LogicalKeyboardKey.select): const ActivateIntent(),
+        },
         home: Material(
           child: FocusTraversalGroup(
             policy: PageAwareTraversalPolicy(handler ?? _PageHandler()),
