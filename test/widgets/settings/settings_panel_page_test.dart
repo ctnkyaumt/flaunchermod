@@ -23,6 +23,7 @@ import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
+import 'package:flauncher/widgets/settings/engineering_menu_panel_page.dart';
 import 'package:flauncher/widgets/settings/flauncher_about_dialog.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
 import 'package:flauncher/widgets/settings/settings_panel_page.dart';
@@ -137,6 +138,23 @@ void main() {
     expect(find.text("Start test"), findsOneWidget);
   });
 
+  testWidgets("'Engineering Menu' opens the submenu with Design Menu and Factory Menu", (tester) async {
+    final settingsService = MockSettingsService();
+    final appsService = MockAppsService();
+    when(appsService.categoriesWithApps).thenReturn([]);
+    when(appsService.applications).thenReturn([]);
+    when(settingsService.use24HourTimeFormat).thenReturn(false);
+    when(settingsService.appHighlightAnimationEnabled).thenReturn(true);
+    await _pumpWidgetWithProviders(tester, settingsService, appsService);
+
+    await _activate(tester, "Engineering Menu");
+    await tester.pumpAndSettle();
+
+    expect(find.byType(EngineeringMenuPanelPage), findsOneWidget);
+    expect(find.text("Design Menu"), findsOneWidget);
+    expect(find.text("Factory Menu"), findsOneWidget);
+  });
+
   testWidgets("'About FLauncher' opens about dialog", (tester) async {
     final settingsService = MockSettingsService();
     final appsService = MockAppsService();
@@ -230,6 +248,7 @@ Future<void> _pumpWidgetWithProviders(
       builder: (_, __) => MaterialApp(
         routes: {
           SpeedTestPanelPage.routeName: (_) => const SpeedTestPanelPage(),
+          EngineeringMenuPanelPage.routeName: (_) => const EngineeringMenuPanelPage(),
           CategoriesPanelPage.routeName: (_) => Container(key: Key("CategoriesPanelPage")),
           WallpaperPanelPage.routeName: (_) => Container(key: Key("WallpaperPanelPage")),
           ApplicationsPanelPage.routeName: (_) => Container(key: Key("ApplicationsPanelPage")),

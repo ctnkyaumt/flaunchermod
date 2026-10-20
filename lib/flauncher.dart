@@ -31,7 +31,7 @@ import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
 import 'package:flauncher/widgets/device_power_dialog.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
-import 'package:flauncher/widgets/hdmi_inputs_section.dart';
+import 'package:flauncher/widgets/tv_inputs_section.dart';
 import 'package:flauncher/widgets/weather_widget.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/settings_panel.dart';
@@ -338,8 +338,8 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
               ),
             ),
           ),
-          // HDMI Inputs section
-          const HdmiInputsSection(),
+          // HDMI and Other inputs
+          const TvInputsSection(),
         ],
       ),
     );

@@ -47,21 +47,38 @@ import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/color_helpers.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 
-class HdmiInput {
+class TvInput {
+  static const typeTuner = 0;
+  static const typeComposite = 1001;
+  static const typeSvideo = 1002;
+  static const typeScart = 1003;
+  static const typeComponent = 1004;
+  static const typeVga = 1005;
+  static const typeDvi = 1006;
+  static const typeHdmi = 1007;
+  static const typeDisplayPort = 1008;
+
+  // Same order the native catalog uses for the Other row.
+  static const _otherOrder = [
+    typeTuner, typeComposite, typeSvideo, typeScart, typeComponent, typeVga, typeDvi, typeDisplayPort,
+  ];
+
   final String id;
   final String name;
-  // Add other fields like icon (Uint8List?) if needed
+  final int? type;
+  final bool isHdmi;
 
-  HdmiInput({required this.id, required this.name});
+  TvInput({required this.id, required this.name, this.type, required this.isHdmi});
 
-  factory HdmiInput.fromMap(Map<dynamic, dynamic> map) {
-    return HdmiInput(
+  factory TvInput.fromMap(Map<dynamic, dynamic> map) {
+    return TvInput(
       id: map['id'] as String,
       name: map['name'] as String? ?? 'Unknown Input',
-      // Parse icon if available: map['icon'] != null ? Uint8List.fromList(List<int>.from(map['icon'])) : null,
+      type: map['type'] as int?,
+      isHdmi: (map['group'] as String? ?? 'hdmi') == 'hdmi',
     );
   }
-  
+
   // Extract numeric value for sorting
   int get numericOrder {
     final RegExp regExp = RegExp(r'(\d+)');
@@ -71,20 +88,54 @@ class HdmiInput {
     }
     return 0;
   }
+
+  int get _otherRank {
+    final index = _otherOrder.indexOf(type ?? -1);
+    return index >= 0 ? index : _otherOrder.length;
+  }
+
+  IconData get icon {
+    if (isHdmi) return Icons.settings_input_hdmi;
+    switch (type) {
+      case typeTuner:
+        return Icons.live_tv;
+      case typeComposite:
+      case typeScart:
+        return Icons.settings_input_composite;
+      case typeComponent:
+        return Icons.settings_input_component;
+      case typeSvideo:
+        return Icons.settings_input_svideo;
+      case typeVga:
+      case typeDvi:
+      case typeDisplayPort:
+        return Icons.desktop_windows;
+      default:
+        return Icons.input;
+    }
+  }
+
+  static int compareHdmi(TvInput a, TvInput b) => a.numericOrder.compareTo(b.numericOrder);
+
+  static int compareOther(TvInput a, TvInput b) {
+    final byRank = a._otherRank.compareTo(b._otherRank);
+    return byRank != 0 ? byRank : a.id.compareTo(b.id);
+  }
 }
 
-class HdmiInputsSection extends StatefulWidget {
-  const HdmiInputsSection({Key? key}) : super(key: key);
+class TvInputsSection extends StatefulWidget {
+  const TvInputsSection({Key? key}) : super(key: key);
 
   @override
-  State<HdmiInputsSection> createState() => _HdmiInputsSectionState();
+  State<TvInputsSection> createState() => _TvInputsSectionState();
 }
 
-class _HdmiInputsSectionState extends State<HdmiInputsSection> {
-  List<HdmiInput> _hdmiInputs = [];
+class _TvInputsSectionState extends State<TvInputsSection> {
+  List<TvInput> _hdmiInputs = [];
+  List<TvInput> _otherInputs = [];
   bool _isLoading = true;
   String? _error;
-  StreamSubscription? _hdmiEventsSubscription;
+  StreamSubscription? _inputEventsSubscription;
   late FLauncherChannel _channel;
 
   @override
@@ -94,44 +145,58 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
     // For now, assuming it can be instantiated directly or accessed globally/statically
     // If it's provided via Provider, use context.read<FLauncherChannel>()
     _channel = FLauncherChannel(); // Adjust if necessary
-    _fetchHdmiInputs();
-    _listenForHdmiEvents();
+    _fetchInputs();
+    _listenForInputEvents();
   }
 
   @override
   void dispose() {
-    _hdmiEventsSubscription?.cancel();
+    _inputEventsSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _fetchHdmiInputs() async {
+  void _sortInputs() {
+    _hdmiInputs.sort(TvInput.compareHdmi);
+    _otherInputs.sort(TvInput.compareOther);
+  }
+
+  void _upsert(TvInput input) {
+    _hdmiInputs.removeWhere((i) => i.id == input.id);
+    _otherInputs.removeWhere((i) => i.id == input.id);
+    (input.isHdmi ? _hdmiInputs : _otherInputs).add(input);
+  }
+
+  Future<void> _fetchInputs() async {
     setState(() {
       _isLoading = true;
       // Keep previous error state if desired, or clear it:
       _error = null;
     });
     try {
-      final inputs = await _channel.getHdmiInputs();
+      final inputs = await _channel.getTvInputs();
       // Ensure mounted check after async gap
       if (!mounted) return;
       setState(() {
-        _hdmiInputs = inputs.map((data) => HdmiInput.fromMap(data)).toList()
-          ..sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
+        final parsed = inputs.map((data) => TvInput.fromMap(data)).toList();
+        _hdmiInputs = parsed.where((i) => i.isHdmi).toList();
+        _otherInputs = parsed.where((i) => !i.isHdmi).toList();
+        _sortInputs();
         _isLoading = false;
       });
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = "Failed to load HDMI inputs: $e";
+          _error = "Failed to load inputs: $e";
           _hdmiInputs = [];
+          _otherInputs = [];
           _isLoading = false;
         });
       }
     }
   }
 
-  void _listenForHdmiEvents() {
-    _hdmiEventsSubscription = _channel.hdmiInputStream.listen((event) {
+  void _listenForInputEvents() {
+    _inputEventsSubscription = _channel.hdmiInputStream.listen((event) {
       if (!mounted) return;
       final action = event['action'] as String?;
       setState(() {
@@ -139,39 +204,35 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
           case 'INPUT_ADDED':
             final inputInfo = event['inputInfo'];
             if (inputInfo != null) {
-              final newHdmi = HdmiInput.fromMap(inputInfo);
-              // Avoid duplicates if list was re-fetched recently
-              if (!_hdmiInputs.any((i) => i.id == newHdmi.id)) {
-                _hdmiInputs.add(newHdmi);
-              }
+              _upsert(TvInput.fromMap(inputInfo));
             }
             break;
           case 'INPUT_REMOVED':
             final inputId = event['inputId'] as String?;
             if (inputId != null) {
               _hdmiInputs.removeWhere((input) => input.id == inputId);
+              _otherInputs.removeWhere((input) => input.id == inputId);
             }
             break;
           case 'INPUT_UPDATED':
             final inputInfo = event['inputInfo'];
             if (inputInfo != null) {
-              final updatedHdmi = HdmiInput.fromMap(inputInfo);
-              final index = _hdmiInputs.indexWhere((i) => i.id == updatedHdmi.id);
-              if (index != -1) {
-                _hdmiInputs[index] = updatedHdmi;
+              final updated = TvInput.fromMap(inputInfo);
+              final known = _hdmiInputs.any((i) => i.id == updated.id) || _otherInputs.any((i) => i.id == updated.id);
+              if (known) {
+                _upsert(updated);
               }
             }
             break;
           // INPUT_STATE_CHANGED is ignored for now
         }
-        // Sort inputs by numeric order (HDMI 1, HDMI 2, etc.)
-        _hdmiInputs.sort((a, b) => a.numericOrder.compareTo(b.numericOrder));
+        _sortInputs();
       });
     }, onError: (error) {
       // Handle stream errors if necessary
       if (mounted) {
         setState(() {
-          _error = "HDMI update listener error: $error";
+          _error = "Input update listener error: $error";
         });
       }
     });
@@ -188,10 +249,28 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
       return SizedBox(height: 126, child: Center(child: Text(_error!, style: const TextStyle(color: Colors.orangeAccent))));
     }
 
-    if (_hdmiInputs.isEmpty) {
-      return const SizedBox(height: 126, child: Center(child: Text('No HDMI inputs detected.')));
-    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _subtitle(context, "HDMI"),
+        if (_hdmiInputs.isEmpty)
+          const SizedBox(height: 126, child: Center(child: Text('No HDMI inputs detected.')))
+        else
+          _row(_hdmiInputs, autofocusFirst: true),
+        if (_otherInputs.isNotEmpty) ...[
+          _subtitle(context, "Other"),
+          _row(_otherInputs, autofocusFirst: _hdmiInputs.isEmpty),
+        ],
+      ],
+    );
+  }
 
+  Widget _subtitle(BuildContext context, String text) => Padding(
+        padding: const EdgeInsets.only(left: 16, bottom: 4),
+        child: Text(text, style: Theme.of(context).textTheme.titleMedium),
+      );
+
+  Widget _row(List<TvInput> inputs, {required bool autofocusFirst}) {
     return SizedBox(
       height: 126,
       child: ListView.custom(
@@ -199,25 +278,26 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
         scrollDirection: Axis.horizontal,
         childrenDelegate: SliverChildBuilderDelegate(
           (context, index) => EnsureVisible(
-            key: Key("hdmi-${_hdmiInputs[index].id}"),
+            key: Key("input-${inputs[index].id}"),
             alignment: 0.1,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: SizedBox(
                 width: 200, // Fixed width to match other categories
                 height: 110, // Fixed height to match other categories
-                child: HdmiCard(
-                  input: _hdmiInputs[index],
-                  autofocus: index == 0,
-                  onTap: () => _channel.launchTvInput(_hdmiInputs[index].id),
+                child: TvInputCard(
+                  input: inputs[index],
+                  autofocus: autofocusFirst && index == 0,
+                  onTap: () => _channel.launchTvInput(inputs[index].id),
                 ),
               ),
             ),
           ),
-          childCount: _hdmiInputs.length,
+          childCount: inputs.length,
           findChildIndexCallback: (Key key) {
             final keyValue = (key as ValueKey<String>).value;
-            return _hdmiInputs.indexWhere((input) => "hdmi-${input.id}" == keyValue);
+            final index = inputs.indexWhere((input) => "input-${input.id}" == keyValue);
+            return index < 0 ? null : index;
           },
         ),
       ),
@@ -225,12 +305,12 @@ class _HdmiInputsSectionState extends State<HdmiInputsSection> {
   }
 }
 
-class HdmiCard extends StatefulWidget {
-  final HdmiInput input;
+class TvInputCard extends StatefulWidget {
+  final TvInput input;
   final bool autofocus;
   final VoidCallback onTap;
 
-  const HdmiCard({
+  const TvInputCard({
     Key? key,
     required this.input,
     required this.autofocus,
@@ -238,10 +318,10 @@ class HdmiCard extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  _HdmiCardState createState() => _HdmiCardState();
+  _TvInputCardState createState() => _TvInputCardState();
 }
 
-class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin {
+class _TvInputCardState extends State<TvInputCard> with SingleTickerProviderStateMixin {
   late final AnimationController _animation = AnimationController(
     vsync: this,
     duration: Duration(milliseconds: 800),
@@ -298,7 +378,7 @@ class _HdmiCardState extends State<HdmiCard> with SingleTickerProviderStateMixin
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.settings_input_hdmi, size: 40),
+                      Icon(widget.input.icon, size: 40),
                       SizedBox(height: 8),
                       Text(
                         widget.input.name,

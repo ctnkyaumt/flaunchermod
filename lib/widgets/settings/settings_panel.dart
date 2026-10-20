@@ -22,6 +22,7 @@
 import 'package:flauncher/widgets/right_panel_dialog.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
+import 'package:flauncher/widgets/settings/engineering_menu_panel_page.dart';
 import 'package:flauncher/widgets/settings/category_panel_page.dart';
 import 'package:flauncher/widgets/settings/gradient_panel_page.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
@@ -80,6 +81,8 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     return MaterialPageRoute(builder: (_) => BackupRestorePanelPage());
                   case ButtonMappingPanelPage.routeName:
                     return MaterialPageRoute(builder: (_) => ButtonMappingPanelPage());
+                  case EngineeringMenuPanelPage.routeName:
+                    return MaterialPageRoute(builder: (_) => EngineeringMenuPanelPage());
                   case CategoryPanelPage.routeName:
                     return MaterialPageRoute(
                       builder: (_) => CategoryPanelPage(categoryId: settings.arguments! as int),

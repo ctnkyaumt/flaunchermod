@@ -14,7 +14,8 @@ Originally by efesser ([30 May 2021, first upstream tag](https://gitlab.com/flau
 - [x] Switch between row and grid for categories
 - [x] Support for non-TV (sideloaded) apps + menu to download popular apps for ease of use
 - [x] Navigation sound feedback
-- [x] HDMI inputs page/section
+- [x] Inputs page with an HDMI row and an Other row (TV, AV, YPbPr, VGA, ...)
+- [x] Engineering Menu under settings: opens the Design and Factory menus on MediaTek/Vestel TVs
 - [x] Weather widget
 - [x] Speed Test with download/upload dials and HTTPS latency
 - [x] Device power menu and standby through the enabled accessibility service

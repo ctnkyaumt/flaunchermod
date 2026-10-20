@@ -24,6 +24,7 @@ import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
 import 'package:flauncher/widgets/settings/applications_panel_page.dart';
 import 'package:flauncher/widgets/settings/categories_panel_page.dart';
+import 'package:flauncher/widgets/settings/engineering_menu_panel_page.dart';
 import 'package:flauncher/widgets/settings/install_apps_panel_page.dart';
 import 'package:flauncher/widgets/settings/backup_restore_panel_page.dart';
 import 'package:flauncher/widgets/settings/button_mapping_panel_page.dart';
@@ -141,6 +142,16 @@ class SettingsPanelPage extends StatelessWidget {
                   ],
                 ),
                 onPressed: () => context.read<AppsService>().openSettings(),
+              ),
+              TextButton(
+                child: Row(
+                  children: [
+                    Icon(Icons.engineering),
+                    Container(width: 8),
+                    Text("Engineering Menu", style: Theme.of(context).textTheme.bodyMedium),
+                  ],
+                ),
+                onPressed: () => Navigator.of(context).pushNamed(EngineeringMenuPanelPage.routeName),
               ),
               Divider(),
               SwitchListTile(

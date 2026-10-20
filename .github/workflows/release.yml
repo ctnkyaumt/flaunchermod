@@ -116,6 +116,8 @@ jobs:
           test/widgets/settings/speed_test_panel_page_test.dart
           test/widgets/settings/weather_panel_page_test.dart
           test/widgets/settings/settings_panel_page_test.dart
+          test/widgets/settings/engineering_menu_panel_page_test.dart
+          test/widgets/tv_inputs_section_test.dart
           test/flauncher_channel_system_text_test.dart
 
       - name: Build release APKs (armeabi-v7a & arm64-v8a)

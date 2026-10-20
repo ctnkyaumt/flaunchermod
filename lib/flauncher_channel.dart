@@ -91,10 +91,22 @@ class FLauncherChannel {
     return List<dynamic>.from(result ?? []);
   }
 
+  /// Every input to show on the Inputs page: maps with `id`, `name`, `type` and
+  /// `group` (`hdmi` or `other`).
+  Future<List<dynamic>> getTvInputs() async {
+    final result = await _methodChannel.invokeMethod('getTvInputs');
+    return List<dynamic>.from(result ?? []);
+  }
+
   Future<bool> launchTvInput(String inputId) async {
     final result = await _methodChannel.invokeMethod('launchTvInput', {'inputId': inputId});
     return result ?? false;
   }
+
+  /// Opens the TV maker's `design` or `factory` engineering menu; false when
+  /// this device does not have it.
+  Future<bool> openEngineeringMenu(String menu) async =>
+      (await _methodChannel.invokeMethod<bool>('openEngineeringMenu', {'menu': menu})) ?? false;
 
   Future<String?> installApk(String filePath) async => await _methodChannel.invokeMethod('installApk', filePath);
 

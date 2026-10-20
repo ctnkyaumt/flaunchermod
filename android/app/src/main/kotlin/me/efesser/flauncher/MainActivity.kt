@@ -26,6 +26,7 @@ import android.content.Intent
 import android.content.Intent.*
 import android.content.IntentFilter
 import android.content.pm.*
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -120,6 +121,8 @@ class MainActivity : FlutterActivity() {
                     "checkForGetContentAvailability" -> result.success(checkForGetContentAvailability())
                     "startAmbientMode" -> result.success(startAmbientMode())
                     "getHdmiInputs" -> result.success(getHdmiInputs())
+                    "getTvInputs" -> result.success(getTvInputs())
+                    "openEngineeringMenu" -> result.success(openEngineeringMenu(call.argument<String>("menu")))
                     "launchTvInput" -> result.success(launchTvInput(call.argument<String>("inputId")))
                     "shutdownDevice" -> result.success(shutdownDevice())
                     "standbyDevice" -> result.success(FLauncherAccessibilityService.standbyDevice())
@@ -229,8 +232,8 @@ class MainActivity : FlutterActivity() {
             override fun onListen(arguments: Any?, events: EventSink) {
                 tvInputCallback = object : TvInputCallback() {
                     override fun onInputAdded(inputId: String) {
-                        getTvInputInfo(inputId)?.takeIf { inputInfo -> inputInfo.type == TvInputInfo.TYPE_HDMI }?.let { inputInfo ->
-                            events.success(mapOf("action" to "INPUT_ADDED", "inputInfo" to buildTvInputMap(inputInfo)))
+                        findShownTvInput(inputId)?.let { entry ->
+                            events.success(mapOf("action" to "INPUT_ADDED", "inputInfo" to tvInputEntryMap(entry)))
                         }
                     }
 
@@ -240,8 +243,8 @@ class MainActivity : FlutterActivity() {
                     }
 
                     override fun onInputUpdated(inputId: String) {
-                        getTvInputInfo(inputId)?.takeIf { inputInfo -> inputInfo.type == TvInputInfo.TYPE_HDMI }?.let { inputInfo ->
-                            events.success(mapOf("action" to "INPUT_UPDATED", "inputInfo" to buildTvInputMap(inputInfo)))
+                        findShownTvInput(inputId)?.let { entry ->
+                            events.success(mapOf("action" to "INPUT_UPDATED", "inputInfo" to tvInputEntryMap(entry)))
                         }
                     }
 
@@ -844,24 +847,47 @@ class MainActivity : FlutterActivity() {
         null
     }
 
-    private fun getHdmiInputs(): List<Map<String, Serializable?>> {
-        return try {
-            val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
-            tvInputManager.tvInputList
-                .filter { it.type == TvInputInfo.TYPE_HDMI }
-                .map { buildTvInputMap(it) }
-        } catch (e: Exception) {
-            // Log error maybe?
-            emptyList()
-        }
+    private fun classifyTvInputs(): TvInputGroups {
+        val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
+        return TvInputCatalog.classify(
+            tvInputManager.tvInputList.map { inputInfo ->
+                TvInputSpec(
+                    id = inputInfo.id,
+                    type = inputInfo.type,
+                    customLabel = inputInfo.loadCustomLabel(this)?.toString(),
+                    label = inputInfo.loadLabel(this)?.toString(),
+                    hidden = inputInfo.isHidden(this),
+                )
+            }
+        )
     }
 
-    private fun buildTvInputMap(inputInfo: TvInputInfo): Map<String, Serializable?> = mapOf(
-        "id" to inputInfo.id,
-        "name" to inputInfo.loadLabel(context).toString(),
-        "type" to inputInfo.type,
-        "icon" to inputInfo.loadIcon(context)?.let(::drawableToByteArray), // Optional icon
-        // Add other relevant fields if needed, e.g., inputInfo.loadCustomLabel(context)?.toString()
+    private fun getHdmiInputs(): List<Map<String, Serializable?>> = try {
+        classifyTvInputs().hdmi.map(::tvInputEntryMap)
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun getTvInputs(): List<Map<String, Serializable?>> = try {
+        val groups = classifyTvInputs()
+        (groups.hdmi + groups.other).map(::tvInputEntryMap)
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** The entry the Inputs page would show for [inputId], or null when it is hidden or deduplicated away. */
+    private fun findShownTvInput(inputId: String): TvInputEntry? = try {
+        val groups = classifyTvInputs()
+        (groups.hdmi + groups.other).firstOrNull { it.id == inputId }
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun tvInputEntryMap(entry: TvInputEntry): Map<String, Serializable?> = mapOf(
+        "id" to entry.id,
+        "name" to entry.name,
+        "type" to entry.type,
+        "group" to entry.group,
     )
 
     private fun launchTvInput(inputId: String?): Boolean {
@@ -877,6 +903,8 @@ class MainActivity : FlutterActivity() {
                 android.util.Log.e("FLauncher", "Failed to get TV input info for ID: $inputId")
                 return false
             }
+
+            if (tvInputInfo.type != TvInputInfo.TYPE_HDMI) return launchNonHdmiTvInput(inputId)
             
             // Extract HDMI port information from input name or ID
             val inputName = tvInputInfo.loadLabel(context).toString()
@@ -998,6 +1026,58 @@ class MainActivity : FlutterActivity() {
         }
     }
     
+    /**
+     * Switches to a tuner/AV/component/VGA input. Carries none of the HDMI port extras:
+     * the passthrough URI alone selects the input.
+     */
+    private fun launchNonHdmiTvInput(inputId: String): Boolean = try {
+        val intent = Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(inputId)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (isMediaTekTv()) {
+                component = ComponentName(
+                    "com.mediatek.wwtv.tvcenter",
+                    "com.mediatek.wwtv.tvcenter.nav.TurnkeyUiMainActivity"
+                )
+            }
+        }
+        startActivity(intent)
+        true
+    } catch (e: Exception) {
+        android.util.Log.e("FLauncher", "Failed to launch non-HDMI TV input $inputId: ${e.message}")
+        false
+    }
+
+    /** Opens the MediaTek factory "Design Menu" or "Factory Menu" through its public activity. */
+    private fun openEngineeringMenu(menu: String?): Boolean {
+        val (component, action) = when (menu) {
+            "design" -> ComponentName(
+                "mediatek.factorymenu.ui",
+                "mediatek.tvsetting.factory.ui.designmenu.DesignMenuActivity"
+            ) to "mediatek.tvsetting.factory.intent.action.MainmenuActivity"
+            "factory" -> ComponentName(
+                "mediatek.factorymenu.ui",
+                "mediatek.tvsetting.factory.ui.factorymenu.FactoryMenuActivity"
+            ) to "mediatek.tvsetting.factory.intent.action.FactorymenuActivity"
+            else -> return false
+        }
+        val attempts = listOf(
+            Intent().setComponent(component),
+            Intent(action),
+        )
+        for (intent in attempts) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (e: ActivityNotFoundException) {
+                android.util.Log.w("FLauncher", "Engineering menu $menu unavailable via $intent: ${e.message}")
+            } catch (e: SecurityException) {
+                android.util.Log.w("FLauncher", "Engineering menu $menu not permitted via $intent: ${e.message}")
+            }
+        }
+        return false
+    }
+
     /**
      * Check if this is likely a MediaTek TV
      */
