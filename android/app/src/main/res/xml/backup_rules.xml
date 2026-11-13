@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backup contents up to Android 11. The ADB key pair is authorised on this
+  device's own adbd; a copy of it in a backup would give whoever holds the
+  backup a shell on the TV.
+-->
+<full-backup-content>
+    <exclude domain="file" path="adb_private.key" />
+    <exclude domain="file" path="adb_certificate.pem" />
+</full-backup-content>

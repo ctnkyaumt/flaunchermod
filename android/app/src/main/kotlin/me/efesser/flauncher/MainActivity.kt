@@ -51,6 +51,9 @@ import androidx.annotation.NonNull
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 import android.media.tv.TvInputManager.TvInputCallback
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -70,6 +73,7 @@ private const val METHOD_CHANNEL = "me.efesser.flauncher/method"
 private const val EVENT_CHANNEL = "me.efesser.flauncher/event"
 private const val HDMI_EVENT_CHANNEL = "me.efesser.flauncher/hdmi_event"
 private const val KEY_CAPTURE_EVENT_CHANNEL = "me.efesser.flauncher/key_capture_event"
+private const val NETWORK_EVENT_CHANNEL = "me.efesser.flauncher/network_event"
 private const val PICK_BACKUP_JSON_REQUEST_CODE = 2001
 private const val MAX_BACKUP_JSON_BYTES = 32 * 1024 * 1024
 
@@ -79,6 +83,7 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pickBackupJsonResult: MethodChannel.Result? = null
     private var keyCaptureReceiver: BroadcastReceiver? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val systemTextInputDialog by lazy { SystemTextInputDialog(this) }
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
@@ -103,13 +108,14 @@ class MainActivity : FlutterActivity() {
                     "rawInputStatus" -> result.success(rawInputStatus())
                     "adbPair" -> {
                         val args = call.arguments as Map<*, *>
-                        result.success(
-                            AdbInputBridge.pair(
-                                this,
-                                (args["port"] as Number).toInt(),
-                                args["code"] as String,
-                            )
-                        )
+                        val port = (args["port"] as Number).toInt()
+                        val code = args["code"] as String
+                        // Pairing opens a socket, which Android refuses on the
+                        // main thread.
+                        Thread {
+                            val paired = AdbInputBridge.pair(this, port, code)
+                            mainHandler.post { result.success(paired) }
+                        }.start()
                     }
                     "startRawInput" -> {
                         notifyRawInputAvailable()
@@ -206,7 +212,8 @@ class MainActivity : FlutterActivity() {
                     }
 
                     override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
-                        val applications = packageNames.map(::getApplication)
+                        // A package with nothing to launch has no entry.
+                        val applications = packageNames.mapNotNull(::getApplication)
                         if (applications.isNotEmpty()) {
                             events.success(mapOf("action" to "PACKAGES_AVAILABLE", "activitiesInfo" to applications))
                         }
@@ -307,24 +314,79 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     val filter = IntentFilter(FLauncherAccessibilityService.ACTION_KEY_CAPTURED)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        registerReceiver(keyCaptureReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-                    } else {
-                        registerReceiver(keyCaptureReceiver, filter)
+                    InternalBroadcasts.register(this@MainActivity, keyCaptureReceiver!!, filter)
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    unregisterKeyCaptureReceiver()
+                }
+            })
+
+        // Tells Dart when a network comes up, so anything waiting on the
+        // internet can retry at once instead of on its own timer.
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, NETWORK_EVENT_CHANNEL)
+            .setStreamHandler(object : StreamHandler {
+                override fun onListen(arguments: Any?, events: EventSink) {
+                    unregisterNetworkCallback()
+                    val callback = object : ConnectivityManager.NetworkCallback() {
+                        // Only touched on the connectivity thread.
+                        private val validated = HashSet<Network>()
+
+                        override fun onAvailable(network: Network) {
+                            mainHandler.post { events.success(true) }
+                        }
+
+                        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                            val usable = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                            if (!usable) {
+                                validated.remove(network)
+                            } else if (validated.add(network)) {
+                                // Signal strength changes arrive here too; only
+                                // the step to "reaches the internet" matters.
+                                mainHandler.post { events.success(true) }
+                            }
+                        }
+
+                        override fun onLost(network: Network) {
+                            validated.remove(network)
+                        }
+                    }
+                    try {
+                        (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager)
+                            .registerDefaultNetworkCallback(callback)
+                        networkCallback = callback
+                    } catch (e: Exception) {
+                        android.util.Log.w("FLauncher", "Network callback unavailable: ${e.message}")
                     }
                 }
 
                 override fun onCancel(arguments: Any?) {
-                    keyCaptureReceiver?.let {
-                        try {
-                            unregisterReceiver(it)
-                        } catch (e: IllegalArgumentException) {
-                            // Already unregistered.
-                        }
-                        keyCaptureReceiver = null
-                    }
+                    unregisterNetworkCallback()
                 }
             })
+    }
+
+    private fun unregisterKeyCaptureReceiver() {
+        keyCaptureReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (e: IllegalArgumentException) {
+                // Already unregistered.
+            }
+            keyCaptureReceiver = null
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        networkCallback?.let {
+            try {
+                (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
+            } catch (e: Exception) {
+                // Already unregistered.
+            }
+            networkCallback = null
+        }
     }
 
     /**
@@ -651,6 +713,8 @@ class MainActivity : FlutterActivity() {
             val tvInputManager = getSystemService(TV_INPUT_SERVICE) as TvInputManager
             tvInputManager.unregisterCallback(it)
         }
+        unregisterKeyCaptureReceiver()
+        unregisterNetworkCallback()
         super.onDestroy()
     }
 
@@ -658,17 +722,26 @@ class MainActivity : FlutterActivity() {
         val tvActivitiesInfo = queryIntentActivities(false)
         val nonTvActivitiesInfo = queryIntentActivities(true)
                 .filter { nonTvActivityInfo -> !tvActivitiesInfo.any { tvActivityInfo -> tvActivityInfo.packageName == nonTvActivityInfo.packageName } }
-        return tvActivitiesInfo.map { buildAppMap(it, false) } + nonTvActivitiesInfo.map { buildAppMap(it, true) }
+        return tvActivitiesInfo.mapNotNull { buildAppMapOrNull(it, false) } +
+            nonTvActivitiesInfo.mapNotNull { buildAppMapOrNull(it, true) }
     }
 
     private fun getApplication(packageName: String): Map<String, Serializable?>? {
         return packageManager.getLeanbackLaunchIntentForPackage(packageName)
             ?.resolveActivityInfo(packageManager, 0)
-            ?.let { buildAppMap(it, false) }
+            ?.let { buildAppMapOrNull(it, false) }
             ?: return packageManager.getLaunchIntentForPackage(packageName)
                 ?.resolveActivityInfo(packageManager, 0)
-                ?.let { buildAppMap(it, true) }
+                ?.let { buildAppMapOrNull(it, true) }
     }
+
+    /** Null when the package was removed between being listed and looked up. */
+    private fun buildAppMapOrNull(activityInfo: ActivityInfo, sideloaded: Boolean): Map<String, Serializable?>? =
+        try {
+            buildAppMap(activityInfo, sideloaded)
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        }
 
     /**
      * Every app worth offering as a button mapping target.

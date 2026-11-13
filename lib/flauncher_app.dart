@@ -81,7 +81,10 @@ class FLauncherApp extends StatelessWidget {
                 ..settingsService = settingsService
                 ..onSettingsChanged()),
           ChangeNotifierProxyProvider<SettingsService, WeatherService>(
-              create: (_) => WeatherService(),
+              create: (_) => WeatherService(
+                    preferences: _sharedPreferences,
+                    networkAvailable: _fLauncherChannel.networkAvailableStream,
+                  ),
               update: (_, settingsService, weatherService) => weatherService!..settingsService = settingsService),
           Provider<TickerModel>(create: (context) => TickerModel(null))
         ],

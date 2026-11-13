@@ -27,6 +27,7 @@ import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
+import 'package:flauncher/providers/weather_service.dart';
 import 'package:flauncher/widgets/apps_grid.dart';
 import 'package:flauncher/widgets/category_row.dart';
 import 'package:flauncher/widgets/device_power_dialog.dart';
@@ -76,6 +77,8 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // The minute timer does not run while the TV sleeps.
+      context.read<WeatherService?>()?.refreshIfNeeded();
       _checkInstallFlow();
       _runStartupPermissionsFlow();
     }
@@ -448,14 +451,25 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
   // Sizing to the *physical* pixel count used to blow the image up to
   // devicePixelRatio times the screen size; filling the stack lets the engine
   // pick the right raster size instead.
+  //
+  // A photo is decoded no wider than the screen: at full size a 12-megapixel
+  // picture takes about 48 MB of memory on a TV that has little to spare.
   Widget _wallpaper(BuildContext context, Uint8List? wallpaperImage, Gradient gradient) => wallpaperImage != null
       ? Image.memory(
           wallpaperImage,
           key: Key("background"),
           fit: BoxFit.cover,
           gaplessPlayback: true,
+          cacheWidth: _screenWidthInPixels(context),
         )
       : Container(key: Key("background"), decoration: BoxDecoration(gradient: gradient));
+
+  /// Null before the first layout, which leaves the image at its own size.
+  int? _screenWidthInPixels(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final width = (media.size.width * media.devicePixelRatio).round();
+    return width > 0 ? width : null;
+  }
 
   Widget _emptyState(BuildContext context) => Center(
         child: Column(

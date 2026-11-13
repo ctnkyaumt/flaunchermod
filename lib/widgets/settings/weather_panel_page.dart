@@ -420,7 +420,25 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     }
 
     final lat = double.tryParse(next.trim());
+    if (lat != null && !_coordinateInRange(lat, limit: 90, name: 'Latitude')) {
+      return;
+    }
     await settings.setWeatherCoordinates(latitude: lat, longitude: settings.weatherLongitude);
+  }
+
+  /// A coordinate outside its range gets no forecast, and a backup holding one
+  /// is refused on restore, so it is not saved in the first place.
+  bool _coordinateInRange(double value, {required double limit, required String name}) {
+    if (value.isFinite && value.abs() <= limit) {
+      return true;
+    }
+    if (mounted) {
+      final bound = limit.toInt();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$name must be between -$bound and $bound.')),
+      );
+    }
+    return false;
   }
 
   Future<void> _editLongitude(BuildContext context, SettingsService settings) async {
@@ -436,6 +454,9 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     }
 
     final lon = double.tryParse(next.trim());
+    if (lon != null && !_coordinateInRange(lon, limit: 180, name: 'Longitude')) {
+      return;
+    }
     await settings.setWeatherCoordinates(latitude: settings.weatherLatitude, longitude: lon);
   }
 

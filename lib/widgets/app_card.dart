@@ -277,7 +277,8 @@ class _AppCardState extends State<AppCard> with SingleTickerProviderStateMixin {
         application: widget.application,
       ),
     );
-    if (result == ApplicationInfoPanelResult.reorderApp) {
+    // The card is gone if its app was uninstalled while the panel was open.
+    if (result == ApplicationInfoPanelResult.reorderApp && mounted) {
       setState(() => _moving = true);
     }
   }

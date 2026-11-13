@@ -75,42 +75,76 @@ class AppsService extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    await _refreshState(shouldNotifyListeners: false);
-    if (_database.wasCreated) {
-      await _initDefaultCategories();
+    try {
+      await _refreshState(shouldNotifyListeners: false);
+      if (_database.wasCreated) {
+        await _initDefaultCategories();
+      }
+      await _ensureTvApplicationsTop(shouldNotifyListeners: false);
+    } catch (e) {
+      // The saved layout is still better than "Loading..." forever.
+      debugPrint('AppsService: initial load failed - $e');
+      try {
+        _categories = await _database.listCategoriesWithVisibleApps();
+        _applications = await _database.listApplications();
+      } catch (e) {
+        debugPrint('AppsService: saved layout unreadable - $e');
+      }
     }
-    await _ensureTvApplicationsTop(shouldNotifyListeners: false);
     _fLauncherChannel.addAppsChangedListener(_onAppsChanged);
     _initialized = true;
     notifyListeners();
   }
 
   Future<void> _onAppsChanged(Map<dynamic, dynamic> event) async {
-    switch (event["action"]) {
-      case "PACKAGE_ADDED":
-      case "PACKAGE_CHANGED":
-        final appInfo = event["activitiyInfo"];
-        final packageName = appInfo["packageName"] as String?;
-        if (packageName != null) {
-          _packageAddedController.add(packageName);
-        }
-        await _database.persistApps([_buildAppCompanion(appInfo)]);
-        await _autoAssignToDefaultCategories([appInfo]);
-        break;
-      case "PACKAGES_AVAILABLE":
-        final appsInfo = (event["activitiesInfo"] as List<dynamic>);
-        await _database.persistApps(appsInfo.map(_buildAppCompanion).toList());
-        await _autoAssignToDefaultCategories(appsInfo);
-        break;
-      case "PACKAGE_REMOVED":
-        await _database.deleteApps([event["packageName"]]);
-        break;
+    try {
+      switch (event["action"]) {
+        case "PACKAGE_ADDED":
+        case "PACKAGE_CHANGED":
+          final appInfo = event["activitiyInfo"];
+          if (appInfo == null) {
+            break;
+          }
+          final packageName = appInfo["packageName"] as String?;
+          if (packageName != null) {
+            _packageAddedController.add(packageName);
+          }
+          await _persistReportedApps([appInfo]);
+          break;
+        case "PACKAGES_AVAILABLE":
+          // A package with nothing to launch is reported as null.
+          final appsInfo = (event["activitiesInfo"] as List<dynamic>).where((appInfo) => appInfo != null).toList();
+          await _persistReportedApps(appsInfo);
+          break;
+        case "PACKAGE_REMOVED":
+          await _database.deleteApps([event["packageName"]]);
+          break;
+      }
+    } catch (e) {
+      debugPrint('AppsService: package event failed - $e');
     }
     _categories = await _database.listCategoriesWithVisibleApps();
     _applications = await _database.listApplications();
     await _ensureTvApplicationsTop(shouldNotifyListeners: false);
     notifyListeners();
   }
+
+  /// Saves apps the system reported as added, changed or available, without
+  /// undoing the user's choice to hide or show them.
+  Future<void> _persistReportedApps(List<dynamic> appsInfo) async {
+    final companions = <AppsCompanion>[];
+    for (final appInfo in appsInfo) {
+      final existing = await _database.getApp(appInfo["packageName"]);
+      companions.add(_buildAppCompanionPreservingHidden(appInfo, existingHidden: _hiddenToKeep(existing)));
+    }
+    await _database.persistApps(companions);
+    await _autoAssignToDefaultCategories(appsInfo);
+  }
+
+  /// Null for an app seen for the first time, and for one restored from a
+  /// backup before it was installed: that placeholder is hidden only until the
+  /// app arrives.
+  bool? _hiddenToKeep(App? existing) => existing == null || existing.version.isEmpty ? null : existing.hidden;
 
   /// Files newly seen, user-visible apps into their default category, creating
   /// that category if it does not exist yet.
@@ -171,17 +205,6 @@ class AppsService extends ChangeNotifier {
         )
     ]);
   }
-
-  AppsCompanion _buildAppCompanion(dynamic data) => AppsCompanion(
-        packageName: Value(data["packageName"]),
-        name: Value(data["name"]),
-        version: Value(data["version"] ?? "(unknown)"),
-        banner: Value(data["banner"]),
-        icon: Value(data["icon"]),
-        hidden: Value((data["isSystemApp"] ?? false) || data["packageName"] == "me.efesser.flauncher"),
-        sideloaded: Value(data["sideloaded"]),
-        isSystemApp: Value(data["isSystemApp"] ?? false),
-      );
 
   AppsCompanion _buildAppCompanionPreservingHidden(dynamic data, {required bool? existingHidden}) => AppsCompanion(
         packageName: Value(data["packageName"]),
@@ -263,7 +286,7 @@ class AppsService extends ChangeNotifier {
       final appsFromSystem = (await _fLauncherChannel.getApplications())
           .map((data) => _buildAppCompanionPreservingHidden(
                 data,
-                existingHidden: existingAppsByPackageName[data["packageName"]]?.hidden,
+                existingHidden: _hiddenToKeep(existingAppsByPackageName[data["packageName"]]),
               ))
           .toList();
 

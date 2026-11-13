@@ -33,7 +33,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
-import android.text.TextUtils
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
@@ -147,17 +146,15 @@ class FLauncherAccessibilityService : AccessibilityService() {
         private const val RAW_DOWN = 1
 
         fun isEnabled(context: Context): Boolean {
-            val expected = "${context.packageName}/${FLauncherAccessibilityService::class.java.canonicalName}"
             val enabled = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-            ) ?: return false
-            val splitter = TextUtils.SimpleStringSplitter(':')
-            splitter.setString(enabled)
-            while (splitter.hasNext()) {
-                if (splitter.next().equals(expected, ignoreCase = true)) return true
-            }
-            return false
+            )
+            return EnabledAccessibilityServices.contains(
+                enabled,
+                context.packageName,
+                FLauncherAccessibilityService::class.java.name,
+            )
         }
     }
 
@@ -229,11 +226,7 @@ class FLauncherAccessibilityService : AccessibilityService() {
             addAction(ACTION_REBIND_RAW_INPUT)
         }
         // Not exported: only the launcher process sends these.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(commandReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(commandReceiver, filter)
-        }
+        InternalBroadcasts.register(this, commandReceiver, filter)
         // The accessibility service is the one part of the launcher that is
         // always running, so it owns the raw input helper too.
         startRawInput()

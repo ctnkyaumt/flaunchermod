@@ -42,8 +42,13 @@ class AppSpec {
 }
 
 class AppInstallService extends ChangeNotifier {
-  final FLauncherChannel _channel = FLauncherChannel();
+  final FLauncherChannel _channel;
   final SharedPreferences _prefs;
+  final HttpClient Function() _newHttpClient;
+  final Future<Directory> Function() _temporaryDirectory;
+
+  /// How long a download source may stay silent before it is given up on.
+  final Duration _networkTimeout;
 
   final Map<String, String> _status = {};
   final Map<String, double> _progress = {};
@@ -116,7 +121,16 @@ class AppInstallService extends ChangeNotifier {
     ),
   ];
 
-  AppInstallService(this._prefs);
+  AppInstallService(
+    this._prefs, {
+    FLauncherChannel? channel,
+    HttpClient Function()? httpClient,
+    Future<Directory> Function()? temporaryDirectory,
+    Duration networkTimeout = const Duration(seconds: 30),
+  })  : _channel = channel ?? FLauncherChannel(),
+        _newHttpClient = httpClient ?? _defaultHttpClient,
+        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+        _networkTimeout = networkTimeout;
 
   bool get isInstallingFlow => _prefs.getBool(_kIsInstallingKey) ?? false;
 
@@ -181,22 +195,7 @@ class AppInstallService extends ChangeNotifier {
         _progress[name] = 0.0;
         notifyListeners();
 
-        final resolved = await _resolveUrl(source);
-        if (resolved == null) {
-          continue;
-        }
-
-        var downloadUrl = resolved;
-        if (!downloadUrl.startsWith("http")) {
-          if (downloadUrl.startsWith("//")) {
-            downloadUrl = "https:$downloadUrl";
-          }
-        }
-
-        _status[name] = "Downloading… (${i + 1}/${app.sources.length})";
-        notifyListeners();
-
-        final file = await _downloadApk(name, downloadUrl);
+        final file = await _downloadFrom(source, name, "(${i + 1}/${app.sources.length})");
         if (file == null) {
           continue;
         }
@@ -240,6 +239,32 @@ class AppInstallService extends ChangeNotifier {
     }
   }
 
+  /// Null when this source has nothing usable, so the next one gets its turn;
+  /// one source failing is why an app lists several.
+  Future<File?> _downloadFrom(String source, String name, String step) async {
+    try {
+      final resolved = await _resolveUrl(source);
+      if (resolved == null) {
+        return null;
+      }
+
+      var downloadUrl = resolved;
+      if (!downloadUrl.startsWith("http")) {
+        if (downloadUrl.startsWith("//")) {
+          downloadUrl = "https:$downloadUrl";
+        }
+      }
+
+      _status[name] = "Downloading… $step";
+      notifyListeners();
+
+      return await _downloadApk(name, downloadUrl);
+    } catch (e) {
+      debugPrint('AppInstallService: $source failed - $e');
+      return null;
+    }
+  }
+
   bool _isArm64() {
     try {
       return Abi.current() == Abi.androidArm64;
@@ -251,13 +276,8 @@ class AppInstallService extends ChangeNotifier {
   Future<String?> _getGithubLatestApk(String ownerRepo) async {
     try {
       final uri = Uri.parse("https://api.github.com/repos/$ownerRepo/releases/latest");
-      final client = HttpClient();
-      final request = await client.getUrl(uri);
-      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
-      request.headers.set(HttpHeaders.acceptHeader, "application/vnd.github+json");
-      final response = await request.close();
-      if (response.statusCode < 200 || response.statusCode >= 300) return null;
-      final body = await response.transform(utf8.decoder).join();
+      final body = await _getText(uri, accept: "application/vnd.github+json");
+      if (body == null) return null;
       final data = jsonDecode(body);
       if (data is! Map) return null;
 
@@ -298,12 +318,8 @@ class AppInstallService extends ChangeNotifier {
 
   Future<String?> _getApkSupportDirectLink(String packageName) async {
     try {
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse("https://apk.support/download-app/$packageName"));
-      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
-      final response = await request.close();
-      if (response.statusCode < 200 || response.statusCode >= 300) return null;
-      final html = await response.transform(utf8.decoder).join();
+      final html = await _getText(Uri.parse("https://apk.support/download-app/$packageName"));
+      if (html == null) return null;
       final match = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
       return match?.group(1);
     } catch (_) {
@@ -351,12 +367,8 @@ class AppInstallService extends ChangeNotifier {
 
   Future<String?> _getStremioApk() async {
     try {
-      final client = HttpClient();
-      final request = await client.getUrl(Uri.parse("https://www.stremio.com/downloads"));
-      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
-      final response = await request.close();
-      if (response.statusCode < 200 || response.statusCode >= 300) return null;
-      final html = await response.transform(utf8.decoder).join();
+      final html = await _getText(Uri.parse("https://www.stremio.com/downloads"));
+      if (html == null) return null;
 
       // Find "Stremio for Android TV" section to ensure we get the TV version
       // The user mentioned the 4th child div, which likely corresponds to the TV section.
@@ -404,56 +416,91 @@ class AppInstallService extends ChangeNotifier {
     }
   }
 
+  /// The body of [uri], or null for anything but a successful answer.
+  Future<String?> _getText(Uri uri, {String? accept}) async {
+    final client = _newHttpClient()..connectionTimeout = _networkTimeout;
+    try {
+      final request = await client.getUrl(uri).timeout(_networkTimeout);
+      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
+      if (accept != null) {
+        request.headers.set(HttpHeaders.acceptHeader, accept);
+      }
+      final response = await request.close().timeout(_networkTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      return await response.transform(utf8.decoder).join().timeout(_networkTimeout);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   Future<File?> _downloadApk(String name, String downloadUrl, {int depth = 0}) async {
     if (depth > 2) return null;
-    final client = HttpClient();
-    final request = await client.getUrl(Uri.parse(downloadUrl));
-    request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
-    final response = await request.close();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      return null;
-    }
+    final client = _newHttpClient()..connectionTimeout = _networkTimeout;
+    try {
+      final request = await client.getUrl(Uri.parse(downloadUrl)).timeout(_networkTimeout);
+      request.headers.set(HttpHeaders.userAgentHeader, "FLauncher");
+      final response = await request.close().timeout(_networkTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
 
-    final mimeType = response.headers.contentType?.mimeType;
-    if (mimeType == "text/html" || mimeType == "application/xhtml+xml") {
-      final html = await response.transform(utf8.decoder).join();
-      final match = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
-      final nextUrl = match?.group(1);
-      if (nextUrl == null) return null;
-      return _downloadApk(name, nextUrl, depth: depth + 1);
-    }
+      final mimeType = response.headers.contentType?.mimeType;
+      if (mimeType == "text/html" || mimeType == "application/xhtml+xml") {
+        final html = await response.transform(utf8.decoder).join().timeout(_networkTimeout);
+        final match = RegExp("(https?://[^\"']+\\.apk[^\"']*)", caseSensitive: false).firstMatch(html);
+        final nextUrl = match?.group(1);
+        if (nextUrl == null) return null;
+        return await _downloadApk(name, nextUrl, depth: depth + 1);
+      }
 
-    final dir = await getTemporaryDirectory();
-    final fileName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
-    final file = File('${dir.path}/$fileName-${DateTime.now().millisecondsSinceEpoch}.apk');
-    final sink = file.openWrite();
+      final dir = await _temporaryDirectory();
+      final fileName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      final file = File('${dir.path}/$fileName-${DateTime.now().millisecondsSinceEpoch}.apk');
+      final sink = file.openWrite();
 
-    final total = response.contentLength;
-    int received = 0;
-    // Notifying on every chunk rebuilds the install UI hundreds of times a
-    // second on a fast link; 1% steps are more than the progress bar can show.
-    double lastNotified = 0;
-    await response.listen((data) {
-      sink.add(data);
-      received += data.length;
-      if (total > 0) {
-        final progress = received / total;
-        _progress[name] = progress;
-        if (progress - lastNotified >= 0.01 || progress >= 1) {
-          lastNotified = progress;
-          notifyListeners();
+      final total = response.contentLength;
+      int received = 0;
+      // Notifying on every chunk rebuilds the install UI hundreds of times a
+      // second on a fast link; 1% steps are more than the progress bar can show.
+      double lastNotified = 0;
+      var finished = false;
+      try {
+        // No limit on the whole download, which can be large on a slow link;
+        // only on how long the source may send nothing at all.
+        await for (final data in response.timeout(_networkTimeout)) {
+          sink.add(data);
+          received += data.length;
+          if (total > 0) {
+            final progress = received / total;
+            _progress[name] = progress;
+            if (progress - lastNotified >= 0.01 || progress >= 1) {
+              lastNotified = progress;
+              notifyListeners();
+            }
+          }
+        }
+        finished = true;
+      } finally {
+        await sink.close();
+        if (!finished) {
+          try {
+            await file.delete();
+          } catch (_) {}
         }
       }
-    }).asFuture();
-    await sink.close();
 
-    final isApk = await _looksLikeApk(file);
-    if (!isApk) {
-      try {
-        await file.delete();
-      } catch (_) {}
-      return null;
+      final isApk = await _looksLikeApk(file);
+      if (!isApk) {
+        try {
+          await file.delete();
+        } catch (_) {}
+        return null;
+      }
+      return file;
+    } finally {
+      client.close(force: true);
     }
-    return file;
   }
 }
+
+HttpClient _defaultHttpClient() => HttpClient();

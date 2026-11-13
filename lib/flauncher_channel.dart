@@ -28,6 +28,7 @@ class FLauncherChannel {
   static const _eventChannel = EventChannel('me.efesser.flauncher/event');
   static const _hdmiEventChannel = EventChannel('me.efesser.flauncher/hdmi_event');
   static const _keyCaptureEventChannel = EventChannel('me.efesser.flauncher/key_capture_event');
+  static const _networkEventChannel = EventChannel('me.efesser.flauncher/network_event');
 
   Future<List<dynamic>> getApplications() async => (await _methodChannel.invokeListMethod('getApplications'))!;
 
@@ -182,4 +183,8 @@ class FLauncherChannel {
       await _methodChannel.invokeMethod('setKeyCaptureMode', enabled);
 
   Stream<dynamic> get keyCaptureStream => _keyCaptureEventChannel.receiveBroadcastStream();
+
+  /// Emits each time the device gets a network, and again once that network
+  /// is known to reach the internet.
+  Stream<dynamic> get networkAvailableStream => _networkEventChannel.receiveBroadcastStream();
 }
