@@ -107,6 +107,9 @@ jobs:
           flutter test
           test/providers/backup_service_test.dart
           test/providers/apps_restore_test.dart
+          test/providers/apps_package_events_test.dart
+          test/providers/app_install_service_test.dart
+          test/providers/weather_service_test.dart
           test/providers/settings_service_test.dart
           test/providers/wallpaper_service_test.dart
           test/providers/button_mapping_service_test.dart

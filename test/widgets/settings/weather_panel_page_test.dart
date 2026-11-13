@@ -261,6 +261,24 @@ void main() {
     expect(weather.queries, isEmpty);
   });
 
+  testWidgets('A latitude or longitude off the globe is refused and the saved one kept', (tester) async {
+    await _pumpWeather(tester, settings, weather);
+    tester.widget<TextButton>(find.widgetWithText(TextButton, 'Enter coordinates')).onPressed!();
+    await tester.pumpAndSettle();
+
+    await _typeCoordinate(tester, 'Latitude', '200');
+    expect(settings.weatherLatitude, 10);
+    expect(find.text('Latitude must be between -90 and 90.'), findsOneWidget);
+
+    await _typeCoordinate(tester, 'Longitude', '-181');
+    expect(settings.weatherLongitude, 20);
+
+    await _typeCoordinate(tester, 'Latitude', '-90');
+    await _typeCoordinate(tester, 'Longitude', '180');
+    expect(settings.weatherLatitude, -90);
+    expect(settings.weatherLongitude, 180);
+  });
+
   testWidgets('Display name and city share a guard against overlapping editors', (tester) async {
     await _pumpWeather(tester, settings, weather);
     final editName = tester.widget<TextButton>(_displayNameButton).onPressed!;
@@ -329,6 +347,21 @@ Future<void> _pumpWeather(WidgetTester tester, SettingsService settings, Weather
 Future<void> _openCity(WidgetTester tester) async {
   await tester.tap(_cityButton);
   await tester.pumpAndSettle();
+}
+
+/// Replaces a coordinate through the on-screen number keyboard.
+Future<void> _typeCoordinate(WidgetTester tester, String field, String value) async {
+  Future<void> press(String label) async {
+    tester.widget<TextButton>(find.widgetWithText(TextButton, label).first).onPressed!();
+    await tester.pumpAndSettle();
+  }
+
+  await press(field);
+  await press('CLEAR');
+  for (final key in value.split('')) {
+    await press(key);
+  }
+  await press('DONE');
 }
 
 Future<void> _openDisplayName(WidgetTester tester) async {
