@@ -9,7 +9,9 @@ on:
 jobs:
   build_release_apk:
     name: Build Release APK
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest became 26.04, whose default JDK 25 cannot run the
+    # Gradle 7.4 this Flutter version builds with.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       
