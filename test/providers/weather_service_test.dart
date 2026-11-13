@@ -133,7 +133,8 @@ void main() {
 
     expect(shown(tester, service), 18);
     await stop(tester, [service]);
-    await network.close();
+    // Not awaited: with its only listener gone the close never reports done.
+    network.close();
   });
 
   testWidgets('a request that never answers gives way to one that does', (tester) async {
