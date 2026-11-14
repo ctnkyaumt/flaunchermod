@@ -60,6 +60,9 @@ enum RemotePress {
   up,
 }
 
+// This package's language version predates constructor tear-offs.
+DateTime _now() => DateTime.now();
+
 class _Press {
   _Press(this.since);
 
@@ -72,7 +75,7 @@ class _Press {
 /// [RemotePress.held]. A release or repeat whose key-down this tracker never saw yields
 /// [RemotePress.none]. All forms of Back count as one key.
 class RemotePressTracker {
-  RemotePressTracker({this.holdAfter, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  RemotePressTracker({this.holdAfter, DateTime Function()? clock}) : _clock = clock ?? _now;
 
   /// How long a press must last to be [RemotePress.held]; null never reports it.
   final Duration? holdAfter;
