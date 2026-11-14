@@ -31,26 +31,21 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
-void main() {
-  late FLauncherDatabase database;
-  late _SystemApps system;
-  late AppsService apps;
+// Everything a test awaits (the database, the apps service, the fake
+// channel's pending launch) is created inside the test body. testWidgets runs
+// the body in a fake-async zone that only runs its own microtasks; a future
+// created in setUp completes in the real zone, which the body never yields
+// to, so awaiting it would stall the test.
 
-  setUp(() async {
+void main() {
+  setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.window.physicalSizeTestValue = const Size(1280, 720);
     binding.window.devicePixelRatioTestValue = 1;
     binding.platformDispatcher.textScaleFactorTestValue = 0.8;
-    database = FLauncherDatabase.inMemory();
-    await database.insertCategory(CategoriesCompanion.insert(name: 'Games', order: 5));
-    system = _SystemApps();
-    apps = AppsService(system, database);
-    await _initialized(apps);
   });
 
-  tearDown(() async {
-    apps.dispose();
-    await database.close();
+  tearDown(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     binding.window.clearPhysicalSizeTestValue();
     binding.window.clearDevicePixelRatioTestValue();
@@ -58,101 +53,148 @@ void main() {
   });
 
   testWidgets('Holding OK on a category adds the app once and closes only the dialog', (tester) async {
-    final app = _app(apps);
-    await _pumpHome(tester, apps, (context) => showDialog<void>(context: context, builder: (_) => AddToCategoryDialog(app)));
-    await _openFromHome(tester);
-    Focus.of(tester.element(find.text('Games'))).requestFocus();
-    await tester.pump();
-
-    // Android sends repeated key-downs while OK is held.
-    await _sendAndroidKey(tester, 'keydown', 23);
-    for (var repeat = 1; repeat <= 3; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
-    }
-    await _pumpUntil(tester, () => _appsIn(apps, 'Games').isNotEmpty);
-    for (var repeat = 4; repeat <= 6; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+    final launcher = await _start(tester);
+    try {
+      final app = _app(launcher.apps);
+      await _pumpHome(
+          tester, launcher.apps, (context) => showDialog<void>(context: context, builder: (_) => AddToCategoryDialog(app)));
+      await _openFromHome(tester);
+      Focus.of(tester.element(find.text('Games'))).requestFocus();
       await tester.pump();
-    }
-    await _sendAndroidKey(tester, 'keyup', 23);
-    await tester.pumpAndSettle();
 
-    expect(_appsIn(apps, 'Games'), ['a.app']);
-    expect(find.byType(AddToCategoryDialog), findsNothing);
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Details'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  }, timeout: const Timeout(Duration(seconds: 30)));
+      // OK goes down and Android repeats it. The messages are dispatched back
+      // to back, so the add (database work) is still in flight for every repeat.
+      await Future.wait([
+        _sendAndroidKey(tester, 'keydown', 23),
+        for (var repeat = 1; repeat <= 3; repeat++) _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat),
+      ]);
+      await _pumpUntil(tester, () => _appsIn(launcher.apps, 'Games').isNotEmpty);
+      // Still held after the add finished.
+      for (var repeat = 4; repeat <= 6; repeat++) {
+        await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+        await tester.pump();
+      }
+      await _sendAndroidKey(tester, 'keyup', 23);
+      await _pumpRouteTransition(tester);
+
+      expect(_appsIn(launcher.apps, 'Games'), ['a.app']);
+      expect(find.byType(AddToCategoryDialog), findsNothing);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _stop(tester, launcher);
+    }
+  });
 
   testWidgets('Holding OK on Open launches the app once and closes only the panel', (tester) async {
-    final app = _app(apps);
-    await _pumpHome(
-      tester,
-      apps,
-      (context) => showDialog<ApplicationInfoPanelResult>(
-        context: context,
-        builder: (_) => ApplicationInfoPanel(category: null, application: app),
-      ),
-    );
-    await _openFromHome(tester);
-    Focus.of(tester.element(find.text('Open'))).requestFocus();
-    await tester.pump();
-
-    await _sendAndroidKey(tester, 'keydown', 23);
-    await tester.pump();
-    for (var repeat = 1; repeat <= 3; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+    final launcher = await _start(tester);
+    try {
+      final app = _app(launcher.apps);
+      await _pumpHome(
+        tester,
+        launcher.apps,
+        (context) => showDialog<ApplicationInfoPanelResult>(
+          context: context,
+          builder: (_) => ApplicationInfoPanel(category: null, application: app),
+        ),
+      );
+      await _openFromHome(tester);
+      Focus.of(tester.element(find.text('Open'))).requestFocus();
       await tester.pump();
-    }
-    expect(system.launches, ['a.app']);
-    system.launch.complete();
-    await tester.pump();
-    for (var repeat = 4; repeat <= 6; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
-      await tester.pump();
-    }
-    await _sendAndroidKey(tester, 'keyup', 23);
-    await tester.pumpAndSettle();
 
-    expect(system.launches, ['a.app']);
-    expect(find.byType(ApplicationInfoPanel), findsNothing);
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Details'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  }, timeout: const Timeout(Duration(seconds: 30)));
+      // The launch stays pending until the test completes it.
+      await _sendAndroidKey(tester, 'keydown', 23);
+      await tester.pump();
+      for (var repeat = 1; repeat <= 3; repeat++) {
+        await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+        await tester.pump();
+      }
+      expect(launcher.system.launches, ['a.app']);
+      launcher.system.launch.complete();
+      await tester.pump();
+      for (var repeat = 4; repeat <= 6; repeat++) {
+        await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+        await tester.pump();
+      }
+      await _sendAndroidKey(tester, 'keyup', 23);
+      await _pumpRouteTransition(tester);
+
+      expect(launcher.system.launches, ['a.app']);
+      expect(find.byType(ApplicationInfoPanel), findsNothing);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _stop(tester, launcher);
+    }
+  });
 
   testWidgets('Holding OK on Hide hides the app and closes only the panel', (tester) async {
-    final app = _app(apps);
-    await _pumpHome(
-      tester,
-      apps,
-      (context) => showDialog<ApplicationInfoPanelResult>(
-        context: context,
-        builder: (_) => ApplicationInfoPanel(category: null, application: app),
-      ),
-    );
-    await _openFromHome(tester);
-    Focus.of(tester.element(find.text('Hide'))).requestFocus();
-    await tester.pump();
-
-    await _sendAndroidKey(tester, 'keydown', 23);
-    for (var repeat = 1; repeat <= 3; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
-    }
-    await _pumpUntil(tester, () => _app(apps).hidden);
-    for (var repeat = 4; repeat <= 6; repeat++) {
-      await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+    final launcher = await _start(tester);
+    try {
+      final app = _app(launcher.apps);
+      await _pumpHome(
+        tester,
+        launcher.apps,
+        (context) => showDialog<ApplicationInfoPanelResult>(
+          context: context,
+          builder: (_) => ApplicationInfoPanel(category: null, application: app),
+        ),
+      );
+      await _openFromHome(tester);
+      Focus.of(tester.element(find.text('Hide'))).requestFocus();
       await tester.pump();
-    }
-    await _sendAndroidKey(tester, 'keyup', 23);
-    await tester.pumpAndSettle();
 
-    expect(_app(apps).hidden, isTrue);
-    expect(find.byType(ApplicationInfoPanel), findsNothing);
-    expect(find.text('Home'), findsOneWidget);
-    expect(find.text('Details'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  }, timeout: const Timeout(Duration(seconds: 30)));
+      // Dispatched back to back: the hide is still being written for every repeat.
+      await Future.wait([
+        _sendAndroidKey(tester, 'keydown', 23),
+        for (var repeat = 1; repeat <= 3; repeat++) _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat),
+      ]);
+      await _pumpUntil(tester, () => _app(launcher.apps).hidden);
+      for (var repeat = 4; repeat <= 6; repeat++) {
+        await _sendAndroidKey(tester, 'keydown', 23, repeatCount: repeat);
+        await tester.pump();
+      }
+      await _sendAndroidKey(tester, 'keyup', 23);
+      await _pumpRouteTransition(tester);
+
+      expect(_app(launcher.apps).hidden, isTrue);
+      expect(find.byType(ApplicationInfoPanel), findsNothing);
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Details'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _stop(tester, launcher);
+    }
+  });
+}
+
+class _Launcher {
+  _Launcher(this.database, this.system, this.apps);
+
+  final FLauncherDatabase database;
+  final _SystemApps system;
+  final AppsService apps;
+}
+
+/// Starts the launcher's app list on an empty in-memory database that also
+/// has a "Games" category, with the system reporting one installed app.
+Future<_Launcher> _start(WidgetTester tester) async {
+  // Remote keys only arrive while the launcher is in the foreground.
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  final database = FLauncherDatabase.inMemory();
+  await database.insertCategory(CategoriesCompanion.insert(name: 'Games', order: 5));
+  final system = _SystemApps();
+  final apps = AppsService(system, database);
+  await _pumpUntil(tester, () => apps.initialized);
+  return _Launcher(database, system, apps);
+}
+
+Future<void> _stop(WidgetTester tester, _Launcher launcher) async {
+  await tester.pumpWidget(const SizedBox());
+  launcher.apps.dispose();
+  await launcher.database.close();
 }
 
 App _app(AppsService apps) => apps.applications.firstWhere((app) => app.packageName == 'a.app');
@@ -181,43 +223,41 @@ Future<void> _pumpHome(WidgetTester tester, AppsService apps, void Function(Buil
       ),
     ),
   ));
-  await tester.pumpAndSettle();
+  await tester.pump();
 }
 
 Future<void> _openFromHome(WidgetTester tester) async {
   await tester.tap(find.text('Details'));
-  await tester.pumpAndSettle();
+  await _pumpRouteTransition(tester);
 }
 
-Future<void> _sendAndroidKey(WidgetTester tester, String type, int keyCode, {int repeatCount = 0}) async {
-  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
-    SystemChannels.keyEvent.name,
-    SystemChannels.keyEvent.codec.encodeMessage({
-      'type': type, 'keymap': 'android', 'keyCode': keyCode, 'scanCode': keyCode == 23 ? 353 : 0,
-      'metaState': 0, 'flags': 0, 'source': 257, 'repeatCount': repeatCount,
-      'deviceId': -1, 'plainCodePoint': 0, 'codePoint': 0,
-    }),
-    (_) {},
-  );
+/// Runs a dialog's open or close transition (150 ms) to its end.
+Future<void> _pumpRouteTransition(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pump();
 }
 
+/// Sends an Android remote key message. The key is handled before this
+/// returns; only the reply to the platform completes later.
+Future<void> _sendAndroidKey(WidgetTester tester, String type, int keyCode, {int repeatCount = 0}) =>
+    tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      SystemChannels.keyEvent.name,
+      SystemChannels.keyEvent.codec.encodeMessage({
+        'type': type, 'keymap': 'android', 'keyCode': keyCode, 'scanCode': keyCode == 23 ? 353 : 0,
+        'metaState': 0, 'flags': 0, 'source': 257, 'repeatCount': repeatCount,
+        'deviceId': -1, 'plainCodePoint': 0, 'codePoint': 0,
+      }),
+      (_) {},
+    );
+
+/// Pumps a bounded number of frames until [ready] holds. The database and
+/// the fake channel complete through microtasks, which each pump runs.
 Future<void> _pumpUntil(WidgetTester tester, bool Function() ready) async {
-  for (var attempt = 0; attempt < 200 && !ready(); attempt++) {
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
-    await tester.pump(const Duration(milliseconds: 10));
+  for (var frame = 0; frame < 20 && !ready(); frame++) {
+    await tester.pump();
   }
-  expect(ready(), isTrue, reason: 'The action did not finish');
-}
-
-Future<void> _initialized(AppsService apps) {
-  if (apps.initialized) return Future.value();
-  final done = Completer<void>();
-  void listener() {
-    if (apps.initialized && !done.isCompleted) done.complete();
-  }
-
-  apps.addListener(listener);
-  return done.future.timeout(const Duration(seconds: 5)).whenComplete(() => apps.removeListener(listener));
+  expect(ready(), isTrue, reason: 'The work did not finish');
 }
 
 /// Stands in for Android's package manager and activity launcher.
