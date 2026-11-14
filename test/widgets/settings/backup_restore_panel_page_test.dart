@@ -86,6 +86,7 @@ void main() {
   Future<void> open(WidgetTester tester) async {
     await tester.pumpWidget(MultiProvider(
       providers: [
+        Provider<FLauncherChannel>.value(value: channel),
         Provider<FLauncherDatabase>.value(value: database),
         ChangeNotifierProvider<SettingsService>.value(value: settings),
         ChangeNotifierProvider<ButtonMappingService>.value(value: mappings),
@@ -231,14 +232,14 @@ class _BackupPaths extends PathProviderPlatform {
 class _BackupChannel extends FLauncherChannel {
   int applicationChecks = 0;
   @override
-  Future<List<dynamic>> getApplications() async => [];
+  Future<List<InstalledApp>> getInstalledApps() async => [];
   @override
   Future<bool> applicationExists(String packageName) async {
     applicationChecks++;
     return false;
   }
   @override
-  void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) {}
+  void addPackageEventListener(void Function(PackageEvent) listener) {}
   @override
   Future<bool> isButtonMapperEnabled() async => false;
   @override

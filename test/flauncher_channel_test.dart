@@ -33,18 +33,16 @@ void main() {
     channel.setMockMethodCallHandler((call) async {
       if (call.method == "getApplications") {
         return [
-          {'packageName': 'me.efesser.flauncher'}
+          {'packageName': 'me.efesser.flauncher', 'name': 'FLauncher'}
         ];
       }
       fail("Unhandled method name");
     });
     final fLauncherChannel = FLauncherChannel();
 
-    final apps = await fLauncherChannel.getApplications();
+    final apps = await fLauncherChannel.getInstalledApps();
 
-    expect(apps, [
-      {'packageName': 'me.efesser.flauncher'}
-    ]);
+    expect(apps.map((app) => app.packageName), ['me.efesser.flauncher']);
   });
 
   test("launchApp", () async {

@@ -73,9 +73,9 @@ void main() {
 
 class _EmptyChannel extends FLauncherChannel {
   @override
-  Future<List<dynamic>> getApplications() async => [];
+  Future<List<InstalledApp>> getInstalledApps() async => [];
   @override
   Future<bool> applicationExists(String packageName) async => false;
   @override
-  void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) {}
+  void addPackageEventListener(void Function(PackageEvent) listener) {}
 }

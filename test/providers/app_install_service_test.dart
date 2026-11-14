@@ -80,6 +80,102 @@ void main() {
     expect(installer.installed, ['PK another app']);
     service.dispose();
   });
+
+  test('downloaded APKs are saved in the apk_downloads folder of the temporary directory', () async {
+    final service = installingFrom({'up.test': _Source.serving('PK player')});
+
+    await service.startInstall(AppSpec(name: 'Player', sources: ['https://up.test/player.apk']));
+
+    expect(installer.installed, ['PK player']);
+    expect(File(installer.installedPaths.single).parent.path, '${downloads.path}/apk_downloads');
+    service.dispose();
+  });
+
+  test('an install asked for while another runs waits for it, then runs to its own result', () async {
+    final service = installingFrom({
+      'first.test': _Source.serving('PK first'),
+      'second.test': _Source.serving('PK second'),
+    });
+    final firstInstallerOpened = Completer<void>();
+    installer.holdNextInstall = firstInstallerOpened;
+
+    final first = service.startInstall(AppSpec(name: 'First', sources: ['https://first.test/first.apk']));
+    var secondEnded = false;
+    final second = service
+        .startInstall(AppSpec(name: 'Second', sources: ['https://second.test/second.apk']))
+        .then((_) => secondEnded = true);
+
+    expect(service.status['Second'], 'Waiting for First…');
+    await installer.installRequested.future;
+    expect(service.status['Second'], 'Waiting for First…');
+    expect(secondEnded, isFalse);
+
+    firstInstallerOpened.complete();
+    await first;
+    await second;
+
+    expect(installer.installed, ['PK first', 'PK second']);
+    expect(service.status['First'], 'Installing…');
+    expect(service.status['Second'], 'Installing…');
+    expect(service.activeAppName, isNull);
+    service.dispose();
+  });
+
+  group('reopening the Install panel on resume', () {
+    final app = AppSpec(name: 'Player', sources: ['https://down.test/player.apk']);
+    AppInstallService needingPermission() {
+      installer.canInstall = false;
+      return installingFrom({'down.test': _Source.unreachable()});
+    }
+
+    test('does not happen when this launcher opened the permission screen itself', () async {
+      final service = needingPermission();
+      await service.startInstall(app);
+      expect(service.status['Player'], 'Permission requested. Retry after granting.');
+
+      expect(service.consumeInstallPanelReopen(), isFalse);
+      // The flag is gone: not even a restart reopens the panel now.
+      expect(needingPermission().consumeInstallPanelReopen(), isFalse);
+      service.dispose();
+    });
+
+    test('happens once after the launcher was restarted while the permission screen showed', () async {
+      final killed = needingPermission();
+      await killed.startInstall(app);
+
+      final restarted = needingPermission();
+      expect(restarted.consumeInstallPanelReopen(), isTrue);
+      expect(restarted.consumeInstallPanelReopen(), isFalse);
+      killed.dispose();
+      restarted.dispose();
+    });
+
+    test('happens once after a restart when the installer itself sent the user to the permission screen', () async {
+      installer.installAnswer = 'needs_permission';
+      final killed = installingFrom({'up.test': _Source.serving('PK player')});
+      await killed.startInstall(AppSpec(name: 'Player', sources: ['https://up.test/player.apk']));
+      expect(killed.consumeInstallPanelReopen(), isFalse);
+      await killed.startInstall(AppSpec(name: 'Player', sources: ['https://up.test/player.apk']));
+
+      final restarted = installingFrom({});
+      expect(restarted.consumeInstallPanelReopen(), isTrue);
+      expect(restarted.consumeInstallPanelReopen(), isFalse);
+      killed.dispose();
+      restarted.dispose();
+    });
+
+    test('never happens when the permission screen could not be opened', () async {
+      installer.permissionScreenOpens = false;
+      final service = needingPermission();
+      await service.startInstall(app);
+      await service.checkAndRequestPermission();
+
+      final restarted = needingPermission();
+      expect(restarted.consumeInstallPanelReopen(), isFalse);
+      service.dispose();
+      restarted.dispose();
+    });
+  });
 }
 
 /// Stands in for Android's package installer on the other side of the channel.
@@ -87,13 +183,43 @@ class _PackageInstaller extends FLauncherChannel {
   /// The contents of every APK handed over for installation.
   final installed = <String>[];
 
+  /// Where each of those APKs was.
+  final installedPaths = <String>[];
+
+  /// Completes when the first APK is handed over.
+  final installRequested = Completer<void>();
+
+  /// Whether "install unknown apps" is already allowed.
+  bool canInstall = true;
+
+  /// Whether asking for that permission manages to open the system screen.
+  bool permissionScreenOpens = true;
+
+  /// What the installer answers for an APK.
+  String installAnswer = 'started';
+
+  /// When set, the next install answers only once this completes.
+  Completer<void>? holdNextInstall;
+
   @override
-  Future<bool> canRequestPackageInstalls() async => true;
+  Future<bool> canRequestPackageInstalls() async => canInstall;
+
+  @override
+  Future<bool> requestPackageInstallsPermission() async => permissionScreenOpens;
 
   @override
   Future<String?> installApk(String filePath) async {
     installed.add(await File(filePath).readAsString());
-    return 'started';
+    installedPaths.add(filePath);
+    if (!installRequested.isCompleted) {
+      installRequested.complete();
+    }
+    final hold = holdNextInstall;
+    holdNextInstall = null;
+    if (hold != null) {
+      await hold.future;
+    }
+    return installAnswer;
   }
 }
 

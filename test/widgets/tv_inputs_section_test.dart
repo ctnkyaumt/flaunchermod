@@ -20,6 +20,7 @@
  */
 
 import 'package:flauncher/custom_traversal_policy.dart';
+import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/widgets/tv_inputs_section.dart';
 import 'package:flutter/material.dart';
@@ -201,8 +202,11 @@ Future<List<MethodCall>> _pump(
   final settingsService = MockSettingsService();
   when(settingsService.appHighlightAnimationEnabled).thenReturn(false);
   await tester.pumpWidget(
-    ChangeNotifierProvider<SettingsService>.value(
-      value: settingsService,
+    MultiProvider(
+      providers: [
+        Provider<FLauncherChannel>.value(value: FLauncherChannel()),
+        ChangeNotifierProvider<SettingsService>.value(value: settingsService),
+      ],
       child: MaterialApp(
         // Same OK-key mapping as FLauncherApp.
         shortcuts: {

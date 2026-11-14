@@ -114,4 +114,76 @@ class TvInputCatalogTest {
         assertEquals(1, groups.hdmi.size)
         assertEquals(emptyList<TvInputEntry>(), groups.other)
     }
+
+    private fun portOf(input: TvInputSpec, all: List<TvInputSpec>) = TvInputCatalog.hdmiPort(input, all)
+
+    private fun hdmi(hw: Int, label: String?, custom: String? = null) =
+        spec("hdmi.HDMIInputService", hw, 1007, label, custom)
+
+    @Test
+    fun theTargetTvsHdmiInputsKeepPortsOneToThree() {
+        val all = tvInputs()
+        assertEquals(1, portOf(all.first { it.id.endsWith("HW4") }, all))
+        assertEquals(2, portOf(all.first { it.id.endsWith("HW5") }, all))
+        assertEquals(3, portOf(all.first { it.id.endsWith("HW6") }, all))
+    }
+
+    @Test
+    fun aDigitInsideAnotherNameIsNotAPort() {
+        val all = listOf(hdmi(4, "HDMI 1"), hdmi(5, "HDMI 2"), hdmi(6, "PS4"))
+        assertEquals(3, portOf(all[2], all))
+    }
+
+    @Test
+    fun hdmiWithASpaceGivesThatPort() {
+        val all = listOf(hdmi(4, "HDMI 2"), hdmi(5, null))
+        assertEquals(2, portOf(all[0], all))
+    }
+
+    @Test
+    fun hdmiWithoutASpaceAndASuffixGivesThatPort() {
+        val all = listOf(hdmi(4, "HDMI2 (ARC)"), hdmi(5, null))
+        assertEquals(2, portOf(all[0], all))
+    }
+
+    @Test
+    fun theHdmiWordIsMatchedIgnoringCase() {
+        val all = listOf(hdmi(4, "hdmi 3"))
+        assertEquals(3, portOf(all[0], all))
+    }
+
+    @Test
+    fun unlabeledInputsTakeTheirPositionAmongHdmiInputsSortedById() {
+        // Listed out of order, with a tuner and a VGA input that do not count.
+        val all = listOf(
+            hdmi(6, null),
+            spec("tuner.TunerInputService", 0, 0, "TV"),
+            hdmi(4, ""),
+            spec("vga.VGAInputService", 3, 1005, "VGA"),
+            hdmi(5, "Game console"),
+        )
+        assertEquals(1, portOf(all[2], all))
+        assertEquals(2, portOf(all[4], all))
+        assertEquals(3, portOf(all[0], all))
+    }
+
+    @Test
+    fun aCustomLabelDoesNotSetThePort() {
+        val all = listOf(hdmi(4, null, custom = "HDMI 3"), hdmi(5, null))
+        assertEquals(1, portOf(all[0], all))
+    }
+
+    @Test
+    fun anInputMissingFromTheListIsPortOne() {
+        assertEquals(1, portOf(hdmi(9, null), listOf(hdmi(4, null))))
+    }
+
+    @Test
+    fun mediaTekSourceValuesFollowThePort() {
+        assertEquals(23, TvInputCatalog.mediaTekSource(1))
+        assertEquals(25, TvInputCatalog.mediaTekSource(2))
+        assertEquals(24, TvInputCatalog.mediaTekSource(3))
+        assertEquals(26, TvInputCatalog.mediaTekSource(4))
+        assertEquals(23, TvInputCatalog.mediaTekSource(5))
+    }
 }

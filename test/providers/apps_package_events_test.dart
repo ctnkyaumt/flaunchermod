@@ -61,7 +61,7 @@ void main() {
     system.installed = [_appInfo("user.app", version: "1")];
     final apps = await launch();
 
-    await system.report({"action": "PACKAGE_CHANGED", "activitiyInfo": _appInfo("user.app", version: "2")});
+    await system.report({"action": "PACKAGE_CHANGED", "activityInfo": _appInfo("user.app", version: "2")});
 
     expect(app(apps, "user.app").version, "2");
     expect(app(apps, "user.app").hidden, isTrue);
@@ -76,7 +76,7 @@ void main() {
 
     await system.report({
       "action": "PACKAGE_CHANGED",
-      "activitiyInfo": _appInfo("system.app", version: "2", isSystemApp: true),
+      "activityInfo": _appInfo("system.app", version: "2", isSystemApp: true),
     });
 
     expect(app(apps, "system.app").hidden, isFalse);
@@ -100,7 +100,7 @@ void main() {
     ]);
     final apps = await launch();
 
-    await system.report({"action": "PACKAGE_ADDED", "activitiyInfo": _appInfo("restored.app", version: "3")});
+    await system.report({"action": "PACKAGE_ADDED", "activityInfo": _appInfo("restored.app", version: "3")});
 
     expect(app(apps, "restored.app").hidden, isFalse);
   });
@@ -126,6 +126,57 @@ void main() {
 
     expect(apps.initialized, isTrue);
     expect(apps.applications.map((app) => app.packageName), contains("saved.app"));
+  });
+
+  test("two apps installed back to back after the TV category was deleted share one new TV category", () async {
+    system.installed = [_appInfo("first.app", version: "1")];
+    final apps = await launch();
+    await apps.deleteCategory(apps.categoriesWithApps.firstWhere((c) => c.category.name == "TV Applications").category);
+
+    final firstInstall = system.report({"action": "PACKAGE_ADDED", "activityInfo": _appInfo("second.app", version: "1")});
+    final secondInstall = system.report({"action": "PACKAGE_ADDED", "activityInfo": _appInfo("third.app", version: "1")});
+    await Future.wait([firstInstall, secondInstall]);
+
+    expect(
+      apps.categoriesWithApps
+          .where((c) => c.category.name == "TV Applications")
+          .map((c) => c.applications.map((app) => app.packageName).toList())
+          .toList(),
+      [
+        ["second.app", "third.app"]
+      ],
+    );
+  });
+
+  test("a burst of app updates refreshes the home screen once, after the burst", () async {
+    system.installed = [
+      _appInfo("a.app", version: "1"),
+      _appInfo("b.app", version: "1"),
+      _appInfo("c.app", version: "1"),
+    ];
+    final apps = await launch();
+    var notifications = 0;
+    apps.addListener(() => notifications++);
+
+    await Future.wait([
+      system.report({"action": "PACKAGE_CHANGED", "activityInfo": _appInfo("a.app", version: "2")}),
+      system.report({"action": "PACKAGE_CHANGED", "activityInfo": _appInfo("b.app", version: "2")}),
+      system.report({"action": "PACKAGE_CHANGED", "activityInfo": _appInfo("c.app", version: "2")}),
+    ]);
+
+    expect(notifications, 1);
+    expect(apps.applications.map((app) => "${app.packageName} ${app.version}"), ["a.app 2", "b.app 2", "c.app 2"]);
+  });
+
+  test("an app added and removed back to back ends up absent", () async {
+    final apps = await launch();
+
+    final added = system.report({"action": "PACKAGE_ADDED", "activityInfo": _appInfo("brief.app", version: "1")});
+    final removed = system.report({"action": "PACKAGE_REMOVED", "packageName": "brief.app"});
+    await Future.wait([added, removed]);
+
+    expect(apps.applications.map((app) => app.packageName), <String>[]);
+    expect(apps.categoriesWithApps.expand((c) => c.applications).map((app) => app.packageName), <String>[]);
   });
 }
 
@@ -156,12 +207,12 @@ Future<void> _nextChange(AppsService service, {required bool Function() until}) 
 class _SystemApps extends FLauncherChannel {
   List<Map<String, dynamic>> installed = [];
   bool listingFails = false;
-  void Function(Map<dynamic, dynamic>)? _listener;
+  void Function(PackageEvent)? _listener;
 
   @override
-  Future<List<dynamic>> getApplications() async {
+  Future<List<InstalledApp>> getInstalledApps() async {
     if (listingFails) throw PlatformException(code: "native_error");
-    return installed;
+    return installed.map((app) => InstalledApp.decode(app)!).toList();
   }
 
   @override
@@ -169,11 +220,14 @@ class _SystemApps extends FLauncherChannel {
       installed.any((app) => app["packageName"] == packageName);
 
   @override
-  void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) => _listener = listener;
+  void addPackageEventListener(void Function(PackageEvent) listener) => _listener = listener;
 
-  /// Delivers a package event and waits until the service has taken it in.
+  /// Delivers a package event as the channel decodes it and waits until the
+  /// service has taken it in; one the channel drops never arrives.
   Future<void> report(Map<dynamic, dynamic> event) async {
-    final handled = (_listener! as dynamic Function(Map<dynamic, dynamic>))(event);
+    final decoded = PackageEvent.decode(event);
+    if (decoded == null) return;
+    final handled = (_listener! as dynamic Function(PackageEvent))(decoded);
     if (handled is Future) await handled;
   }
 }

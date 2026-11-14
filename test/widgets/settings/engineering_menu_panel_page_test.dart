@@ -21,10 +21,12 @@
 
 import 'dart:async';
 
+import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/widgets/settings/engineering_menu_panel_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 const _methodChannel = MethodChannel('me.efesser.flauncher/method');
 
@@ -112,6 +114,9 @@ void main() {
 
 Future<void> _pump(WidgetTester tester, Future<dynamic> Function(MethodCall call) handler) async {
   _methodChannel.setMockMethodCallHandler(handler);
-  await tester.pumpWidget(MaterialApp(home: Scaffold(body: EngineeringMenuPanelPage())));
+  await tester.pumpWidget(Provider<FLauncherChannel>.value(
+    value: FLauncherChannel(),
+    child: MaterialApp(home: Scaffold(body: EngineeringMenuPanelPage())),
+  ));
   await tester.pumpAndSettle();
 }

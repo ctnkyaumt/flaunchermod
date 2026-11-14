@@ -1,0 +1,1 @@
+{"keyMappings":[],"appRedirects":[{"sourcePackage":"com.netflix.ninja","sourceLabel":"Netflix","action":{"type":"launchApp","packageName":"com.plexapp.android","label":"Plex"}},{"sourcePackage":"com.google.android.youtube.tv","action":{"type":"openFlauncher"}}],"rawMappings":[]}

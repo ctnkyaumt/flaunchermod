@@ -49,6 +49,10 @@ jobs:
           test/providers/settings_service_test.dart
           test/providers/wallpaper_service_test.dart
           test/providers/button_mapping_service_test.dart
+          test/providers/button_mapping_format_test.dart
+          test/widgets/remote_press_test.dart
+          test/widgets/remote_hold_dialogs_test.dart
+          test/flauncher_channel_events_test.dart
           test/widgets/device_power_dialog_test.dart
           test/widgets/settings/backup_restore_panel_page_test.dart
           test/providers/speed_test_service_test.dart

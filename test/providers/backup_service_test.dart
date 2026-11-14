@@ -19,12 +19,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flauncher/database.dart';
 import 'package:flauncher/flauncher_channel.dart';
+import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/backup_service.dart';
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
@@ -204,6 +206,38 @@ void main() {
     expect((await database.select(database.appsCategories).get()).length, 2);
   });
 
+  test("installed apps the backup does not list land in their default category; listed loose apps stay loose", () async {
+    final data = await snapshot();
+    data["apps"].add({"packageName": "listed.loose", "name": "Loose", "hidden": false});
+    await database.persistApps([
+      AppsCompanion.insert(packageName: "local.tv", name: "Local TV", version: "2"),
+      AppsCompanion.insert(packageName: "local.sideloaded", name: "Local sideloaded", version: "1", sideloaded: Value(true)),
+      AppsCompanion.insert(packageName: "listed.loose", name: "Loose", version: "1"),
+    ]);
+    channel.installedPackages.addAll(["local.tv", "local.sideloaded", "listed.loose"]);
+    final apps = AppsService(channel, database);
+    addTearDown(apps.dispose);
+    final started = Completer<void>();
+    apps.addListener(() {
+      if (apps.initialized && !started.isCompleted) started.complete();
+    });
+    await started.future.timeout(Duration(seconds: 5));
+
+    await backup.restoreBackupFromContent(jsonEncode(data));
+    await apps.reloadAfterRestore();
+
+    final homeScreen = {
+      for (final row in apps.categoriesWithApps)
+        row.category.name: row.applications.map((app) => app.packageName).toList(),
+    };
+    expect(homeScreen, {
+      "Original": ["installed.app"],
+      "TV Applications": ["local.tv"],
+      "Non-TV Applications": ["local.sideloaded"],
+    });
+    expect(apps.applications.firstWhere((app) => app.packageName == "listed.loose").hidden, isFalse);
+  });
+
   test("failed installed-app lookup does not alter data", () async {
     final data = await snapshot();
     data["categories"][0]["name"] = "Replacement";
@@ -216,12 +250,17 @@ void main() {
 class _BackupChannel extends FLauncherChannel {
   int mappingNotifications = 0, applicationChecks = 0;
   bool failNextNotification = false, failApplicationCheck = false;
+  final installedPackages = <String>{"installed.app"};
   @override
   Future<bool> applicationExists(String packageName) async {
     applicationChecks++;
     if (failApplicationCheck) throw StateError("application lookup failed");
-    return packageName == "installed.app";
+    return installedPackages.contains(packageName);
   }
+  @override
+  Future<List<InstalledApp>> getInstalledApps() async => [];
+  @override
+  void addPackageEventListener(void Function(PackageEvent) listener) {}
   @override
   Future<void> notifyButtonMappingsChanged() async {
     mappingNotifications++;
