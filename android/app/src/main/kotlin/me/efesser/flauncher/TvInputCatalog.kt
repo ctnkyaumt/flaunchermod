@@ -77,6 +77,41 @@ internal object TvInputCatalog {
         return TvInputGroups(hdmi, other)
     }
 
+    private val hdmiPortLabel = Regex("""^\s*HDMI ?(\d+)\b""", RegexOption.IGNORE_CASE)
+
+    /**
+     * The HDMI port number of [input], 1-based.
+     *
+     * Android's public API does not expose the port, so it is read only from a
+     * system label of the strict form "HDMI <n>" ("HDMI 2", "HDMI2 (ARC)").
+     * Any other label ("PS4", a custom name) is ignored and the port is the
+     * input's position among all of the device's HDMI inputs sorted by id,
+     * hidden ones included since they still occupy a port.
+     */
+    fun hdmiPort(input: TvInputSpec, all: List<TvInputSpec>): Int {
+        input.label
+            ?.let { hdmiPortLabel.find(it) }
+            ?.groupValues?.get(1)
+            ?.toIntOrNull()
+            ?.takeIf { it > 0 }
+            ?.let { return it }
+        val position = all.filter { it.type == TYPE_HDMI }
+            .map { it.id }
+            .distinct()
+            .sorted()
+            .indexOf(input.id)
+        return if (position >= 0) position + 1 else 1
+    }
+
+    /** The MediaTek input source value for an HDMI [port] (found by testing; 4 assumed). */
+    fun mediaTekSource(port: Int): Int = when (port) {
+        1 -> 23 // HDMI1
+        2 -> 25 // HDMI2
+        3 -> 24 // HDMI3
+        4 -> 26 // HDMI4 (assumed)
+        else -> 23 // Default to HDMI1
+    }
+
     private fun rank(type: Int): Int {
         val index = otherTypeOrder.indexOf(type)
         return if (index >= 0) index else otherTypeOrder.size

@@ -70,14 +70,8 @@ class TvInput {
 
   TvInput({required this.id, required this.name, this.type, required this.isHdmi});
 
-  factory TvInput.fromMap(Map<dynamic, dynamic> map) {
-    return TvInput(
-      id: map['id'] as String,
-      name: map['name'] as String? ?? 'Unknown Input',
-      type: map['type'] as int?,
-      isHdmi: (map['group'] as String? ?? 'hdmi') == 'hdmi',
-    );
-  }
+  factory TvInput.fromEntry(TvInputEntry entry) =>
+      TvInput(id: entry.id, name: entry.name, type: entry.type, isHdmi: entry.isHdmi);
 
   // Extract numeric value for sorting
   int get numericOrder {
@@ -141,10 +135,7 @@ class _TvInputsSectionState extends State<TvInputsSection> {
   @override
   void initState() {
     super.initState();
-    // FLauncherChannel is not a provider by default, get it differently if needed
-    // For now, assuming it can be instantiated directly or accessed globally/statically
-    // If it's provided via Provider, use context.read<FLauncherChannel>()
-    _channel = FLauncherChannel(); // Adjust if necessary
+    _channel = context.read<FLauncherChannel>();
     _fetchInputs();
     _listenForInputEvents();
   }
@@ -177,7 +168,7 @@ class _TvInputsSectionState extends State<TvInputsSection> {
       // Ensure mounted check after async gap
       if (!mounted) return;
       setState(() {
-        final parsed = inputs.map((data) => TvInput.fromMap(data)).toList();
+        final parsed = inputs.map((entry) => TvInput.fromEntry(entry)).toList();
         _hdmiInputs = parsed.where((i) => i.isHdmi).toList();
         _otherInputs = parsed.where((i) => !i.isHdmi).toList();
         _sortInputs();
@@ -196,35 +187,26 @@ class _TvInputsSectionState extends State<TvInputsSection> {
   }
 
   void _listenForInputEvents() {
-    _inputEventsSubscription = _channel.hdmiInputStream.listen((event) {
+    _inputEventsSubscription = _channel.tvInputEvents.listen((event) {
       if (!mounted) return;
-      final action = event['action'] as String?;
       setState(() {
-        switch (action) {
-          case 'INPUT_ADDED':
-            final inputInfo = event['inputInfo'];
-            if (inputInfo != null) {
-              _upsert(TvInput.fromMap(inputInfo));
+        switch (event.kind) {
+          case TvInputEventKind.added:
+            _upsert(TvInput.fromEntry(event.input!));
+            break;
+          case TvInputEventKind.removed:
+            _hdmiInputs.removeWhere((input) => input.id == event.inputId);
+            _otherInputs.removeWhere((input) => input.id == event.inputId);
+            break;
+          case TvInputEventKind.updated:
+            final known = _hdmiInputs.any((i) => i.id == event.inputId) || _otherInputs.any((i) => i.id == event.inputId);
+            if (known) {
+              _upsert(TvInput.fromEntry(event.input!));
             }
             break;
-          case 'INPUT_REMOVED':
-            final inputId = event['inputId'] as String?;
-            if (inputId != null) {
-              _hdmiInputs.removeWhere((input) => input.id == inputId);
-              _otherInputs.removeWhere((input) => input.id == inputId);
-            }
+          case TvInputEventKind.stateChanged:
+            // Ignored for now.
             break;
-          case 'INPUT_UPDATED':
-            final inputInfo = event['inputInfo'];
-            if (inputInfo != null) {
-              final updated = TvInput.fromMap(inputInfo);
-              final known = _hdmiInputs.any((i) => i.id == updated.id) || _otherInputs.any((i) => i.id == updated.id);
-              if (known) {
-                _upsert(updated);
-              }
-            }
-            break;
-          // INPUT_STATE_CHANGED is ignored for now
         }
         _sortInputs();
       });

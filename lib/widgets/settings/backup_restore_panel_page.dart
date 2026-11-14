@@ -47,7 +47,7 @@ class _BackupRestorePanelPageState extends State<BackupRestorePanelPage> {
   bool _loading = false;
   String? _status;
 
-  FLauncherChannel get _channel => context.read<AppsService>().fLauncherChannel;
+  FLauncherChannel get _channel => context.read<FLauncherChannel>();
 
   BackupService _service() => BackupService(
     context.read<FLauncherDatabase>(),

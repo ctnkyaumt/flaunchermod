@@ -21,16 +21,33 @@
 
 import 'dart:async';
 
+import 'package:flauncher/flauncher_channel_contract.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-class FLauncherChannel {
-  static const _methodChannel = MethodChannel('me.efesser.flauncher/method');
-  static const _eventChannel = EventChannel('me.efesser.flauncher/event');
-  static const _hdmiEventChannel = EventChannel('me.efesser.flauncher/hdmi_event');
-  static const _keyCaptureEventChannel = EventChannel('me.efesser.flauncher/key_capture_event');
-  static const _networkEventChannel = EventChannel('me.efesser.flauncher/network_event');
+export 'package:flauncher/flauncher_channel_contract.dart';
 
-  Future<List<dynamic>> getApplications() async => (await _methodChannel.invokeListMethod('getApplications'))!;
+/// The launcher's one way to the native side. One instance is created in
+/// main.dart and provided to the widget tree by FLauncherApp.
+///
+/// Package and TV input events, the installed apps and the TV inputs arrive
+/// decoded into the types of flauncher_channel_contract.dart; malformed ones
+/// are logged and dropped here.
+class FLauncherChannel {
+  static const _methodChannel = MethodChannel(ChannelContract.methodChannel);
+  static const _eventChannel = EventChannel(ChannelContract.eventChannel);
+  static const _hdmiEventChannel = EventChannel(ChannelContract.hdmiEventChannel);
+  static const _keyCaptureEventChannel = EventChannel(ChannelContract.keyCaptureEventChannel);
+  static const _networkEventChannel = EventChannel(ChannelContract.networkEventChannel);
+
+  /// The apps with a TV or phone launcher entry, icons and banners included.
+  Future<List<InstalledApp>> getInstalledApps() async {
+    final apps = await _methodChannel.invokeListMethod<dynamic>('getApplications');
+    if (apps == null) {
+      throw StateError('getApplications answered nothing');
+    }
+    return _decodeAll<InstalledApp>(apps, InstalledApp.decode, 'app');
+  }
 
   Future<bool> applicationExists(String packageName) async =>
       await _methodChannel.invokeMethod('applicationExists', packageName);
@@ -81,23 +98,21 @@ class FLauncherChannel {
   Future<bool> standbyDevice() async =>
       (await _methodChannel.invokeMethod<bool>('standbyDevice')) ?? false;
 
-  void addAppsChangedListener(void Function(Map<dynamic, dynamic>) listener) =>
-      _eventChannel.receiveBroadcastStream().listen((event) => listener(event));
+  /// Calls [listener] with each package change the system reports.
+  void addPackageEventListener(void Function(PackageEvent event) listener) =>
+      _decoded<PackageEvent>(_eventChannel.receiveBroadcastStream(), PackageEvent.decode).listen(listener);
 
-  Stream<dynamic> get appStream => _eventChannel.receiveBroadcastStream();
-  Stream<dynamic> get hdmiInputStream => _hdmiEventChannel.receiveBroadcastStream();
+  /// Inputs added, removed, updated or changing state.
+  Stream<TvInputEvent> get tvInputEvents => _decoded<TvInputEvent>(_hdmiEventChannel.receiveBroadcastStream(), TvInputEvent.decode);
 
   Future<List<dynamic>> getHdmiInputs() async {
     final result = await _methodChannel.invokeMethod('getHdmiInputs');
     return List<dynamic>.from(result ?? []);
   }
 
-  /// Every input to show on the Inputs page: maps with `id`, `name`, `type` and
-  /// `group` (`hdmi` or `other`).
-  Future<List<dynamic>> getTvInputs() async {
-    final result = await _methodChannel.invokeMethod('getTvInputs');
-    return List<dynamic>.from(result ?? []);
-  }
+  /// Every input to show on the Inputs page, HDMI ones first.
+  Future<List<TvInputEntry>> getTvInputs() async =>
+      _decodeAll<TvInputEntry>(await _methodChannel.invokeMethod<Object?>('getTvInputs'), TvInputEntry.decode, 'TV input');
 
   Future<bool> launchTvInput(String inputId) async {
     final result = await _methodChannel.invokeMethod('launchTvInput', {'inputId': inputId});
@@ -133,9 +148,6 @@ class FLauncherChannel {
   Future<String?> readContentUri(String uri) async => await _methodChannel.invokeMethod<String>('readContentUri', uri);
 
   Future<String?> pickBackupJson() async => await _methodChannel.invokeMethod<String>('pickBackupJson');
-
-  Future<bool> shareFile(String path) async =>
-      (await _methodChannel.invokeMethod('shareFile', path)) ?? false;
 
   /// Whether the accessibility service that intercepts remote buttons is on.
   Future<bool> isButtonMapperEnabled() async =>
@@ -187,4 +199,25 @@ class FLauncherChannel {
   /// Emits each time the device gets a network, and again once that network
   /// is known to reach the internet.
   Stream<dynamic> get networkAvailableStream => _networkEventChannel.receiveBroadcastStream();
+
+  /// [events] decoded; the ones [decode] rejects are left out.
+  static Stream<T> _decoded<T>(Stream<dynamic> events, T? Function(Object? raw) decode) =>
+      events.map<T?>(decode).where((event) => event != null).cast<T>();
+
+  /// The entries of [raw] that [decode] accepts; nothing when [raw] is no list.
+  static List<T> _decodeAll<T>(Object? raw, T? Function(Object? raw) decode, String what) {
+    final decoded = <T>[];
+    if (raw is! List) {
+      return decoded;
+    }
+    for (final entry in raw) {
+      final value = decode(entry);
+      if (value == null) {
+        debugPrint('FLauncherChannel: dropped a malformed $what');
+      } else {
+        decoded.add(value);
+      }
+    }
+    return decoded;
+  }
 }

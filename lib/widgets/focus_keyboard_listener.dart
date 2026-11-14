@@ -19,10 +19,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const longPressableKeys = [LogicalKeyboardKey.select, LogicalKeyboardKey.enter, LogicalKeyboardKey.gameButtonA];
+const longPressableKeys = remoteSelectKeys;
 
 class FocusKeyboardListener extends StatefulWidget {
   final WidgetBuilder builder;
@@ -41,46 +42,35 @@ class FocusKeyboardListener extends StatefulWidget {
 }
 
 class _FocusKeyboardListenerState extends State<FocusKeyboardListener> {
-  int? _keyDownAt;
+  final _presses = RemotePressTracker(holdAfter: const Duration(milliseconds: 500));
 
   @override
   Widget build(BuildContext context) => Focus(
         canRequestFocus: false,
-        onKey: (_, rawKeyEvent) => _handleKey(context, rawKeyEvent),
+        onKey: (_, rawKeyEvent) => _handleKey(rawKeyEvent),
         child: Builder(builder: widget.builder),
       );
 
-  KeyEventResult _handleKey(BuildContext context, RawKeyEvent rawKeyEvent) {
-    switch (rawKeyEvent.runtimeType) {
-      case RawKeyDownEvent:
-        return _keyDownEvent(context, rawKeyEvent.logicalKey, (rawKeyEvent.data as RawKeyEventDataAndroid));
-      case RawKeyUpEvent:
-        return _keyUpEvent(context, rawKeyEvent.logicalKey);
-    }
-    return KeyEventResult.handled;
-  }
-
-  KeyEventResult _keyDownEvent(BuildContext context, LogicalKeyboardKey key, RawKeyEventDataAndroid data) {
+  KeyEventResult _handleKey(RawKeyEvent event) {
+    final key = event.logicalKey;
     if (!longPressableKeys.contains(key)) {
-      return widget.onPressed?.call(key) ?? KeyEventResult.ignored;
-    }
-    if (data.repeatCount == 0) {
-      _keyDownAt = DateTime.now().millisecondsSinceEpoch;
+      // Other keys (arrows) act on every key-down, repeats included.
+      if (event is RawKeyDownEvent) {
+        return widget.onPressed?.call(key) ?? KeyEventResult.ignored;
+      }
       return KeyEventResult.ignored;
-    } else if (_longPress()) {
-      _keyDownAt = null;
+    }
+    final press = _presses.handle(event);
+    if (press == RemotePress.down) {
+      return KeyEventResult.ignored;
+    }
+    if (press == RemotePress.held) {
       return widget.onLongPress?.call(key) ?? KeyEventResult.ignored;
     }
-    return KeyEventResult.handled;
-  }
-
-  KeyEventResult _keyUpEvent(BuildContext context, LogicalKeyboardKey key) {
-    if (_keyDownAt != null) {
-      _keyDownAt = null;
+    if (press == RemotePress.up) {
       return widget.onPressed?.call(key) ?? KeyEventResult.ignored;
     }
-    return KeyEventResult.ignored;
+    // Repeats, owned or not, stay here; an unmatched release passes on.
+    return event is RawKeyDownEvent ? KeyEventResult.handled : KeyEventResult.ignored;
   }
-
-  bool _longPress() => _keyDownAt != null && DateTime.now().millisecondsSinceEpoch - _keyDownAt! >= 500;
 }

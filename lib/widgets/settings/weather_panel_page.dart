@@ -22,6 +22,7 @@
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
 import 'package:flauncher/widgets/focus_keyboard_listener.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flauncher/widgets/system_keyboard_dialog.dart';
 import 'package:flauncher/widgets/tv_keyboard_dialog.dart';
 import 'package:flutter/material.dart';
@@ -38,22 +39,9 @@ class WeatherPanelPage extends StatefulWidget {
 class _WeatherPanelPageState extends State<WeatherPanelPage> {
   String _cityDraft = '';
 
-  late DateTime _ignoreSelectUntil;
-
   bool _useCitySearch = true;
   bool _busy = false;
   bool _editingLocation = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ignoreSelectUntil = DateTime.now().add(const Duration(milliseconds: 350));
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -225,24 +213,11 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     required bool autofocus,
     required ValueChanged<bool> onChanged,
   }) {
-    return Focus(
+    // The release of the OK press that opened this page is not a press of
+    // the autofocused toggle, so it cannot flip it.
+    return RemoteSelectFocus(
       autofocus: autofocus,
-      canRequestFocus: true,
-      onKey: (_, event) {
-        if (event is RawKeyUpEvent) {
-          final key = event.logicalKey;
-          if (key == LogicalKeyboardKey.select ||
-              key == LogicalKeyboardKey.enter ||
-              key == LogicalKeyboardKey.gameButtonA) {
-            if (DateTime.now().isBefore(_ignoreSelectUntil)) {
-              return KeyEventResult.ignored;
-            }
-            onChanged(!value);
-            return KeyEventResult.handled;
-          }
-        }
-        return KeyEventResult.ignored;
-      },
+      onSelect: () => onChanged(!value),
       child: Builder(
         builder: (context) {
           final hasFocus = Focus.of(context).hasFocus;
@@ -287,20 +262,8 @@ class _WeatherPanelPageState extends State<WeatherPanelPage> {
     required bool selected,
     required VoidCallback onSelected,
   }) {
-    return Focus(
-      canRequestFocus: true,
-      onKey: (_, event) {
-        if (event is RawKeyUpEvent) {
-          final key = event.logicalKey;
-          if (key == LogicalKeyboardKey.select ||
-              key == LogicalKeyboardKey.enter ||
-              key == LogicalKeyboardKey.gameButtonA) {
-            onSelected();
-            return KeyEventResult.handled;
-          }
-        }
-        return KeyEventResult.ignored;
-      },
+    return RemoteSelectFocus(
+      onSelect: onSelected,
       child: Builder(
         builder: (context) {
           final hasFocus = Focus.of(context).hasFocus;

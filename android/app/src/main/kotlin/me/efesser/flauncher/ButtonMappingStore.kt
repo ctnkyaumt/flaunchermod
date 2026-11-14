@@ -113,8 +113,10 @@ object ButtonMappingStore {
                     "scanCode" -> MatchMode.SCAN_CODE
                     "keyCode" -> MatchMode.KEY_CODE
                     // Backward compatibility with mappings saved before the
-                    // match mode was explicit.
-                    else -> if (keyCode == KeyEvent.KEYCODE_UNKNOWN && scanCode != null) {
+                    // match mode was explicit. Same rule as the Dart reader
+                    // (KeyMapping.fromJson): only an absent field counts, and
+                    // an unknown key without a scan code is then rejected below.
+                    else -> if (keyCode == KeyEvent.KEYCODE_UNKNOWN && !json.has("matchMode")) {
                         MatchMode.SCAN_CODE
                     } else {
                         MatchMode.KEY_CODE

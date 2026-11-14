@@ -69,10 +69,12 @@ class FLauncherApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MultiProvider(
         providers: [
+          // The one channel to the native side; widgets read it from here.
+          Provider<FLauncherChannel>.value(value: _fLauncherChannel),
           ChangeNotifierProvider(create: (_) => SettingsService(_sharedPreferences), lazy: false),
           Provider<FLauncherDatabase>.value(value: _fLauncherDatabase),
           ChangeNotifierProvider(create: (_) => AppsService(_fLauncherChannel, _fLauncherDatabase)),
-          ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences)),
+          ChangeNotifierProvider(create: (_) => AppInstallService(_sharedPreferences, channel: _fLauncherChannel)),
           ChangeNotifierProvider(
               create: (_) => ButtonMappingService(_sharedPreferences, _fLauncherChannel)),
           ChangeNotifierProxyProvider<SettingsService, WallpaperService>(

@@ -28,6 +28,8 @@ import 'package:flauncher/database.dart';
 import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/button_mapping_service.dart';
+import 'package:flauncher/providers/default_categories.dart';
+import 'package:flauncher/providers/restored_apps.dart';
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/wallpaper_service.dart';
 import 'package:flutter/foundation.dart';
@@ -44,10 +46,10 @@ class BackupService {
   BackupService(this._database, this._settingsService, {
     required ButtonMappingService buttonMappings,
     required WallpaperService wallpaper,
-    FLauncherChannel? channel,
+    required FLauncherChannel channel,
   }) : _buttonMappings = buttonMappings,
        _wallpaper = wallpaper,
-       _channel = channel ?? FLauncherChannel();
+       _channel = channel;
 
   Future<String> createBackupContent() async {
     final wallpaper = await _wallpaper.exportWallpaper();
@@ -118,8 +120,6 @@ class BackupService {
     }
     return file.path;
   }
-
-  Future<void> shareBackup(File file) async { await _channel.shareFile(file.path); }
 
   Future<List<AppSpec>> restoreBackup(File file) async {
     if (await file.length() > maxBackupBytes) throw FormatException("Backup exceeds 32 MiB");
@@ -261,15 +261,15 @@ class BackupService {
         final existing = (await query.get()).map((row) => row.read(_database.apps.packageName)!).toSet();
         for (final app in apps) {
           final package = app["packageName"] as String;
-          final hidden = (app["hidden"] as bool? ?? false) || !installed[package]!;
+          final hidden = RestoredApps.hiddenOnRestore(
+              hiddenInBackup: app["hidden"] as bool? ?? false, installed: installed[package]!);
           if (existing.contains(package)) {
             // Installation metadata comes from this TV, not the source TV.
             await _database.updateApp(package, AppsCompanion(hidden: drift.Value(hidden)));
           } else {
-            await _database.into(_database.apps).insert(AppsCompanion.insert(
-              packageName: package, name: app["name"] as String? ?? package, version: "",
-              hidden: drift.Value(hidden), sideloaded: drift.Value(app["sideloaded"] as bool? ?? false),
-              isSystemApp: drift.Value(app["isSystemApp"] as bool? ?? false),
+            await _database.into(_database.apps).insert(RestoredApps.placeholder(
+              packageName: package, name: app["name"] as String? ?? package, hidden: hidden,
+              sideloaded: app["sideloaded"] as bool? ?? false, isSystemApp: app["isSystemApp"] as bool? ?? false,
             ));
           }
         }
@@ -285,6 +285,7 @@ class BackupService {
         await _database.insertAppsCategories((data["appsCategories"] as List).map((a) =>
             AppsCategoriesCompanion.insert(categoryId: a["categoryId"] as int,
               appPackageName: a["appPackageName"] as String, order: a["order"] as int? ?? 0)).toList());
+        await _placeAppsTheBackupDoesNotList(existing.difference(apps.map((app) => app["packageName"] as String).toSet()));
         if (version2) {
           wallpaperStarted = true;
           await _wallpaper.restoreWallpaper(data["wallpaper"] == null
@@ -315,5 +316,30 @@ class BackupService {
       rethrow;
     }
     return missingApps;
+  }
+
+  /// The restored layout replaces this TV's, but apps installed here that the
+  /// backup does not know would then be in no category and vanish from the
+  /// home screen: visible ones go to their default category instead.
+  Future<void> _placeAppsTheBackupDoesNotList(Set<String> unlisted) async {
+    if (unlisted.isEmpty) return;
+    final query = _database.selectOnly(_database.apps)
+      ..addColumns([
+        _database.apps.packageName, _database.apps.version, _database.apps.hidden,
+        _database.apps.sideloaded, _database.apps.isSystemApp,
+      ])
+      ..orderBy([drift.OrderingTerm.asc(_database.apps.packageName)]);
+    final candidates = <DefaultCategoryCandidate>[];
+    for (final row in await query.get()) {
+      final package = row.read(_database.apps.packageName)!;
+      if (!unlisted.contains(package) || row.read(_database.apps.hidden) == true) continue;
+      if (RestoredApps.isPlaceholderVersion(row.read(_database.apps.version) ?? RestoredApps.placeholderVersion)) continue;
+      candidates.add(DefaultCategoryCandidate(
+        packageName: package,
+        sideloaded: row.read(_database.apps.sideloaded) ?? false,
+        isSystemApp: row.read(_database.apps.isSystemApp) ?? false,
+      ));
+    }
+    await DefaultCategories(_database).fileUncategorised(candidates);
   }
 }

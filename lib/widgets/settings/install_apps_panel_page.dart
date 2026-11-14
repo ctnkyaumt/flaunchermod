@@ -62,6 +62,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
   String _normalizeAppName(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 
   Future<void> _refreshInstalledPackages() async {
+    if (!mounted) return;
     var installed = <String>{};
     var namesFromList = <String>{};
     try {
@@ -69,7 +70,7 @@ class _InstallAppsPanelPageState extends State<InstallAppsPanelPage> {
       // over the channel and the per-app applicationExists() calls added a
       // round trip each, which is what made the page sit on "Install" for a
       // second before correcting itself.
-      final apps = await FLauncherChannel().getMappableApplications();
+      final apps = await context.read<FLauncherChannel>().getMappableApplications();
       installed = apps
           .whereType<Map>()
           .map((e) => e["packageName"])

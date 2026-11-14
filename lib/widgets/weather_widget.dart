@@ -21,8 +21,8 @@
 
 import 'package:flauncher/providers/settings_service.dart';
 import 'package:flauncher/providers/weather_service.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 class WeatherWidget extends StatelessWidget {
@@ -64,9 +64,8 @@ class _WeatherContentPlaceholder extends StatelessWidget {
   const _WeatherContentPlaceholder({required this.config});
 
   @override
-  Widget build(BuildContext context) => Focus(
-        canRequestFocus: true,
-        onKey: (_, event) => _handleKey(context, event),
+  Widget build(BuildContext context) => RemoteSelectFocus(
+        onSelect: () => _toggleDetails(context),
         child: Builder(
           builder: (context) {
             final hasFocus = Focus.of(context).hasFocus;
@@ -97,18 +96,9 @@ class _WeatherContentPlaceholder extends StatelessWidget {
         ),
       );
 
-  KeyEventResult _handleKey(BuildContext context, RawKeyEvent event) {
-    if (event is RawKeyUpEvent) {
-      final key = event.logicalKey;
-      if (key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.gameButtonA) {
-        final settings = context.read<SettingsService>();
-        settings.setWeatherShowDetails(!settings.weatherShowDetails);
-        return KeyEventResult.handled;
-      }
-    }
-    return KeyEventResult.ignored;
+  void _toggleDetails(BuildContext context) {
+    final settings = context.read<SettingsService>();
+    settings.setWeatherShowDetails(!settings.weatherShowDetails);
   }
 }
 
@@ -161,9 +151,11 @@ class _WeatherContentState extends State<_WeatherContent> {
   }
 
   @override
-  Widget build(BuildContext context) => Focus(
-        canRequestFocus: true,
-        onKey: (_, event) => _handleKey(context, event),
+  Widget build(BuildContext context) => RemoteSelectFocus(
+        onSelect: () {
+          _flashPressed();
+          _toggleDetails(context);
+        },
         child: Builder(
           builder: (context) {
             final hasFocus = Focus.of(context).hasFocus;
@@ -209,20 +201,6 @@ class _WeatherContentState extends State<_WeatherContent> {
           },
         ),
       );
-
-  KeyEventResult _handleKey(BuildContext context, RawKeyEvent event) {
-    if (event is RawKeyUpEvent) {
-      final key = event.logicalKey;
-      if (key == LogicalKeyboardKey.select ||
-          key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.gameButtonA) {
-        _flashPressed();
-        _toggleDetails(context);
-        return KeyEventResult.handled;
-      }
-    }
-    return KeyEventResult.ignored;
-  }
 
   void _toggleDetails(BuildContext context) {
     final settings = context.read<SettingsService>();

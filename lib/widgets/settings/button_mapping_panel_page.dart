@@ -23,6 +23,7 @@ import 'dart:async';
 
 import 'package:flauncher/providers/button_mapping_service.dart';
 import 'package:flauncher/widgets/ensure_visible.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -828,12 +829,8 @@ class _CaptureKeyDialogState extends State<_CaptureKeyDialog> {
         child: Focus(
           autofocus: true,
           onKey: (_, event) {
-            final data = event.data;
-            final androidBack = data is RawKeyEventDataAndroid && data.keyCode == 4;
             if (event is RawKeyDownEvent &&
-                (androidBack || event.logicalKey == LogicalKeyboardKey.goBack ||
-                    event.logicalKey == LogicalKeyboardKey.escape ||
-                    event.logicalKey == LogicalKeyboardKey.gameButtonB)) {
+                (isRemoteBack(event) || event.logicalKey == LogicalKeyboardKey.gameButtonB)) {
               _close(null);
             }
             // A capture dialog owns focus. Repeats must not activate the mapping

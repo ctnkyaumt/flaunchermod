@@ -22,8 +22,10 @@
 import 'dart:io';
 
 import 'package:flauncher/flauncher_channel.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 /// Edits weather text through the device's installed keyboard.
 class SystemKeyboardDialog extends StatefulWidget {
@@ -59,7 +61,7 @@ class SystemKeyboardDialog extends StatefulWidget {
       final theme = Theme.of(context);
       final foreground = theme.colorScheme.onSurface;
       final buttonFocus = theme.textButtonTheme.style?.overlayColor?.resolve({MaterialState.focused});
-      return FLauncherChannel().showSystemTextInput(
+      return context.read<FLauncherChannel>().showSystemTextInput(
         title: title,
         initialValue: initialValue,
         fieldLabel: fieldLabel,
@@ -98,7 +100,7 @@ class SystemKeyboardDialog extends StatefulWidget {
 
 class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
   final _fieldFocus = FocusNode();
-  final _activationKeys = <LogicalKeyboardKey>{};
+  final _presses = RemotePressTracker();
   late final TextEditingController _controller;
   bool _dismissed = false;
 
@@ -130,35 +132,29 @@ class _SystemKeyboardDialogState extends State<SystemKeyboardDialog> {
 
   KeyEventResult _onKey(FocusNode _, RawKeyEvent event) {
     final key = event.logicalKey;
-    final data = event.data;
-    final isBack = key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        (data is RawKeyEventDataAndroid && data.keyCode == 4);
-    if (isBack) {
-      if (event is RawKeyUpEvent) _dismiss(null);
+    if (isRemoteBack(event)) {
+      if (_presses.handle(event) == RemotePress.up) _dismiss(null);
       return KeyEventResult.handled;
     }
     if (_fieldFocus.hasFocus && key == LogicalKeyboardKey.arrowDown) {
       if (event is RawKeyDownEvent) FocusScope.of(context).nextFocus();
       return KeyEventResult.handled;
     }
-    if (!_fieldFocus.hasFocus ||
-        (key != LogicalKeyboardKey.select &&
-            key != LogicalKeyboardKey.enter &&
-            key != LogicalKeyboardKey.gameButtonA)) {
+    if (!_fieldFocus.hasFocus || !isRemoteSelect(event)) {
       return KeyEventResult.ignored;
     }
-    if (event is RawKeyDownEvent) {
-      if (_activationKeys.add(key)) {
-        // Android TV can keep the editor focused after dismissing its IME.
-        // A fresh OK must reopen that installed keyboard, not submit the query.
-        SystemChannels.textInput.invokeMethod<void>('TextInput.show');
-      }
+    final press = _presses.handle(event);
+    if (press == RemotePress.down) {
+      // Android TV can keep the editor focused after dismissing its IME.
+      // A fresh OK must reopen that installed keyboard, not submit the query.
+      SystemChannels.textInput.invokeMethod<void>('TextInput.show');
       return KeyEventResult.handled;
     }
-    if (event is RawKeyUpEvent && _activationKeys.remove(key)) return KeyEventResult.handled;
-    // Let the unmatched release from the button opening this dialog pass.
-    return KeyEventResult.ignored;
+    if (press == RemotePress.none && event is RawKeyUpEvent) {
+      // Let the unmatched release from the button opening this dialog pass.
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
   }
 
   @override

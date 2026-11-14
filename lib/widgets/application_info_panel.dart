@@ -21,11 +21,12 @@
 
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flauncher/widgets/right_panel_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class ApplicationInfoPanel extends StatelessWidget {
+class ApplicationInfoPanel extends StatefulWidget {
   final Category? category;
   final App application;
 
@@ -33,6 +34,17 @@ class ApplicationInfoPanel extends StatelessWidget {
     required this.category,
     required this.application,
   });
+
+  @override
+  State<ApplicationInfoPanel> createState() => _ApplicationInfoPanelState();
+}
+
+/// Each closing action runs once per press, even while OK is held, and
+/// closes this panel only.
+class _ApplicationInfoPanelState extends State<ApplicationInfoPanel> with RemoteRouteAction<ApplicationInfoPanel> {
+  Category? get category => widget.category;
+
+  App get application => widget.application;
 
   @override
   Widget build(BuildContext context) => RightPanelDialog(
@@ -80,10 +92,10 @@ class ApplicationInfoPanel extends StatelessWidget {
                   Text("Open", style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
-              onPressed: () async {
-                await context.read<AppsService>().launchApp(application);
-                Navigator.of(context).pop(ApplicationInfoPanelResult.none);
-              },
+              onPressed: () => runThenClose(
+                () => context.read<AppsService>().launchApp(application),
+                ApplicationInfoPanelResult.none,
+              ),
             ),
             if (category?.sort == CategorySort.manual)
               TextButton(
@@ -94,7 +106,7 @@ class ApplicationInfoPanel extends StatelessWidget {
                     Text("Reorder", style: Theme.of(context).textTheme.bodyMedium),
                   ],
                 ),
-                onPressed: () => Navigator.of(context).pop(ApplicationInfoPanelResult.reorderApp),
+                onPressed: () => runThenClose(() async {}, ApplicationInfoPanelResult.reorderApp),
               ),
             TextButton(
               child: Row(
@@ -104,14 +116,12 @@ class ApplicationInfoPanel extends StatelessWidget {
                   Text(application.hidden ? "Unhide" : "Hide", style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
-              onPressed: () async {
-                if (application.hidden) {
-                  await context.read<AppsService>().unHideApplication(application);
-                } else {
-                  await context.read<AppsService>().hideApplication(application);
-                }
-                Navigator.of(context).pop(ApplicationInfoPanelResult.none);
-              },
+              onPressed: () => runThenClose(
+                () => application.hidden
+                    ? context.read<AppsService>().unHideApplication(application)
+                    : context.read<AppsService>().hideApplication(application),
+                ApplicationInfoPanelResult.none,
+              ),
             ),
             if (category != null)
               TextButton(
@@ -129,10 +139,10 @@ class ApplicationInfoPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-                onPressed: () async {
-                  await context.read<AppsService>().removeFromCategory(application, category!);
-                  Navigator.of(context).pop(ApplicationInfoPanelResult.none);
-                },
+                onPressed: () => runThenClose(
+                  () => context.read<AppsService>().removeFromCategory(application, category!),
+                  ApplicationInfoPanelResult.none,
+                ),
               ),
             Divider(),
             TextButton(
@@ -153,10 +163,10 @@ class ApplicationInfoPanel extends StatelessWidget {
                   Text("Uninstall", style: Theme.of(context).textTheme.bodyMedium),
                 ],
               ),
-              onPressed: () async {
-                await context.read<AppsService>().uninstallApp(application);
-                Navigator.of(context).pop(ApplicationInfoPanelResult.none);
-              },
+              onPressed: () => runThenClose(
+                () => context.read<AppsService>().uninstallApp(application),
+                ApplicationInfoPanelResult.none,
+              ),
             ),
           ],
         ),

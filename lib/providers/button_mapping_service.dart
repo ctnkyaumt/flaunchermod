@@ -19,12 +19,22 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flauncher/flauncher_channel.dart';
+import 'package:flauncher/providers/button_mapping/button_capture_session.dart';
+import 'package:flauncher/providers/button_mapping/button_mapping_format.dart';
+import 'package:flauncher/providers/button_mapping/button_mapping_model.dart';
+import 'package:flauncher/providers/button_mapping/raw_input_status.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// The model, the capture session and the raw-input status live in
+// providers/button_mapping/. They are re-exported so that this file stays the
+// one import for everything about button mapping.
+export 'package:flauncher/providers/button_mapping/button_capture_session.dart';
+export 'package:flauncher/providers/button_mapping/button_mapping_model.dart';
+export 'package:flauncher/providers/button_mapping/raw_input_status.dart';
 
 /// Key under which the whole mapping table is persisted.
 ///
@@ -34,96 +44,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// scheme that is awkward to parse from Kotlin. Keep the two in sync with
 /// `ButtonMappingStore` on the native side.
 const _buttonMappingsKey = "button_mappings";
-
-enum ButtonActionType {
-  launchApp,
-  openFlauncher,
-  openSettings,
-  block,
-}
-
-class ButtonAction {
-  final ButtonActionType type;
-
-  /// Only set when [type] is [ButtonActionType.launchApp].
-  final String? packageName;
-
-  /// Human-readable target, shown in the UI. Not read natively.
-  final String? label;
-
-  const ButtonAction({required this.type, this.packageName, this.label});
-
-  Map<String, dynamic> toJson() => {
-        "type": describeEnum(type),
-        if (packageName != null) "packageName": packageName,
-        if (label != null) "label": label,
-      };
-
-  static ButtonAction? fromJson(Map<String, dynamic> json) {
-    final type = ButtonActionType.values
-        .cast<ButtonActionType?>()
-        .firstWhere((value) => describeEnum(value!) == json["type"], orElse: () => null);
-    if (type == null) {
-      return null;
-    }
-    return ButtonAction(
-      type: type,
-      packageName: json["packageName"] as String?,
-      label: json["label"] as String?,
-    );
-  }
-
-  String get description {
-    switch (type) {
-      case ButtonActionType.launchApp:
-        return "Open ${label ?? packageName ?? "app"}";
-      case ButtonActionType.openFlauncher:
-        return "Open FLauncher";
-      case ButtonActionType.openSettings:
-        return "Open Android settings";
-      case ButtonActionType.block:
-        return "Do nothing";
-    }
-  }
-}
-
-/// How a button press is classified.
-enum PressTrigger { single, doublePress, long }
-
-extension PressTriggerLabel on PressTrigger {
-  String get label {
-    switch (this) {
-      case PressTrigger.single:
-        return "Single press";
-      case PressTrigger.doublePress:
-        return "Double press";
-      case PressTrigger.long:
-        return "Long press";
-    }
-  }
-}
-
-/// Which part of an Android `KeyEvent` identifies a mapped button.
-///
-/// Key codes are portable and remain the default. Some remotes collapse
-/// several vendor buttons onto one Android key code, though; those buttons can
-/// opt into their hardware scan code instead. Keeping this choice per mapping
-/// avoids the all-or-nothing "use scan codes" switch used by other mappers.
-enum KeyMatchMode { keyCode, scanCode }
-
-/// Scan codes for remote buttons that report no usable key code.
-///
-/// Most TV remote extras come through as `KEYCODE_UNKNOWN`, so the scan code is
-/// the only thing that tells them apart. Carried over from the earlier
-/// button_mapping branch.
-const _knownScanCodes = <int, String>{
-  0x00000127: "Netflix",
-  0x000c00a5: "YouTube",
-  0x000c00a1: "Amazon Prime",
-  0x000c0088: "Google Play",
-  0x00070086: "Menu",
-  0x000c0221: "Voice assistant",
-};
 
 /// Apps that TV remotes commonly carry a dedicated button for.
 ///
@@ -172,434 +92,6 @@ class AppTarget {
   }
 }
 
-/// A remote button and the actions bound to it.
-class KeyMapping {
-  final int keyCode;
-
-  /// Hardware scan code, when the event carried one. It identifies unknown
-  /// Android keys and can be selected explicitly when a remote reports one key
-  /// code for several vendor buttons.
-  final int? scanCode;
-
-  final KeyMatchMode matchMode;
-
-  /// Platform name for the key code, e.g. `KEYCODE_GUIDE`.
-  final String? keyLabel;
-
-  final ButtonAction? single;
-  final ButtonAction? doublePress;
-  final ButtonAction? long;
-
-  const KeyMapping({
-    required this.keyCode,
-    this.scanCode,
-    this.matchMode = KeyMatchMode.keyCode,
-    this.keyLabel,
-    this.single,
-    this.doublePress,
-    this.long,
-  });
-
-  bool get hasAny => single != null || doublePress != null || long != null;
-
-  ButtonAction? actionFor(PressTrigger trigger) {
-    switch (trigger) {
-      case PressTrigger.single:
-        return single;
-      case PressTrigger.doublePress:
-        return doublePress;
-      case PressTrigger.long:
-        return long;
-    }
-  }
-
-  KeyMapping withAction(PressTrigger trigger, ButtonAction? action) => KeyMapping(
-        keyCode: keyCode,
-        scanCode: scanCode,
-        matchMode: matchMode,
-        keyLabel: keyLabel,
-        single: trigger == PressTrigger.single ? action : single,
-        doublePress: trigger == PressTrigger.doublePress ? action : doublePress,
-        long: trigger == PressTrigger.long ? action : long,
-      );
-
-  /// Identity of the physical button, used to find an existing binding.
-  ///
-  /// Mirrors `ButtonMappingStore.Mappings.resolve` on the native side.
-  String get id => matchMode == KeyMatchMode.scanCode ? "sc:$scanCode" : "kc:$keyCode";
-
-  Map<String, dynamic> toJson() => {
-        "keyCode": keyCode,
-        if (scanCode != null) "scanCode": scanCode,
-        "matchMode": describeEnum(matchMode),
-        if (keyLabel != null) "keyLabel": keyLabel,
-        if (single != null) "single": single!.toJson(),
-        if (doublePress != null) "double": doublePress!.toJson(),
-        if (long != null) "long": long!.toJson(),
-      };
-
-  static KeyMapping? fromJson(Map<String, dynamic> json) {
-    final keyCode = json["keyCode"];
-    if (keyCode is! int) {
-      return null;
-    }
-    ButtonAction? action(String key) {
-      final raw = json[key];
-      return raw is Map ? ButtonAction.fromJson(Map<String, dynamic>.from(raw)) : null;
-    }
-
-    final scanCode = json["scanCode"];
-    final matchMode = json["matchMode"] == describeEnum(KeyMatchMode.scanCode) ||
-            // Existing mappings did not persist a mode. Preserve their old
-            // behaviour: only KEYCODE_UNKNOWN fell back to the scan code.
-            (!json.containsKey("matchMode") && keyCode == 0)
-        ? KeyMatchMode.scanCode
-        : KeyMatchMode.keyCode;
-    if (matchMode == KeyMatchMode.scanCode && !(scanCode is int && scanCode != 0)) {
-      return null;
-    }
-
-    final mapping = KeyMapping(
-      keyCode: keyCode,
-      scanCode: scanCode is int && scanCode != 0 ? scanCode : null,
-      matchMode: matchMode,
-      keyLabel: json["keyLabel"] as String?,
-      single: action("single"),
-      doublePress: action("double"),
-      long: action("long"),
-    );
-    return mapping.hasAny ? mapping : null;
-  }
-
-  /// Friendly name for the button, falling back to the raw codes.
-  String get displayName {
-    final known = matchMode == KeyMatchMode.scanCode && scanCode != null
-        ? _knownScanCodes[scanCode]
-        : null;
-    if (known != null) {
-      return known;
-    }
-
-    final label = keyLabel;
-    if (label != null && label.isNotEmpty && label != "KEYCODE_UNKNOWN") {
-      // "KEYCODE_MEDIA_PLAY_PAUSE" -> "Media play pause"
-      final stripped = label.startsWith("KEYCODE_") ? label.substring("KEYCODE_".length) : label;
-      final words = stripped.replaceAll("_", " ").toLowerCase();
-      if (words.isNotEmpty) {
-        final friendly = "${words[0].toUpperCase()}${words.substring(1)}";
-        return matchMode == KeyMatchMode.scanCode ? "$friendly (scan $scanCode)" : friendly;
-      }
-    }
-
-    if (matchMode == KeyMatchMode.scanCode) {
-      return "Button (scan $scanCode)";
-    }
-    return "Key $keyCode";
-  }
-
-  /// One-line summary of everything bound to this button.
-  String get summary {
-    final parts = <String>[
-      for (final trigger in PressTrigger.values)
-        if (actionFor(trigger) != null) "${trigger.label}: ${actionFor(trigger)!.description}",
-    ];
-    return parts.isEmpty ? "Nothing bound" : parts.join("\n");
-  }
-}
-
-/// A button identified by its Linux key code, read straight off `/dev/input`.
-///
-/// This also covers buttons Android handles before dispatching to apps.
-/// Reading them needs the shell input reader.
-class RawMapping {
-  final int code;
-
-  /// HID usage reported in MSC_SCAN. Several vendor buttons may share code 240.
-  final int? rawScanCode;
-
-  /// The `/dev/input` node it came from, shown to help tell remotes apart.
-  final String? device;
-
-  final ButtonAction? single;
-  final ButtonAction? doublePress;
-  final ButtonAction? long;
-
-  const RawMapping({
-    required this.code,
-    int? rawScanCode,
-    this.device,
-    this.single,
-    this.doublePress,
-    this.long,
-  }) : rawScanCode = rawScanCode == 0 ? null : rawScanCode;
-
-  bool get hasAny => single != null || doublePress != null || long != null;
-
-  ButtonAction? actionFor(PressTrigger trigger) {
-    switch (trigger) {
-      case PressTrigger.single:
-        return single;
-      case PressTrigger.doublePress:
-        return doublePress;
-      case PressTrigger.long:
-        return long;
-    }
-  }
-
-  RawMapping withAction(PressTrigger trigger, ButtonAction? action) => RawMapping(
-        code: code,
-        rawScanCode: rawScanCode,
-        device: device,
-        single: trigger == PressTrigger.single ? action : single,
-        doublePress: trigger == PressTrigger.doublePress ? action : doublePress,
-        long: trigger == PressTrigger.long ? action : long,
-      );
-
-  Map<String, dynamic> toJson() => {
-        "code": code,
-        if (rawScanCode != null) "rawScanCode": rawScanCode,
-        if (device != null) "device": device,
-        if (single != null) "single": single!.toJson(),
-        if (doublePress != null) "double": doublePress!.toJson(),
-        if (long != null) "long": long!.toJson(),
-      };
-
-  static RawMapping? fromJson(Map<String, dynamic> json) {
-    final code = json["code"];
-    if (code is! int) {
-      return null;
-    }
-    ButtonAction? action(String key) {
-      final raw = json[key];
-      return raw is Map ? ButtonAction.fromJson(Map<String, dynamic>.from(raw)) : null;
-    }
-
-    final mapping = RawMapping(
-      code: code,
-      rawScanCode: json["rawScanCode"] is int ? json["rawScanCode"] as int : null,
-      device: json["device"] as String?,
-      single: action("single"),
-      doublePress: action("double"),
-      long: action("long"),
-    );
-    return mapping.hasAny ? mapping : null;
-  }
-
-  String get id => rawScanCode == null ? "$code" : "$code:$rawScanCode";
-
-  String get displayName => rawScanCode == null
-      ? "Raw button $code"
-      : "Raw button $code (usage 0x${rawScanCode!.toRadixString(16)})";
-
-  String get summary {
-    final parts = <String>[
-      for (final trigger in PressTrigger.values)
-        if (actionFor(trigger) != null) "${trigger.label}: ${actionFor(trigger)!.description}",
-    ];
-    return parts.isEmpty ? "Nothing bound" : parts.join("\n");
-  }
-}
-
-/// Whether the shell-privileged helper that reads `/dev/input` can run.
-enum ShizukuStatus { unavailable, permissionRequired, ready }
-
-/// State of the launcher's own connection to the device's adbd.
-enum AdbState { disconnected, connecting, connected, failed }
-
-/// Which native input stream a capture dialog is waiting for.
-///
-/// Android and raw events are both broadcast while capture mode is armed. A
-/// normal mapping must explicitly reject raw events, otherwise the faster
-/// `/dev/input` reader can win the race and make a perfectly valid Android key
-/// look unmappable.
-enum ButtonCaptureSource { android, raw, any }
-
-bool isButtonCaptureEvent(Map<dynamic, dynamic> event, ButtonCaptureSource source) {
-  if (event["keyAction"] != 0) return false;
-  final rawCode = event["rawCode"];
-  final isRaw = rawCode is int && rawCode >= 0;
-  switch (source) {
-    case ButtonCaptureSource.android:
-      return !isRaw;
-    case ButtonCaptureSource.raw:
-      return isRaw;
-    case ButtonCaptureSource.any:
-      return true;
-  }
-}
-
-/// Owns one capture attempt so closing an old dialog cannot stop a newer one.
-class ButtonCaptureSession {
-  final Future<void> Function() _disarm;
-  final _result = Completer<Map<String, dynamic>?>();
-  StreamSubscription<dynamic>? _subscription;
-  Timer? _timeout;
-  Timer? _rawReleaseTimeout;
-  Map<String, dynamic>? _rawPress;
-  bool _finished = false;
-
-  ButtonCaptureSession._(this._disarm);
-
-  Future<Map<String, dynamic>?> get result => _result.future;
-
-  void _start(
-    Stream<dynamic> events,
-    Future<void> Function() arm,
-    Duration timeout,
-    ButtonCaptureSource source,
-  ) async {
-    try {
-      _subscription = events.listen(
-        (event) {
-          if (_finished) return;
-          if (event is Map && event["captureCancelled"] == true) {
-            _finish(null);
-          } else if (event is Map && _rawPress != null) {
-            final pressed = _rawPress!;
-            if (event["keyAction"] == 1 && event["rawCode"] == pressed["rawCode"] &&
-                event["rawScanCode"] == pressed["rawScanCode"] &&
-                event["device"] == pressed["device"]) {
-              _finish(pressed);
-            }
-          } else if (event is Map && isButtonCaptureEvent(event, source)) {
-            final pressed = Map<String, dynamic>.from(event);
-            if (event["rawCode"] is int && event["rawCode"] >= 0) {
-              // Keep interception armed until this press ends. Its Android
-              // copy can otherwise activate the next dialog's focused option.
-              _rawPress = pressed;
-              // Some firmware never sends UP; still finish within half a second.
-              _rawReleaseTimeout = Timer(const Duration(milliseconds: 500), () => _finish(pressed));
-            } else {
-              _finish(pressed);
-            }
-          }
-        },
-        onError: (Object error) => _finish(null),
-        onDone: () => _finish(null),
-      );
-      _timeout = Timer(timeout, () => _finish(null));
-      await arm();
-    } catch (e) {
-      await _finish(null);
-    }
-  }
-
-  Future<void> cancel() => _finish(null);
-
-  Future<void> _finish(Map<String, dynamic>? event) async {
-    if (_finished) return;
-    _finished = true;
-    _timeout?.cancel();
-    _rawReleaseTimeout?.cancel();
-    // Queue disarming before waiting for stream cancellation. A replacement
-    // capture can then queue its arm after this stop, even during slow setup.
-    final disarming = _disarm().catchError((Object error) {
-      debugPrint("ButtonMappingService: could not stop capture - $error");
-    });
-    // Unsubscribing from the platform stream must not hold up the result.
-    // Disarming is serialized; any late event is rejected by _finished.
-    _subscription?.cancel().catchError((Object error) {
-      debugPrint("ButtonMappingService: could not cancel capture stream - $error");
-    });
-    await disarming;
-    _result.complete(event);
-  }
-}
-
-/// Both routes to the shell privilege that reading `/dev/input` needs.
-class RawInputStatus {
-  final ShizukuStatus shizuku;
-  final bool shizukuConnected;
-  final AdbState adb;
-
-  /// Last ADB failure, worth showing because the causes are all user-fixable.
-  final String? adbError;
-
-  /// Whether wireless-debugging pairing is offered as a setup option.
-  /// An authorised TCP connection can also work without pairing.
-  final bool pairingRequired;
-
-  const RawInputStatus({
-    this.shizuku = ShizukuStatus.unavailable,
-    this.shizukuConnected = false,
-    this.adb = AdbState.disconnected,
-    this.adbError,
-    this.pairingRequired = false,
-  });
-
-  /// Whether firmware buttons can be read right now.
-  bool get ready => shizukuConnected || adb == AdbState.connected;
-
-  static RawInputStatus fromMap(Map<dynamic, dynamic> map) => RawInputStatus(
-        shizuku: _shizuku(map["shizuku"] as String?),
-        shizukuConnected: map["shizukuConnected"] as bool? ?? false,
-        adb: _adb(map["adb"] as String?),
-        adbError: map["adbError"] as String?,
-        pairingRequired: map["pairingRequired"] as bool? ?? false,
-      );
-
-  static ShizukuStatus _shizuku(String? name) {
-    switch (name) {
-      case "READY":
-        return ShizukuStatus.ready;
-      case "PERMISSION_REQUIRED":
-        return ShizukuStatus.permissionRequired;
-      default:
-        return ShizukuStatus.unavailable;
-    }
-  }
-
-  static AdbState _adb(String? name) {
-    switch (name) {
-      case "CONNECTED":
-        return AdbState.connected;
-      case "CONNECTING":
-        return AdbState.connecting;
-      case "FAILED":
-        return AdbState.failed;
-      default:
-        return AdbState.disconnected;
-    }
-  }
-}
-
-/// Fallback for app shortcut buttons whose key events cannot be intercepted.
-/// It redirects whenever the source app comes to the foreground, including
-/// when the user opens that app without its remote button.
-class AppRedirect {
-  final String sourcePackage;
-
-  /// Display name of the app the button normally opens.
-  final String? sourceLabel;
-  final ButtonAction action;
-
-  const AppRedirect({required this.sourcePackage, this.sourceLabel, required this.action});
-
-  Map<String, dynamic> toJson() => {
-        "sourcePackage": sourcePackage,
-        if (sourceLabel != null) "sourceLabel": sourceLabel,
-        "action": action.toJson(),
-      };
-
-  static AppRedirect? fromJson(Map<String, dynamic> json) {
-    final sourcePackage = json["sourcePackage"];
-    if (sourcePackage is! String || sourcePackage.isEmpty) {
-      return null;
-    }
-    final action = ButtonAction.fromJson(Map<String, dynamic>.from(json["action"] ?? {}));
-    if (action == null) {
-      return null;
-    }
-    return AppRedirect(
-      sourcePackage: sourcePackage,
-      sourceLabel: json["sourceLabel"] as String?,
-      action: action,
-    );
-  }
-
-  String get displayName => sourceLabel ?? sourcePackage;
-}
-
 class ButtonMappingService extends ChangeNotifier {
   final SharedPreferences _sharedPreferences;
   final FLauncherChannel _channel;
@@ -645,22 +137,10 @@ class ButtonMappingService extends ChangeNotifier {
       return;
     }
     try {
-      final root = jsonDecode(raw) as Map<String, dynamic>;
-      _keyMappings = ((root["keyMappings"] as List?) ?? [])
-          .whereType<Map>()
-          .map((entry) => KeyMapping.fromJson(Map<String, dynamic>.from(entry)))
-          .whereType<KeyMapping>()
-          .toList();
-      _appRedirects = ((root["appRedirects"] as List?) ?? [])
-          .whereType<Map>()
-          .map((entry) => AppRedirect.fromJson(Map<String, dynamic>.from(entry)))
-          .whereType<AppRedirect>()
-          .toList();
-      _rawMappings = ((root["rawMappings"] as List?) ?? [])
-          .whereType<Map>()
-          .map((entry) => RawMapping.fromJson(Map<String, dynamic>.from(entry)))
-          .whereType<RawMapping>()
-          .toList();
+      final root = ButtonMappingFormat.decodeRoot(raw);
+      _keyMappings = ButtonMappingFormat.decodeKeyMappings(root);
+      _appRedirects = ButtonMappingFormat.decodeAppRedirects(root);
+      _rawMappings = ButtonMappingFormat.decodeRawMappings(root);
     } catch (e) {
       debugPrint("ButtonMappingService: could not parse stored mappings - $e");
     }
@@ -677,68 +157,14 @@ class ButtonMappingService extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Map<String, dynamic> exportMappings() => {
-      "keyMappings": _keyMappings.map((mapping) => mapping.toJson()).toList(),
-      "appRedirects": _appRedirects.map((redirect) => redirect.toJson()).toList(),
-      "rawMappings": _rawMappings.map((mapping) => mapping.toJson()).toList(),
-    };
+  Map<String, dynamic> exportMappings() => ButtonMappingFormat.encode(
+        keyMappings: _keyMappings,
+        appRedirects: _appRedirects,
+        rawMappings: _rawMappings,
+      );
 
-  static void validateBackupMappings(Map<String, dynamic> data) {
-    void validateAction(dynamic value) {
-      if (value == null) return;
-      if (value is! Map<String, dynamic> ||
-          (value["packageName"] != null && value["packageName"] is! String) ||
-          (value["label"] != null && value["label"] is! String)) {
-        throw FormatException("Invalid button action");
-      }
-      final action = ButtonAction.fromJson(value);
-      if (action == null ||
-          (action.type == ButtonActionType.launchApp && (action.packageName?.isEmpty ?? true))) {
-        throw FormatException("Invalid button action");
-      }
-    }
-
-    for (final key in ["keyMappings", "appRedirects", "rawMappings"]) {
-      final entries = data[key];
-      if (entries is! List) throw FormatException("Missing button mapping list: $key");
-      final identities = <String>{};
-      for (final entry in entries) {
-        if (entry is! Map<String, dynamic>) throw FormatException("Invalid button mapping");
-        for (final field in ["scanCode", "rawScanCode"]) {
-          final value = entry[field];
-          if (value != null && (value is! int || value < 0)) {
-            throw FormatException("Invalid button scan code");
-          }
-        }
-        for (final field in ["device", "keyLabel", "sourceLabel"]) {
-          if (entry[field] != null && entry[field] is! String) {
-            throw FormatException("Invalid button label");
-          }
-        }
-        for (final field in ["single", "double", "long", "action"]) {
-          validateAction(entry[field]);
-        }
-        String? identity;
-        if (key == "keyMappings") {
-          final code = entry["keyCode"];
-          final mode = entry["matchMode"];
-          if (code is! int || code < 0 || (mode != null && mode != "keyCode" && mode != "scanCode")) {
-            throw FormatException("Invalid Android key mapping");
-          }
-          identity = KeyMapping.fromJson(entry)?.id;
-        } else if (key == "rawMappings") {
-          final code = entry["code"];
-          if (code is! int || code < 0) throw FormatException("Invalid raw key mapping");
-          identity = RawMapping.fromJson(entry)?.id;
-        } else {
-          identity = AppRedirect.fromJson(entry)?.sourcePackage;
-        }
-        if (identity == null || !identities.add(identity)) {
-          throw FormatException("Invalid or duplicate button mapping");
-        }
-      }
-    }
-  }
+  static void validateBackupMappings(Map<String, dynamic> data) =>
+      ButtonMappingFormat.validateBackup(data);
 
   Future<void> restoreMappings(Map<String, dynamic> data) async {
     validateBackupMappings(data);
@@ -768,11 +194,7 @@ class ButtonMappingService extends ChangeNotifier {
       status = const RawInputStatus();
     }
     if (_disposed) return;
-    final changed = status.shizuku != _rawInputStatus.shizuku ||
-        status.shizukuConnected != _rawInputStatus.shizukuConnected ||
-        status.adb != _rawInputStatus.adb ||
-        status.adbError != _rawInputStatus.adbError ||
-        status.pairingRequired != _rawInputStatus.pairingRequired;
+    final changed = status.differsFrom(_rawInputStatus);
     _rawInputStatus = status;
     if (changed) notifyListeners();
   }
@@ -936,13 +358,13 @@ class ButtonMappingService extends ChangeNotifier {
   }) {
     _captureSession?.cancel();
     late final ButtonCaptureSession session;
-    session = ButtonCaptureSession._(() {
+    session = ButtonCaptureSession(() {
       if (!identical(_captureSession, session)) return Future<void>.value();
       _captureSession = null;
       return setCaptureMode(false);
     });
     _captureSession = session;
-    session._start(keyEvents, () => setCaptureMode(true), timeout, source);
+    session.start(keyEvents, () => setCaptureMode(true), timeout, source);
     return session;
   }
 

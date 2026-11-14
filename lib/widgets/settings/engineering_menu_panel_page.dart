@@ -21,6 +21,7 @@
 
 import 'package:flauncher/flauncher_channel.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 /// Opens the TV maker's hidden Design and Factory menus (MediaTek/Vestel TVs).
 class EngineeringMenuPanelPage extends StatefulWidget {
@@ -33,15 +34,15 @@ class EngineeringMenuPanelPage extends StatefulWidget {
 }
 
 class _EngineeringMenuPanelPageState extends State<EngineeringMenuPanelPage> {
-  final FLauncherChannel _channel = FLauncherChannel();
   bool _opening = false;
 
   Future<void> _open(String menu, String title) async {
     if (_opening) return;
+    final channel = context.read<FLauncherChannel>();
     setState(() => _opening = true);
     var opened = false;
     try {
-      opened = await _channel.openEngineeringMenu(menu);
+      opened = await channel.openEngineeringMenu(menu);
     } catch (_) {
       opened = false;
     }

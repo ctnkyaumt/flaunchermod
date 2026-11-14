@@ -27,6 +27,11 @@ import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
@@ -68,6 +73,14 @@ class RawInputService : IRawInputService.Stub() {
     private val streams = mutableMapOf<String, FileInputStream>()
     private var inputObserver: FileObserver? = null
 
+    /**
+     * Pending re-opens of nodes whose first open failed, by node path. Both
+     * this map and [retryExecutor] are guarded by [streamLock]. The executor
+     * exists only between start() and stop().
+     */
+    private val pendingRetries = mutableMapOf<String, ScheduledFuture<*>>()
+    private var retryExecutor: ScheduledExecutorService? = null
+
     @Volatile
     private var callback: IRawInputCallback? = null
 
@@ -79,6 +92,12 @@ class RawInputService : IRawInputService.Stub() {
         if (callback == null) return
         this.callback = callback
         running = true
+        synchronized(streamLock) {
+            // Threads are only created when a retry is first scheduled.
+            retryExecutor = Executors.newSingleThreadScheduledExecutor { task ->
+                Thread(task, "raw-input-retry").apply { isDaemon = true }
+            }
+        }
 
         // Start watching before the initial scan so a Bluetooth remote cannot
         // appear in the gap and remain invisible until the service restarts.
@@ -103,15 +122,27 @@ class RawInputService : IRawInputService.Stub() {
             ?.sortedBy { it.name }
             ?: emptyList()
 
-        nodes.forEach(::openNode)
+        nodes.forEach { openNode(it) }
         Log.d(
             TAG,
             "Reading ${openedDevices().size} of ${nodes.size} input nodes, struct $EVENT_SIZE bytes",
         )
     }
 
-    /** Opens one event node once and starts its reader. */
+    /** Opens one event node that has just appeared or been found, and starts its reader. */
     private fun openNode(node: File) {
+        // A new event for this node supersedes any retry still waiting.
+        synchronized(streamLock) { pendingRetries.remove(node.path)?.cancel(false) }
+        attemptOpen(node, NodeOpenRetryPolicy())
+    }
+
+    /**
+     * Opens one event node once and starts its reader. A node that appeared
+     * moments ago is often not readable yet, because Android sets its
+     * permissions after the node is created, so a failed open is retried a few
+     * times with growing delays.
+     */
+    private fun attemptOpen(node: File, retry: NodeOpenRetryPolicy) {
         val path = node.path
         synchronized(streamLock) {
             if (!running || streams.containsKey(path)) return
@@ -121,7 +152,8 @@ class RawInputService : IRawInputService.Stub() {
             FileInputStream(node)
         } catch (e: Exception) {
             // Not every node is readable, and most are not keyboards.
-            Log.d(TAG, "Skipping $path: ${e.message}")
+            Log.d(TAG, "Could not open $path: ${e.message}")
+            scheduleRetry(node, retry)
             return
         }
 
@@ -136,8 +168,39 @@ class RawInputService : IRawInputService.Stub() {
         thread(name = "raw-input-${node.name}", isDaemon = true) { pump(stream, path) }
     }
 
+    private fun scheduleRetry(node: File, retry: NodeOpenRetryPolicy) {
+        val delay = retry.nextDelay()
+        if (delay == null) {
+            Log.d(TAG, "Giving up on ${node.path}")
+            return
+        }
+        synchronized(streamLock) {
+            val executor = retryExecutor
+            if (!running || executor == null || streams.containsKey(node.path)) return
+            try {
+                pendingRetries[node.path] = executor.schedule(
+                    Runnable { retryOpen(node, retry) },
+                    delay,
+                    TimeUnit.MILLISECONDS,
+                )
+            } catch (e: RejectedExecutionException) {
+                // stop() shut the executor down first.
+            }
+        }
+    }
+
+    private fun retryOpen(node: File, retry: NodeOpenRetryPolicy) {
+        synchronized(streamLock) { pendingRetries.remove(node.path) }
+        // The node may have gone without its DELETE event being seen.
+        if (!node.exists()) return
+        attemptOpen(node, retry)
+    }
+
     private fun closeNode(path: String) {
-        val stream = synchronized(streamLock) { streams.remove(path) } ?: return
+        val stream = synchronized(streamLock) {
+            pendingRetries.remove(path)?.cancel(false)
+            streams.remove(path)
+        } ?: return
         try {
             stream.close()
         } catch (e: Exception) {
@@ -191,6 +254,9 @@ class RawInputService : IRawInputService.Stub() {
         inputObserver?.stopWatching()
         inputObserver = null
         val toClose = synchronized(streamLock) {
+            pendingRetries.clear()
+            retryExecutor?.shutdownNow()
+            retryExecutor = null
             streams.values.toList().also { streams.clear() }
         }
         for (stream in toClose) {

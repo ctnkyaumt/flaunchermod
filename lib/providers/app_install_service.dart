@@ -54,12 +54,24 @@ class AppInstallService extends ChangeNotifier {
   final Map<String, double> _progress = {};
   String? _activeAppName;
 
+  /// Completes when the install of [_activeAppName] has ended.
+  Completer<void>? _activeInstallEnded;
+
+  /// Whether this process sent the user to the "install unknown apps" screen.
+  bool _openedPermissionScreen = false;
+
   Map<String, String> get status => _status;
   Map<String, double> get progress => _progress;
   String? get activeAppName => _activeAppName;
 
+  /// Set while the user is in the "install unknown apps" screen we opened, so
+  /// a launcher Android killed meanwhile can bring the Install panel back.
   static const String _kIsInstallingKey = "is_installing_apps_flow";
   static const String _kHasRequestedPermissionKey = "has_requested_install_permission";
+
+  /// Under the temporary (cache) directory: the only folder the native
+  /// installer accepts APKs from.
+  static const String _apkDownloadsFolder = "apk_downloads";
 
   static final List<AppSpec> knownApps = [
     AppSpec(
@@ -123,19 +135,32 @@ class AppInstallService extends ChangeNotifier {
 
   AppInstallService(
     this._prefs, {
-    FLauncherChannel? channel,
+    required FLauncherChannel channel,
     HttpClient Function()? httpClient,
     Future<Directory> Function()? temporaryDirectory,
     Duration networkTimeout = const Duration(seconds: 30),
-  })  : _channel = channel ?? FLauncherChannel(),
+  })  : _channel = channel,
         _newHttpClient = httpClient ?? _defaultHttpClient,
         _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
         _networkTimeout = networkTimeout;
 
-  bool get isInstallingFlow => _prefs.getBool(_kIsInstallingKey) ?? false;
+  /// For the launcher's start and every resume: whether to open the Install
+  /// panel again. True only when the "install unknown apps" screen was opened
+  /// and the launcher was restarted since (this process did not open it); a
+  /// return from the screen this process opened finds its panel still there.
+  /// Always clears the mark, so the answer is true at most once.
+  bool consumeInstallPanelReopen() {
+    final screenWasOpen = _prefs.getBool(_kIsInstallingKey) ?? false;
+    if (screenWasOpen) {
+      _prefs.remove(_kIsInstallingKey);
+    }
+    return screenWasOpen && !_openedPermissionScreen;
+  }
 
-  void setInstallingFlow(bool value) {
-    _prefs.setBool(_kIsInstallingKey, value);
+  /// Called once the "install unknown apps" screen is showing.
+  void _permissionScreenOpened() {
+    _openedPermissionScreen = true;
+    _prefs.setBool(_kIsInstallingKey, true);
   }
 
   Future<void> checkAndRequestPermission() async {
@@ -145,15 +170,26 @@ class AppInstallService extends ChangeNotifier {
     final canRequest = await _channel.canRequestPackageInstalls();
     if (!canRequest) {
       await _prefs.setBool(_kHasRequestedPermissionKey, true);
-      setInstallingFlow(true);
-      await _channel.requestPackageInstallsPermission();
+      if (await _channel.requestPackageInstallsPermission()) {
+        _permissionScreenOpened();
+      }
     }
   }
 
+  /// Installs [app]. Asked for while another install runs, it waits its turn
+  /// (its status reads "Waiting for <that app>…") and then runs. Completes
+  /// when this app's own attempt has ended.
   Future<void> startInstall(AppSpec app) async {
-    if (_activeAppName != null) return;
-    
+    while (_activeAppName != null) {
+      _status[app.name] = "Waiting for $_activeAppName…";
+      _progress[app.name] = 0.0;
+      notifyListeners();
+      await _activeInstallEnded!.future;
+    }
+
+    final ended = Completer<void>();
     _activeAppName = app.name;
+    _activeInstallEnded = ended;
     _status[app.name] = "Preparing…";
     _progress[app.name] = 0.0;
     notifyListeners();
@@ -164,7 +200,9 @@ class AppInstallService extends ChangeNotifier {
       _status[app.name] = "Error: $e";
     } finally {
       _activeAppName = null;
+      _activeInstallEnded = null;
       notifyListeners();
+      ended.complete();
     }
   }
 
@@ -176,9 +214,9 @@ class AppInstallService extends ChangeNotifier {
     if (!canRequest) {
       _status[name] = "Waiting for permission…";
       notifyListeners();
-      setInstallingFlow(true);
       final requested = await _channel.requestPackageInstallsPermission();
       if (requested) {
+        _permissionScreenOpened();
         // If we requested permission, we might get killed. 
         // If not killed, we might need to wait or just return.
         // For now, let's stop and let user retry after permission grant.
@@ -218,8 +256,8 @@ class AppInstallService extends ChangeNotifier {
           return "started";
         } else if (installResult == "needs_permission") {
            _status[name] = "Permission needed";
-           setInstallingFlow(true);
-           // Logic handled by native side mostly, but we set flag just in case
+           // The native side has opened the "install unknown apps" screen.
+           _permissionScreenOpened();
         } else {
            // Failed, delete file
           try {
@@ -453,7 +491,8 @@ class AppInstallService extends ChangeNotifier {
         return await _downloadApk(name, nextUrl, depth: depth + 1);
       }
 
-      final dir = await _temporaryDirectory();
+      final temporary = await _temporaryDirectory();
+      final dir = await Directory('${temporary.path}/$_apkDownloadsFolder').create(recursive: true);
       final fileName = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
       final file = File('${dir.path}/$fileName-${DateTime.now().millisecondsSinceEpoch}.apk');
       final sink = file.openWrite();

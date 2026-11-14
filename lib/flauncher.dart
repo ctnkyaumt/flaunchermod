@@ -23,6 +23,7 @@ import 'dart:ui';
 
 import 'package:flauncher/custom_traversal_policy.dart';
 import 'package:flauncher/database.dart';
+import 'package:flauncher/flauncher_channel.dart';
 import 'package:flauncher/providers/app_install_service.dart';
 import 'package:flauncher/providers/apps_service.dart';
 import 'package:flauncher/providers/settings_service.dart';
@@ -84,10 +85,10 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
     }
   }
 
+  /// Brings the Install panel back after Android restarted the launcher while
+  /// the user was in the "install unknown apps" screen it had opened.
   void _checkInstallFlow() {
-    final installService = context.read<AppInstallService>();
-    if (installService.isInstallingFlow) {
-      installService.setInstallingFlow(false);
+    if (context.read<AppInstallService>().consumeInstallPanelReopen()) {
       showDialog(
         context: context,
         builder: (_) => SettingsPanel(initialRoute: InstallAppsPanelPage.routeName),
@@ -103,7 +104,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
       final settings = context.read<SettingsService>();
       if (settings.startupPermissionsCompleted) return;
 
-      final channel = context.read<AppsService>().fLauncherChannel;
+      final channel = context.read<FLauncherChannel>();
 
       final canInstall = await channel.canRequestPackageInstalls();
       if (!canInstall) {
@@ -489,7 +490,7 @@ class _FLauncherState extends State<FLauncher> with WidgetsBindingObserver imple
       await showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => DevicePowerDialog(channel: context.read<AppsService>().fLauncherChannel),
+        builder: (_) => DevicePowerDialog(channel: context.read<FLauncherChannel>()),
       );
     } finally {
       _powerDialogOpen = false;

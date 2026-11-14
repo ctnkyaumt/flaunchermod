@@ -158,6 +158,10 @@ class FLauncherDatabase extends _$FLauncherDatabase {
 
   Future<void> insertCategory(CategoriesCompanion category) => into(categories).insert(category);
 
+  /// Categories in display order, without their apps (no icon or banner reads).
+  Future<List<Category>> listCategories() =>
+      (select(categories)..orderBy([(tbl) => OrderingTerm.asc(tbl.order)])).get();
+
   Future<void> deleteCategory(int id) => (delete(categories)..where((tbl) => tbl.id.equals(id))).go();
 
   Future<void> updateCategories(List<CategoriesCompanion> values) => batch(

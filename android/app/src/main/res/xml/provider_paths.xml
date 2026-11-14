@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only downloaded APKs are shared, with the system installer. Nothing else in
+  the cache, external storage or the app files (the ADB private key) is.
+-->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="external_files" path="."/>
-    <cache-path name="cache_files" path="."/>
-    <files-path name="files" path="."/>
+    <cache-path name="apk_downloads" path="apk_downloads/"/>
 </paths>

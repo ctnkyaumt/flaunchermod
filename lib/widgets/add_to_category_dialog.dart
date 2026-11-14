@@ -21,18 +21,24 @@
 
 import 'package:flauncher/database.dart';
 import 'package:flauncher/providers/apps_service.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-class AddToCategoryDialog extends StatelessWidget {
+class AddToCategoryDialog extends StatefulWidget {
   final App application;
 
   AddToCategoryDialog(this.application);
 
   @override
+  State<AddToCategoryDialog> createState() => _AddToCategoryDialogState();
+}
+
+class _AddToCategoryDialogState extends State<AddToCategoryDialog> with RemoteRouteAction<AddToCategoryDialog> {
+  @override
   Widget build(BuildContext context) => Selector<AppsService, List<Category>>(
         selector: (_, appsService) => appsService.categoriesWithApps
-            .where((element) => !element.applications.any((app) => app.packageName == application.packageName))
+            .where((element) => !element.applications.any((app) => app.packageName == widget.application.packageName))
             .map((categoryWithApps) => categoryWithApps.category)
             .toList(),
         builder: (context, categories, _) => SimpleDialog(
@@ -43,10 +49,10 @@ class AddToCategoryDialog extends StatelessWidget {
                 (category) => Card(
                   clipBehavior: Clip.antiAlias,
                   child: ListTile(
-                    onTap: () async {
-                      await context.read<AppsService>().addToCategory(application, category);
-                      Navigator.of(context).pop();
-                    },
+                    // A held OK repeats; it adds once and closes this dialog only.
+                    onTap: () => runThenClose(
+                      () => context.read<AppsService>().addToCategory(widget.application, category),
+                    ),
                     title: Text(category.name),
                   ),
                 ),

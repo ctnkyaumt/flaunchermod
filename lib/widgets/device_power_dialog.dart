@@ -22,6 +22,7 @@
 import 'dart:async';
 
 import 'package:flauncher/flauncher_channel.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -113,11 +114,8 @@ class _DevicePowerDialogState extends State<DevicePowerDialog> {
   Widget build(BuildContext context) => Focus(
         canRequestFocus: false,
         onKey: (_, event) {
-          final androidBack = event.data is RawKeyEventDataAndroid &&
-              (event.data as RawKeyEventDataAndroid).keyCode == 4;
-          if (event is RawKeyDownEvent &&
-              (androidBack || event.logicalKey == LogicalKeyboardKey.goBack ||
-                  event.logicalKey == LogicalKeyboardKey.escape)) {
+          // Back closes at once, on its key-down, as verified on the TV.
+          if (event is RawKeyDownEvent && isRemoteBack(event)) {
             _dismiss();
             return KeyEventResult.handled;
           }

@@ -14,8 +14,8 @@
 import 'dart:math' as math;
 
 import 'package:flauncher/providers/speed_test_service.dart';
+import 'package:flauncher/widgets/remote_press.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class SpeedTestPanelPage extends StatefulWidget {
   static const routeName = 'speed_test_panel';
@@ -30,7 +30,7 @@ class SpeedTestPanelPage extends StatefulWidget {
 class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBindingObserver {
   late final SpeedTestService _service = widget.service ?? SpeedTestService();
   final _actionFocus = FocusNode();
-  bool _backPressed = false;
+  final _backPresses = RemotePressTracker();
 
   @override
   void initState() {
@@ -41,7 +41,7 @@ class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBin
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
-      _backPressed = false;
+      _backPresses.reset();
       _service.cancel();
     }
   }
@@ -64,26 +64,16 @@ class _SpeedTestPanelPageState extends State<SpeedTestPanelPage> with WidgetsBin
         child: Focus(
           canRequestFocus: false,
           onKey: (_, event) {
-            final key = event.logicalKey;
-            if (key == LogicalKeyboardKey.escape ||
-                key == LogicalKeyboardKey.goBack ||
-                (event.data is RawKeyEventDataAndroid &&
-                    (event.data as RawKeyEventDataAndroid).keyCode == 4)) {
-              if (event is RawKeyDownEvent) {
-                // Keep focus here until release so repeats and Android's
-                // Back-up cannot reach the settings route behind this page.
-                _backPressed = true;
-              } else if (event is RawKeyUpEvent) {
-                final wasPressed = _backPressed;
-                _backPressed = false;
-                if (wasPressed && ModalRoute.of(context)?.isCurrent == true) {
-                  _service.cancel();
-                  Navigator.of(context).maybePop();
-                }
-              }
-              return KeyEventResult.handled;
+            if (!isRemoteBack(event)) {
+              return KeyEventResult.ignored;
             }
-            return KeyEventResult.ignored;
+            // Keep focus here until release so repeats and Android's Back-up
+            // cannot reach the settings route behind this page.
+            if (_backPresses.handle(event) == RemotePress.up && ModalRoute.of(context)?.isCurrent == true) {
+              _service.cancel();
+              Navigator.of(context).maybePop();
+            }
+            return KeyEventResult.handled;
           },
           child: AnimatedBuilder(
             animation: _service,
