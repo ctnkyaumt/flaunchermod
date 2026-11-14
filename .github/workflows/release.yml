@@ -197,7 +197,17 @@ jobs:
         if: steps.commit_bump.outputs.committed == 'true'
         env:
           RELEASE_REF: ${{ github.ref }}
-        run: git push origin "HEAD:$RELEASE_REF"
+        run: |
+          # The branch may have moved during the build; without this the push
+          # is rejected and the release is left without its version bump.
+          for attempt in 1 2 3; do
+            git fetch origin "$RELEASE_REF"
+            git rebase --autostash FETCH_HEAD
+            if git push origin "HEAD:$RELEASE_REF"; then
+              exit 0
+            fi
+          done
+          exit 1
 
       - name: Clean up keystore
         if: always()
